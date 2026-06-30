@@ -8,39 +8,48 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-<main class="page">
-  <div class="public-banner">
-    <div style="display:flex;align-items:center;gap:14px;">
-      <img src="{{ url_for('static', filename='logo_decio.png') }}" alt="Décio" style="width:50px;height:50px;border-radius:12px;object-fit:cover;box-shadow:0 2px 10px rgba(20,32,46,.18);">
-      <div>
-        <div style="font-size:.64rem;font-weight:700;letter-spacing:.17em;text-transform:uppercase;color:rgba(255,255,255,.78);">Décio · Indústria Metalúrgica</div>
-        <h1 style="margin:0;"><i class="bi bi-droplet-half"></i>Pré-Banho e Banho · Acompanhamento</h1>
+<body class="gp-body">
+<main class="gp-wrap">
+
+  <!-- ── Cabeçalho de marca ── -->
+  <header class="gp-header">
+    <div class="gp-header-left">
+      <div class="gp-logo"><img src="{{ url_for('static', filename='logo_decio.png') }}" alt="Décio"></div>
+      <div class="gp-titles">
+        <span class="gp-empresa">Décio · Indústria Metalúrgica</span>
+        <h1 class="gp-titulo"><i class="bi bi-speedometer2"></i>Painel de Gerência</h1>
+        <span class="gp-sub">Pré-Banho e Banho · acompanhamento em tempo real</span>
       </div>
     </div>
-    <div style="text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
-      <span id="relogioPainel" style="font-family:'JetBrains Mono',monospace;font-size:1.05rem;font-weight:700;letter-spacing:.5px;">--:--:--</span>
-      <span class="small" style="display:flex;align-items:center;gap:7px;opacity:.9;"><span class="live-dot"></span>Ao vivo · somente visualização</span>
-      <a href="{{ url_for('logout') }}" class="painel-sair" title="Sair"><i class="bi bi-box-arrow-right"></i> Sair</a>
+    <div class="gp-header-right">
+      <div class="gp-relogio">
+        <i class="bi bi-clock-history"></i>
+        <span id="relogioPainel" class="mono">--:--:--</span>
+      </div>
+      <span class="gp-live"><span class="live-dot"></span>Ao vivo</span>
+      <div class="gp-user">
+        <span class="gp-user-chip"><i class="bi bi-person-circle"></i>{{ nome | default('Gerência') }}</span>
+        <a href="{{ url_for('logout') }}" class="gp-sair" title="Sair"><i class="bi bi-box-arrow-right"></i><span>Sair</span></a>
+      </div>
     </div>
-  </div>
+  </header>
 
   <script>
     (function(){
       function tic(){
         var d=new Date();
         var el=document.getElementById('relogioPainel');
-        if(el)el.textContent=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' · '+d.toLocaleTimeString('pt-BR');
+        if(el)el.textContent=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})+' · '+d.toLocaleTimeString('pt-BR');
       }
       tic();setInterval(tic,1000);
     })();
   </script>
 
-  <div class="panel panel-brand panel-pad" style="margin-bottom:18px;">
+  <!-- ── Filtros ── -->
+  <section class="gp-card gp-filtros">
     <input type="hidden" id="fDe"><input type="hidden" id="fAte">
-    <div class="section-title brand" style="font-size:1.1rem;margin-bottom:18px;display:flex;align-items:center;gap:12px;">Filtros</div>
+    <div class="gp-card-head"><i class="bi bi-funnel-fill"></i>Filtros do histórico</div>
     <div class="filtros-row">
-
       <!-- Linha do tempo (slicer estilo Excel) -->
       <div style="flex:none;">
         <label class="filtro-label">Linha do tempo <span class="filtro-hint">— clique ou arraste para selecionar</span></label>
@@ -59,7 +68,6 @@
           <div class="slicer-scroll"><div class="slicer-scroll-thumb" id="slicerThumb"></div></div>
         </div>
       </div>
-
       <!-- Busca por OP / código / descrição -->
       <div style="flex:1;min-width:280px;">
         <label class="filtro-label">OP / Código / Item <span class="filtro-hint">— digite a OP, o código ou a descrição</span></label>
@@ -70,49 +78,51 @@
         </div>
         <p class="filtro-desc">Filtre o <strong>histórico</strong> por número da OP, código do item ou descrição da peça.</p>
       </div>
-
     </div>
-  </div>
+  </section>
 
-  <!-- Cestos ativos agora (agrupados por etapa) -->
-  <div class="area-titulo"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos ativos agora</div>
+  <!-- ── Cestos ativos agora (agrupados por etapa) ── -->
+  <div class="gp-secao"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos ativos agora<span class="gp-secao-tag" id="ativosTag"></span></div>
   <div id="ativosWrap" class="ativos-cats">
-    <div class="muted small" style="padding:8px 2px;">Carregando…</div>
+    <div class="gp-card muted small" style="padding:16px;">Carregando…</div>
   </div>
 
-  <div class="area-titulo">Quantidade de cestos</div>
-  <div class="kpi-row">
-    <div class="kpi"><div class="kpi-val" id="kTotal">0</div><div class="kpi-lbl"><i class="bi bi-check2-all"></i>Concluídos</div></div>
-    <div class="kpi k-amber"><div class="kpi-val" id="kAnd">0</div><div class="kpi-lbl"><i class="bi bi-hourglass-split"></i>Em andamento</div></div>
-    <div class="kpi k-green"><div class="kpi-val" id="kBanhoNormal">0</div><div class="kpi-lbl"><i class="bi bi-droplet"></i>Banho normal</div></div>
-    <div class="kpi k-red"><div class="kpi-val" id="kBanhoRetrab">0</div><div class="kpi-lbl"><i class="bi bi-arrow-repeat"></i>Banho retrabalho</div></div>
+  <!-- ── Indicadores ── -->
+  <div class="gp-secao"><i class="bi bi-clipboard2-data-fill"></i>Quantidade de cestos</div>
+  <div class="gp-kpis">
+    <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-check2-all"></i></div><div><div class="gp-kpi-val" id="kTotal">0</div><div class="gp-kpi-lbl">Concluídos</div></div></div>
+    <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kAnd">0</div><div class="gp-kpi-lbl">Em andamento</div></div></div>
+    <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-droplet-fill"></i></div><div><div class="gp-kpi-val" id="kBanhoNormal">0</div><div class="gp-kpi-lbl">Banho normal</div></div></div>
+    <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kBanhoRetrab">0</div><div class="gp-kpi-lbl">Banho retrabalho</div></div></div>
   </div>
 
-  <div class="area-titulo">Tempo médio (min)</div>
-  <div class="kpi-row">
-    <div class="kpi k-violet"><div class="kpi-val" id="kPrep">0</div><div class="kpi-lbl"><i class="bi bi-stopwatch"></i>Preparo</div></div>
-    <div class="kpi k-amber"><div class="kpi-val" id="kEspera">0</div><div class="kpi-lbl"><i class="bi bi-hourglass-split"></i>Espera (fila)</div></div>
-    <div class="kpi k-sky"><div class="kpi-val" id="kBanho">0</div><div class="kpi-lbl"><i class="bi bi-droplet"></i>Banho</div></div>
+  <div class="gp-secao"><i class="bi bi-clock-fill"></i>Tempo médio (min)</div>
+  <div class="gp-kpis gp-kpis-3">
+    <div class="gp-kpi"><div class="gp-kpi-ic ic-violet"><i class="bi bi-stopwatch-fill"></i></div><div><div class="gp-kpi-val" id="kPrep">0</div><div class="gp-kpi-lbl">Preparo</div></div></div>
+    <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kEspera">0</div><div class="gp-kpi-lbl">Espera (fila)</div></div></div>
+    <div class="gp-kpi"><div class="gp-kpi-ic ic-sky"><i class="bi bi-droplet-half"></i></div><div><div class="gp-kpi-val" id="kBanho">0</div><div class="gp-kpi-lbl">Banho</div></div></div>
   </div>
 
-  <div class="area-titulo"><i class="bi bi-bar-chart-line"></i>Totais processados</div>
-  <div class="kpi-row">
-    <div class="kpi k-teal"><div class="kpi-val" id="kPecas">0</div><div class="kpi-lbl"><i class="bi bi-stack"></i>Peças totais</div></div>
-    <div class="kpi k-teal"><div class="kpi-val" id="kArea">0</div><div class="kpi-lbl"><i class="bi bi-rulers"></i>Área total (m²)</div></div>
+  <div class="gp-secao"><i class="bi bi-bar-chart-line-fill"></i>Totais processados</div>
+  <div class="gp-kpis gp-kpis-2">
+    <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-stack"></i></div><div><div class="gp-kpi-val" id="kPecas">0</div><div class="gp-kpi-lbl">Peças totais</div></div></div>
+    <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-rulers"></i></div><div><div class="gp-kpi-val" id="kArea">0</div><div class="gp-kpi-lbl">Área total (m²)</div></div></div>
   </div>
 
+  <!-- ── Gráficos ── -->
+  <div class="gp-secao"><i class="bi bi-pie-chart-fill"></i>Análise gráfica</div>
   <div class="chart-grid-3">
-    <div class="chart-box"><h6><i class="bi bi-pie-chart-fill"></i>Cestos processados: Normal × Retrabalho</h6><canvas id="chartTipo" height="200"></canvas></div>
-    <div class="chart-box"><h6><i class="bi bi-bar-chart-fill"></i>Cestos por tipo de processo</h6><canvas id="chartProc" height="200"></canvas></div>
-    <div class="chart-box"><h6><i class="bi bi-graph-up"></i>Cestos processados por dia</h6><canvas id="chartDia" height="200"></canvas></div>
+    <div class="chart-box"><h6><i class="bi bi-pie-chart-fill"></i>Normal × Retrabalho</h6><canvas id="chartTipo" height="200"></canvas></div>
+    <div class="chart-box"><h6><i class="bi bi-bar-chart-fill"></i>Cestos por processo</h6><canvas id="chartProc" height="200"></canvas></div>
+    <div class="chart-box"><h6><i class="bi bi-graph-up"></i>Cestos por dia</h6><canvas id="chartDia" height="200"></canvas></div>
   </div>
-
   <div class="chart-grid" style="grid-template-columns:1fr;">
     <div class="chart-box"><h6><i class="bi bi-rulers"></i>Área processada por dia (m²)</h6><canvas id="chartArea" height="180"></canvas></div>
   </div>
 
-  <div class="section-title" style="font-size:1rem;margin:18px 0 14px;"><i class="bi bi-clock-history"></i>Histórico dos cestos concluídos</div>
-  <div class="panel" style="overflow:hidden;">
+  <!-- ── Histórico ── -->
+  <div class="gp-secao"><i class="bi bi-clock-history"></i>Histórico dos cestos concluídos</div>
+  <div class="gp-card" style="overflow:hidden;padding:0;">
     <div class="table-wrap">
       <table class="tbl">
         <thead><tr>
@@ -123,6 +133,11 @@
       </table>
     </div>
   </div>
+
+  <footer class="gp-footer">
+    <img src="{{ url_for('static', filename='logo_decio.png') }}" alt="Décio">
+    <span>Décio Indústria Metalúrgica · Controle de Produtividade Pré-Banho e Banho</span>
+  </footer>
 </main>
 
 <!-- Modal de detalhes do cesto -->
@@ -190,7 +205,9 @@ async function carregarAtivos(){
     if(!wrap)return;
     const ativos=(d.ativos||[]);
     window._ativosCache=ativos;
-    if(!ativos.length){wrap.innerHTML='<div class="panel panel-pad muted small">Nenhum cesto ativo no momento.</div>';return;}
+    const tag=document.getElementById('ativosTag');
+    if(tag)tag.textContent=ativos.length?(ativos.length+(ativos.length>1?' cestos':' cesto')):'';
+    if(!ativos.length){wrap.innerHTML='<div class="gp-card gp-vazio"><i class="bi bi-clipboard-check"></i>Nenhum cesto ativo no momento.</div>';return;}
     // agrupa por estado
     const grupos={};
     ativos.forEach(c=>{(grupos[c.estado]=grupos[c.estado]||[]).push(c);});

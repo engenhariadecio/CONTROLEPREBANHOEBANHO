@@ -694,7 +694,7 @@ def login():
                 session['nome'] = u.nome
                 session['perfil'] = u.perfil
                 destino = {'admin': 'dashboard', 'banho': 'tela_banho',
-                           'prep': 'tela_prep', 'painel': 'painel_publico'}.get(u.perfil, 'login')
+                           'prep': 'tela_prep', 'painel': 'painel_gerencia'}.get(u.perfil, 'login')
                 return redirect(url_for(destino))
             erro = 'Usuário ou senha incorretos.'
         finally:
@@ -738,8 +738,9 @@ def dashboard():
 
 
 @app.route('/painel')
-def painel_publico():
-    # Agora o painel exige usuário e senha (qualquer perfil logado pode visualizar).
+@app.route('/gerencia')
+def painel_gerencia():
+    # Painel de Gerência: acesso SOMENTE com login (usuário e senha).
     if 'usuario' not in session:
         return redirect(url_for('login'))
     return render_template('painel.html', processos=PROCESSOS,

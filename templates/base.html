@@ -23,7 +23,7 @@
     <span class="user-chip"><span class="user-dot perfil-{{ session.get('perfil') }}"></span>{{ nome | default(session.get('nome')) }}</span>
     {% if session.get('perfil') == 'admin' %}
     <a href="{{ url_for('dashboard') }}" class="tb-btn" title="Dashboard"><i class="bi bi-grid-1x2-fill"></i></a>
-    <a href="{{ url_for('painel_publico') }}" class="tb-btn" title="Painel da gerência"><i class="bi bi-tv"></i></a>
+    <a href="{{ url_for('painel_gerencia') }}" class="tb-btn" title="Painel da gerência"><i class="bi bi-tv"></i></a>
     <a href="{{ url_for('admin_mestre') }}" class="tb-btn" title="Lista mestra"><i class="bi bi-table"></i></a>
     <a href="{{ url_for('admin_config') }}" class="tb-btn" title="Configurações de jornada"><i class="bi bi-gear-fill"></i></a>
     <a href="{{ url_for('admin_usuarios') }}" class="tb-btn" title="Usuários"><i class="bi bi-people-fill"></i></a>
