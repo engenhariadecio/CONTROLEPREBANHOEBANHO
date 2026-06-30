@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+{% block title %}Banho — Controle Produtividade{% endblock %}
+{% block content %}
+
+<div class="layout-sel">
+  <button class="layout-btn active" id="lbAmbos" onclick="setLayout('ambos')"><i class="bi bi-layout-split"></i>Em banho e fila</button>
+  <button class="layout-btn" id="lbBanho" onclick="setLayout('banho')"><i class="bi bi-droplet-fill"></i>Só em banho</button>
+  <button class="layout-btn" id="lbFila" onclick="setLayout('fila')"><i class="bi bi-list-ol"></i>Só fila de espera</button>
+</div>
+
+<div class="banho-cols" id="banhoCols">
+  <div id="colBanho">
+    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-droplet-fill"></i>Em banho agora</div>
+    <div id="emBanho" class="flow-list"><div class="muted small">Carregando…</div></div>
+  </div>
+  <div id="colFila">
+    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-list-ol"></i>Fila de espera</div>
+    <div id="fila" class="flow-list"><div class="muted small">Carregando…</div></div>
+  </div>
+</div>
+
+<!-- Modal de confirmação de SAÍDA do banho -->
+<div class="modal-overlay" id="modalSaida">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-head">
+      <h5><i class="bi bi-box-arrow-right"></i>Sair do banho — Cesto <span id="sCesto"></span></h5>
+      <button class="modal-x" onclick="fecharSaida()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="sId">
+      <div class="field" style="margin:0;">
+        <label class="label">Observação (opcional)</label>
+        <textarea id="sObs" class="input" rows="3" placeholder="Ex: peça com retoque, problema no banho..."></textarea>
+        <div class="hint">Deixe em branco se não houver observação.</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="fecharSaida()" style="flex:0 0 auto;">Cancelar</button>
+      <button class="btn btn-stop" style="flex:1;" onclick="confirmarSaida()"><i class="bi bi-stop-circle-fill"></i>Confirmar saída</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de confirmação INICIAR banho -->
+<div class="modal-overlay" id="modalIniciarConf">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-head">
+      <h5><i class="bi bi-play-circle-fill"></i>Iniciar banho — Cesto <span id="iCesto"></span></h5>
+      <button class="modal-x" onclick="fecharIniciarConf()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body" style="text-align:center;padding:24px 20px;">
+      <p style="margin:0 0 8px;font-size:15px;">Confirma início do banho para este cesto?</p>
+      <p class="hint" style="margin:0;">O cronômetro do banho começará do zero.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="fecharIniciarConf()" style="flex:0 0 auto;">Cancelar</button>
+      <button class="btn btn-aqua" style="flex:1;" onclick="confirmarIniciar()"><i class="bi bi-play-fill"></i>Iniciar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Ver detalhes do cesto -->
+<div class="modal-overlay" id="modalDetalhesBanho">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-head">
+      <h5><i class="bi bi-box-seam"></i><span id="dbTitulo">Detalhes do cesto</span></h5>
+      <button class="modal-x" onclick="fecharDetalhesBanho()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body" id="dbCorpo" style="padding:20px;"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='jornada.js') }}"></script>
+<script>
+let ultimaFila=[];
+let _cacheCards={};  // id -> card (para o Ver detalhes)
+let layoutBanho='ambos';
+function setLayout(modo){
+  layoutBanho=modo;
+  document.getElementById('lbAmbos').classList.toggle('active',modo==='ambos');
+  document.getElementById('lbBanho').classList.toggle('active',modo==='banho');
+  document.getElementById('lbFila').classList.toggle('active',modo==='fila');
+  const cb=document.getElementById('colBanho'), cf=document.getElementById('colFila'), cols=document.getElementById('banhoCols');
+  cb.style.display = (modo==='fila')?'none':'';
+  cf.style.display = (modo==='banho')?'none':'';
+  // quando só uma coluna, ocupa a largura toda
+  cols.style.gridTemplateColumns = (modo==='ambos')?'':'1fr';
+}
+let idParaIniciar=null;
+let cestoParaIniciar='';
+
+function fmtTempo(s){const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=s%60;const mm=String(m).padStart(2,'0'),xx=String(x).padStart(2,'0');return h>0?`${h}:${mm}:${xx}`:`${mm}:${xx}`;}
+
+// offset entre o relógio do servidor e o do tablet (p/ cronômetro começar do 0:00)
+let servidorOffset=0;
+async function sincronizarRelogio(){
+  try{
+    const t0=Date.now();
+    const j=await (await fetch('/api/agora')).json();
+    const t1=Date.now();
+    const servidorMs=new Date(j.agora_iso).getTime();
+    // compensa a latência (metade do tempo de ida e volta)
+    servidorOffset=servidorMs+(t1-t0)/2-t1;
+  }catch(_){servidorOffset=0;}
+}
+function agoraServidor(){return Date.now()+servidorOffset;}
+
+async function carregar(){
+  const r=await fetch('/api/banho/fila'); const j=await r.json();
+  /* usa a hora do servidor (sincronizada) p/ o cronômetro bater certo */
+  const agora=agoraServidor();
+  ultimaFila=j.em_banho||[];
+  _cacheCards={};
+  (j.em_banho||[]).forEach(c=>{_cacheCards[c.id]=c;});
+  (j.fila||[]).forEach(c=>{_cacheCards[c.id]=c;});
+
+  const eb=document.getElementById('emBanho');
+  eb.innerHTML=j.em_banho.length?j.em_banho.map(c=>{
+    const seg=c.banho_inicio_iso?Math.max(0,Math.floor((agora-new Date(c.banho_inicio_iso).getTime())/1000)):0;
+    return `<div class="flow-card live">
+      <div class="flow-left">
+        <div class="cesto-badge">${c.numero_cesto}</div>
+        <div class="flow-info">
+          <div class="top">${c.processo||'Sem processo'} <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${c.tipo}</span></div>
+          <div class="ln">${c.n_itens>1?('<strong>'+c.n_itens+' OPs</strong>'):('OP <strong>'+(c.ordem||'—')+'</strong>')} · ${c.qtd_total||0} pç</div>
+          <div class="ln muted" style="font-size:12px;">${c.peso_total||0} kg · ${c.area_total||0} m² · Op: ${c.operador_banho_inicio||c.operador_banho||'—'}</div>
+          <div class="cron cron-banho cron-el" data-tipo="corrido" data-ini="${c.banho_inicio_iso}">${fmtTempo(seg)}</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+        <button class="btn btn-stop btn-sm" onclick="finalizar(${c.id},'${c.numero_cesto}')"><i class="bi bi-stop-circle-fill"></i>Sair do banho</button>
+        <button class="btn btn-ghost btn-sm" onclick="verDetalhesBanho(${c.id})"><i class="bi bi-eye"></i>Ver detalhes</button>
+      </div>
+    </div>`;
+  }).join(''):'<div class="empty panel"><i class="bi bi-droplet"></i>Nenhum cesto em banho.</div>';
+
+  const fl=document.getElementById('fila');
+  fl.innerHTML=j.fila.length?j.fila.map((c,i)=>{
+    const segEspera=c.prep_fim_iso?tempoUtilSegundos(new Date(c.prep_fim_iso).getTime(),agoraServidor()):0;
+    return `
+    <div class="flow-card">
+      <div class="flow-left">
+        <span class="fila-pos">${i+1}</span>
+        <div class="cesto-badge">${c.numero_cesto}</div>
+        <div class="flow-info">
+          <div class="top">${c.processo||'Sem processo'} <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${c.tipo}</span></div>
+          <div class="ln">${c.n_itens>1?('<strong>'+c.n_itens+' OPs</strong> · '+(c.texto_breve||'')):('OP <strong>'+(c.ordem||'—')+'</strong> · '+(c.texto_breve||''))}</div>
+          <div class="ln">${c.qtd_total||0} peças · ${c.peso_total||0} kg · ${c.area_total||0} m²</div>
+          <div class="ln muted" style="font-size:12px;">prep ${c.prep_minutos} min · esperando: <span class="cron-el cron-espera" data-tipo="fila" data-ini="${c.prep_fim_iso}" style="font-weight:700;color:var(--violet,#7C5CFC);">${fmtTempo(segEspera)}</span></div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+        <button class="btn btn-aqua btn-sm" onclick="iniciar(${c.id},'${c.numero_cesto}')"><i class="bi bi-play-fill"></i>Iniciar banho</button>
+        <button class="btn btn-ghost btn-sm" onclick="verDetalhesBanho(${c.id})"><i class="bi bi-eye"></i>Ver detalhes</button>
+      </div>
+    </div>`;}).join(''):'<div class="empty panel"><i class="bi bi-inbox"></i>Fila vazia.</div>';
+}
+
+/* ── Ver detalhes do cesto (todas as infos) ── */
+const _ESTADO_TXT={FILA_BANHO:'Na fila do banho',EM_BANHO:'Em banho'};
+function verDetalhesBanho(id){
+  const c=_cacheCards[id];
+  if(!c)return;
+  const itens=(c.itens&&c.itens.length)?c.itens:[{ordem:c.ordem,material:c.material,texto_breve:c.texto_breve,quantidade:c.quantidade}];
+  const linhas=itens.map(it=>`<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td><td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td></tr>`).join('');
+  const esperaTxt=c.estado==='FILA_BANHO'&&c.prep_fim_iso
+    ? fmtTempo(tempoUtilSegundos(new Date(c.prep_fim_iso).getTime(),agoraServidor()))
+    : (c.espera_min!=null?c.espera_min+' min':'—');
+  document.getElementById('dbTitulo').textContent='Cesto '+c.numero_cesto;
+  document.getElementById('dbCorpo').innerHTML=`
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <span class="pill pill-fila">${_ESTADO_TXT[c.estado]||c.estado}</span>
+      <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${c.tipo}</span>
+      <span class="pill pill-banho">${c.processo||'Sem processo'}</span>
+    </div>
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr><th>OP</th><th>Código</th><th>Descrição</th><th>Qtd</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table></div>
+    <div class="db-grid">
+      <div><span class="small muted">Total de peças</span><br><strong>${c.qtd_total||0}</strong></div>
+      <div><span class="small muted">Peso total</span><br><strong>${c.peso_total||0} kg</strong></div>
+      <div><span class="small muted">Área total</span><br><strong>${c.area_total||0} m²</strong></div>
+      <div><span class="small muted">Tempo de preparo</span><br><strong>${c.prep_minutos||0} min</strong></div>
+      <div><span class="small muted">Espera na fila</span><br><strong>${esperaTxt}</strong></div>
+      <div><span class="small muted">Nº operadores</span><br><strong>${c.n_operadores||1}</strong></div>
+      <div><span class="small muted">Operador preparação</span><br><strong>${c.operador_prep||'—'}</strong></div>
+      <div><span class="small muted">Fim da preparação</span><br><strong>${c.prep_fim||'—'}</strong></div>
+    </div>
+    ${c.observacao?`<div class="db-obs"><span class="small muted">Observação da preparação:</span><br>${c.observacao}</div>`:''}`;
+  document.getElementById('modalDetalhesBanho').classList.add('open');
+}
+function fecharDetalhesBanho(){document.getElementById('modalDetalhesBanho').classList.remove('open');}
+document.getElementById('modalDetalhesBanho').addEventListener('click',e=>{if(e.target.id==='modalDetalhesBanho')fecharDetalhesBanho();});
+
+function tick(){
+  const a=agoraServidor();
+  document.querySelectorAll('.cron-el[data-ini]').forEach(e=>{
+    if(!e.dataset.ini) return;
+    let seg;
+    if(e.dataset.tipo==='fila'){
+      seg=tempoUtilSegundos(new Date(e.dataset.ini).getTime(),a);
+    }else{
+      seg=Math.max(0,Math.floor((a-new Date(e.dataset.ini).getTime())/1000));
+    }
+    e.textContent=fmtTempo(seg);
+  });
+}
+
+/* ── Iniciar banho com confirmação ── */
+function iniciar(id, cesto){
+  idParaIniciar=id;
+  cestoParaIniciar=cesto;
+  document.getElementById('iCesto').textContent=cesto;
+  document.getElementById('modalIniciarConf').classList.add('open');
+}
+function fecharIniciarConf(){document.getElementById('modalIniciarConf').classList.remove('open');idParaIniciar=null;}
+async function confirmarIniciar(){
+  if(!idParaIniciar) return;
+  await fetch('/api/banho/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:idParaIniciar})});
+  fecharIniciarConf();
+  carregar();
+}
+document.getElementById('modalIniciarConf').addEventListener('click',e=>{if(e.target.id==='modalIniciarConf')fecharIniciarConf();});
+
+/* ── Finalizar banho ── */
+function finalizar(id, cesto){
+  document.getElementById('sId').value=id;
+  document.getElementById('sObs').value='';
+  document.getElementById('sCesto').textContent=cesto||'';
+  document.getElementById('modalSaida').classList.add('open');
+}
+function fecharSaida(){document.getElementById('modalSaida').classList.remove('open');}
+async function confirmarSaida(){
+  const id=document.getElementById('sId').value;
+  const obs=document.getElementById('sObs').value.trim();
+  await fetch('/api/banho/finalizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,obs_banho:obs})});
+  fecharSaida();carregar();
+}
+document.getElementById('modalSaida').addEventListener('click',e=>{if(e.target.id==='modalSaida')fecharSaida();});
+
+sincronizarRelogio().then(()=>carregarAgenda()).then(()=>{carregar();setInterval(carregar,4000);setInterval(tick,1000);});
+setInterval(sincronizarRelogio,60000);
+setInterval(carregarAgenda,300000);
+</script>
+{% endblock %}

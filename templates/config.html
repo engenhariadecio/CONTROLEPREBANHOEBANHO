@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block title %}Configurações — Controle Produtividade{% endblock %}
+{% block content %}
+<div style="max-width:760px;margin:0 auto;">
+  <div class="section-head"><div class="section-title"><i class="bi bi-gear-fill"></i>Configurações de jornada</div></div>
+  {% if msg %}<div class="alert alert-ok"><i class="bi bi-check-circle-fill"></i>{{ msg }}</div>{% endif %}
+
+  <div class="panel panel-pad" style="margin-bottom:18px;">
+    <p class="small muted" style="margin-bottom:18px;">
+      Defina o expediente da fábrica. O <strong>tempo de espera na fila do banho</strong> só conta dentro do
+      expediente — fora dele (noite, fim de semana, feriado) o cronômetro <strong>congela</strong> automaticamente,
+      em vez de seguir contando a madrugada e o fim de semana inteiro.
+    </p>
+
+    <form method="POST">
+      <!-- Liga/desliga a jornada -->
+      <div class="cfg-toggle-row">
+        <div>
+          <div class="cfg-toggle-title">Usar jornada de trabalho</div>
+          <div class="small muted">Se desligado, o tempo de espera conta corrido (24h por dia, 7 dias).</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" name="usar_jornada" {% if cfg.usar_jornada %}checked{% endif %}>
+          <span class="switch-slider"></span>
+        </label>
+      </div>
+
+      <div class="cfg-divisor"></div>
+
+      <!-- Horário -->
+      <div class="grid-2" style="margin-bottom:6px;">
+        <div class="field" style="margin:0;">
+          <label class="label">Início do expediente</label>
+          <input type="time" name="hora_inicio" class="input input-sm" value="{{ cfg.hora_inicio }}">
+        </div>
+        <div class="field" style="margin:0;">
+          <label class="label">Fim do expediente</label>
+          <input type="time" name="hora_fim" class="input input-sm" value="{{ cfg.hora_fim }}">
+        </div>
+      </div>
+
+      <div class="cfg-divisor"></div>
+
+      <!-- Dias da semana -->
+      <label class="label" style="margin-bottom:10px;display:block;">Trabalha aos fins de semana?</label>
+      <div class="cfg-toggle-row" style="border:none;padding:6px 0;">
+        <div class="cfg-toggle-title" style="font-size:.95rem;"><i class="bi bi-calendar-event"></i> Sábado</div>
+        <label class="switch">
+          <input type="checkbox" name="trabalha_sabado" {% if cfg.trabalha_sabado %}checked{% endif %}>
+          <span class="switch-slider"></span>
+        </label>
+      </div>
+      <div class="cfg-toggle-row" style="border:none;padding:6px 0;">
+        <div class="cfg-toggle-title" style="font-size:.95rem;"><i class="bi bi-calendar-event"></i> Domingo</div>
+        <label class="switch">
+          <input type="checkbox" name="trabalha_domingo" {% if cfg.trabalha_domingo %}checked{% endif %}>
+          <span class="switch-slider"></span>
+        </label>
+      </div>
+      <p class="small muted" style="margin:6px 0 0;">Segunda a sexta são sempre dias de trabalho (salvo feriado abaixo).</p>
+
+      <div class="cfg-divisor"></div>
+
+      <!-- Exceções -->
+      <div class="grid-2" style="margin-bottom:4px;">
+        <div class="field" style="margin:0;">
+          <label class="label"><i class="bi bi-calendar-plus"></i> Dias extras trabalhados</label>
+          <textarea name="dias_extra" class="input input-sm" rows="3"
+            placeholder="Um sábado/domingo que será trabalhado.&#10;Ex: 2026-07-11, 2026-08-15">{{ cfg.dias_extra | join(', ') }}</textarea>
+          <div class="hint">Datas (AAAA-MM-DD) que normalmente seriam folga mas <strong>serão trabalhadas</strong>.</div>
+        </div>
+        <div class="field" style="margin:0;">
+          <label class="label"><i class="bi bi-calendar-x"></i> Feriados / folgas</label>
+          <textarea name="dias_folga" class="input input-sm" rows="3"
+            placeholder="Dias úteis que NÃO serão trabalhados.&#10;Ex: 2026-09-07, 2026-10-12">{{ cfg.dias_folga | join(', ') }}</textarea>
+          <div class="hint">Datas (AAAA-MM-DD) que seriam úteis mas <strong>não terão trabalho</strong>.</div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-block" style="margin-top:20px;"><i class="bi bi-save"></i>Salvar configurações</button>
+    </form>
+  </div>
+
+  <div class="panel panel-pad">
+    <div class="section-title" style="font-size:1rem;margin-bottom:10px;"><i class="bi bi-info-circle"></i>Como funciona</div>
+    <ul class="cfg-lista small">
+      <li>Um cesto enviado para a fila às 17h de sexta, com expediente até 18h, conta <strong>1h</strong> de espera — e o cronômetro só volta a correr na segunda às 7h.</li>
+      <li>Marcou <strong>Sábado</strong>? Esse dia passa a contar normalmente no horário definido.</li>
+      <li>Precisa de um sábado pontual? Use <strong>Dias extras</strong> sem ligar todos os sábados.</li>
+      <li>A mudança vale na hora, inclusive para cestos que já estão na fila.</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}
