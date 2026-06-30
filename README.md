@@ -88,6 +88,21 @@ projeto, faça commit e redeploy. Colunas da lista: Ordem (OP), Material
 Area de Superficie, Peso. Em Admin → Lista mestra dá para conferir/recarregar.
 
 ==================================================================
+Manutenção e reset (Admin → Manutenção de cestos · ícone de ferramenta)
+==================================================================
+- Lista TODOS os cestos (ativos e concluídos), com busca e filtro por estado.
+- Editar qualquer cesto manualmente: número, estado, processo, tipo, tempos
+  (prep/banho em minutos), operadores, observações, OPs e — no modo avançado —
+  as datas/horas de início e fim (fuso local).
+- Excluir um cesto específico (inclusive concluído).
+- ZONA DE RESET (pede digitar APAGAR para confirmar):
+    • Apagar concluídos  -> reseta o histórico, mantém os em andamento;
+    • Apagar ativos      -> limpa os em andamento, mantém o histórico;
+    • Apagar tudo        -> zera o sistema para começar do zero na fábrica.
+  Dica: depois dos testes manuais, use "Apagar tudo" para entregar limpo.
+  Faça um backup antes (Lista mestra -> Baixar backup) por segurança.
+
+==================================================================
 Relatórios / backup
 ==================================================================
 Dashboard → Excel pré-banho, Excel banho e Excel geral (uma linha por OP).

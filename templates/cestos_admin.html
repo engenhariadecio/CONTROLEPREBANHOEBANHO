@@ -1,0 +1,325 @@
+{% extends 'base.html' %}
+{% block title %}Manutenção de Cestos — Controle Produtividade{% endblock %}
+{% block content %}
+<div style="max-width:1100px;margin:0 auto;">
+  <div class="section-head">
+    <div class="section-title"><i class="bi bi-tools"></i>Manutenção de cestos</div>
+    <button class="btn btn-ghost btn-sm" onclick="carregar()"><i class="bi bi-arrow-clockwise"></i>Atualizar</button>
+  </div>
+
+  <div class="alert alert-info" style="margin-bottom:16px;">
+    <i class="bi bi-info-circle-fill"></i>
+    Use esta tela para <strong>ajustar manualmente</strong> ou <strong>excluir</strong> cestos durante os testes, e para
+    <strong>resetar o histórico</strong> antes de rodar na fábrica. Faça um backup antes (Lista mestra → Baixar backup).
+  </div>
+
+  <!-- Filtros -->
+  <div class="panel panel-pad" style="margin-bottom:16px;">
+    <div class="filter-bar" style="margin:0;">
+      <div><label class="label">Estado</label>
+        <select id="fEstado" class="select input-sm" onchange="render()">
+          <option value="">Todos</option>
+          <option value="ATIVOS">Somente ativos</option>
+          <option value="PREPARANDO">Preparando</option>
+          <option value="PREENCHER">Preenchendo</option>
+          <option value="FILA_BANHO">Fila do banho</option>
+          <option value="EM_BANHO">Em banho</option>
+          <option value="CONCLUIDO">Concluídos</option>
+        </select>
+      </div>
+      <div><label class="label">Buscar</label>
+        <input id="fTexto" class="input input-sm" placeholder="Cesto, OP, código, processo…" oninput="render()">
+      </div>
+      <div style="display:flex;align-items:flex-end;"><span class="pill pill-banho" id="contador">0 cestos</span></div>
+    </div>
+  </div>
+
+  <!-- Tabela -->
+  <div class="panel" style="overflow:hidden;margin-bottom:26px;">
+    <div class="table-wrap">
+      <table class="tbl">
+        <thead><tr>
+          <th>#</th><th>Cesto</th><th>Estado</th><th>OP</th><th>Processo</th><th>Tipo</th>
+          <th>Prep</th><th>Banho</th><th>Fim</th><th style="text-align:right;">Ações</th>
+        </tr></thead>
+        <tbody id="tbody"><tr><td colspan="10" class="empty">Carregando…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Zona de perigo / reset -->
+  <div class="section-title" style="font-size:1rem;margin:0 0 12px;color:var(--red);"><i class="bi bi-exclamation-octagon-fill"></i>Zona de reset (cuidado)</div>
+  <div class="panel panel-pad danger-zone">
+    <p class="small muted" style="margin-bottom:16px;">
+      Estas ações <strong>apagam dados permanentemente</strong>. Use ao terminar os testes, antes de liberar para a fábrica.
+      A exclusão não pode ser desfeita — só restaurando um backup.
+    </p>
+    <div class="reset-grid">
+      <div class="reset-item">
+        <div><strong>Resetar histórico</strong><div class="small muted">Apaga todos os cestos CONCLUÍDOS. Mantém os que estão em andamento.</div></div>
+        <button class="btn btn-stop btn-sm" onclick="abrirReset('concluidos')"><i class="bi bi-clock-history"></i>Apagar concluídos</button>
+      </div>
+      <div class="reset-item">
+        <div><strong>Limpar cestos ativos</strong><div class="small muted">Apaga os cestos em andamento (preparando, fila, em banho). Mantém o histórico.</div></div>
+        <button class="btn btn-stop btn-sm" onclick="abrirReset('ativos')"><i class="bi bi-grid-3x3-gap"></i>Apagar ativos</button>
+      </div>
+      <div class="reset-item reset-item-total">
+        <div><strong>Zerar tudo</strong><div class="small muted">Apaga <strong>TODOS</strong> os cestos (ativos e histórico). Recomeça do zero.</div></div>
+        <button class="btn btn-danger btn-sm" onclick="abrirReset('tudo')"><i class="bi bi-trash3-fill"></i>Apagar tudo</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal editar cesto -->
+<div class="modal-overlay" id="modalEditar">
+  <div class="modal" style="max-width:680px;">
+    <div class="modal-head">
+      <h5><i class="bi bi-pencil-square"></i>Editar cesto <span id="edTitulo"></span></h5>
+      <button class="modal-x" onclick="fecharEditar()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body" style="max-height:70vh;overflow:auto;">
+      <input type="hidden" id="edId">
+      <div class="grid-2">
+        <div class="field" style="margin:0;"><label class="label">Nº do cesto</label>
+          <input id="edNumero" type="text" inputmode="numeric" class="input input-sm"></div>
+        <div class="field" style="margin:0;"><label class="label">Estado</label>
+          <select id="edEstado" class="select input-sm">
+            <option value="PREPARANDO">Preparando</option>
+            <option value="PREENCHER">Preenchendo</option>
+            <option value="FILA_BANHO">Fila do banho</option>
+            <option value="EM_BANHO">Em banho</option>
+            <option value="CONCLUIDO">Concluído</option>
+          </select></div>
+        <div class="field" style="margin:0;"><label class="label">Processo</label>
+          <select id="edProc" class="select input-sm"><option value="">—</option>{% for p in processos %}<option>{{ p }}</option>{% endfor %}</select></div>
+        <div class="field" style="margin:0;"><label class="label">Tipo</label>
+          <select id="edTipo" class="select input-sm"><option>Normal</option><option>Retrabalho</option></select></div>
+        <div class="field" style="margin:0;"><label class="label">Tempo preparo (min)</label>
+          <input id="edPrepMin" type="text" inputmode="decimal" class="input input-sm"></div>
+        <div class="field" style="margin:0;"><label class="label">Tempo banho (min)</label>
+          <input id="edBanhoMin" type="text" inputmode="decimal" class="input input-sm"></div>
+        <div class="field" style="margin:0;"><label class="label">Nº operadores</label>
+          <select id="edNOper" class="select input-sm"><option>1</option><option>2</option><option>3</option></select></div>
+        <div class="field" style="margin:0;"><label class="label">Operador preparação</label>
+          <input id="edOpPrep" class="input input-sm"></div>
+      </div>
+
+      <label class="label" style="margin-top:14px;">Ordens (OPs) do cesto</label>
+      <div id="edItens" class="itens-list"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="addItem()"><i class="bi bi-plus-lg"></i>Adicionar OP</button>
+
+      <div class="field" style="margin:14px 0 0;"><label class="label">Observação (preparação)</label>
+        <textarea id="edObs" class="input input-sm" rows="2"></textarea></div>
+      <div class="field" style="margin:10px 0 0;"><label class="label">Observação (banho)</label>
+        <textarea id="edObsBanho" class="input input-sm" rows="2"></textarea></div>
+
+      <details class="ed-avancado">
+        <summary><i class="bi bi-sliders"></i> Datas e horas (avançado)</summary>
+        <div class="grid-2" style="margin-top:12px;">
+          <div class="field" style="margin:0;"><label class="label">Início preparo</label>
+            <input id="edPrepIni" type="datetime-local" class="input input-sm"></div>
+          <div class="field" style="margin:0;"><label class="label">Fim preparo</label>
+            <input id="edPrepFim" type="datetime-local" class="input input-sm"></div>
+          <div class="field" style="margin:0;"><label class="label">Início banho</label>
+            <input id="edBanhoIni" type="datetime-local" class="input input-sm"></div>
+          <div class="field" style="margin:0;"><label class="label">Fim banho</label>
+            <input id="edBanhoFim" type="datetime-local" class="input input-sm"></div>
+        </div>
+        <p class="hint" style="margin-top:8px;">Horários no fuso local (Brasil). Alterar aqui muda os tempos e em que dia o cesto aparece no histórico.</p>
+      </details>
+      <p id="edMsg" class="hint" style="color:var(--red);margin-top:10px;"></p>
+    </div>
+    <div class="modal-foot" style="flex-wrap:wrap;gap:8px;">
+      <button class="btn btn-danger btn-sm" onclick="excluirAtual()" style="flex:0 0 auto;"><i class="bi bi-trash-fill"></i>Excluir cesto</button>
+      <div style="flex:1;"></div>
+      <button class="btn btn-ghost" onclick="fecharEditar()" style="flex:0 0 auto;">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarEditar()" style="flex:0 0 auto;min-width:140px;"><i class="bi bi-save"></i>Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de reset -->
+<div class="modal-overlay" id="modalReset">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-head">
+      <h5><i class="bi bi-exclamation-triangle-fill"></i>Confirmar exclusão</h5>
+      <button class="modal-x" onclick="fecharReset()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body" style="padding:22px 20px;">
+      <p id="resetTexto" style="margin:0 0 14px;font-size:15px;"></p>
+      <label class="label">Para confirmar, digite <strong>APAGAR</strong></label>
+      <input id="resetConfirma" class="input" placeholder="APAGAR" autocomplete="off" oninput="document.getElementById('resetMsg').textContent=''">
+      <p id="resetMsg" class="hint" style="color:var(--red);margin-top:8px;"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="fecharReset()" style="flex:0 0 auto;">Cancelar</button>
+      <button class="btn btn-danger" style="flex:1;" onclick="confirmarReset()"><i class="bi bi-trash3-fill"></i>Apagar definitivamente</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let CARDS=[];
+let edItens=[];
+const ESTADO_LBL={PREPARANDO:'Preparando',PREENCHER:'Preenchendo',FILA_BANHO:'Fila do banho',EM_BANHO:'Em banho',CONCLUIDO:'Concluído'};
+const ESTADO_PILL={PREPARANDO:'pill-prep',PREENCHER:'pill-normal',FILA_BANHO:'pill-fila',EM_BANHO:'pill-banho',CONCLUIDO:'pill-normal'};
+const ATIVOS=['PREPARANDO','PREENCHER','FILA_BANHO','EM_BANHO'];
+
+async function carregar(){
+  try{
+    const j=await (await fetch('/api/admin/cards')).json();
+    CARDS=j.cards||[];
+    render();
+  }catch(e){
+    document.getElementById('tbody').innerHTML='<tr><td colspan="10" class="empty">Erro ao carregar.</td></tr>';
+  }
+}
+
+function render(){
+  const est=document.getElementById('fEstado').value;
+  const txt=(document.getElementById('fTexto').value||'').toLowerCase().trim();
+  let lista=CARDS.slice();
+  if(est==='ATIVOS') lista=lista.filter(c=>ATIVOS.includes(c.estado));
+  else if(est) lista=lista.filter(c=>c.estado===est);
+  if(txt){
+    lista=lista.filter(c=>{
+      const itens=(c.itens&&c.itens.length)?c.itens:[{ordem:c.ordem,material:c.material,texto_breve:c.texto_breve}];
+      const blob=(c.numero_cesto+' '+itens.map(i=>(i.ordem||'')+' '+(i.material||'')+' '+(i.texto_breve||'')).join(' ')+' '+(c.processo||'')+' '+(c.tipo||'')).toLowerCase();
+      return blob.includes(txt);
+    });
+  }
+  document.getElementById('contador').textContent=lista.length+(lista.length===1?' cesto':' cestos');
+  const tb=document.getElementById('tbody');
+  if(!lista.length){tb.innerHTML='<tr><td colspan="10" class="empty">Nenhum cesto.</td></tr>';return;}
+  tb.innerHTML=lista.map(c=>`
+    <tr class="${c.tipo==='Retrabalho'?'retrab':''}">
+      <td>${c.id}</td>
+      <td><strong>${c.numero_cesto}</strong></td>
+      <td><span class="pill ${ESTADO_PILL[c.estado]||''}">${ESTADO_LBL[c.estado]||c.estado}</span></td>
+      <td>${c.n_itens>1?(c.ordem+' +'+(c.n_itens-1)):(c.ordem||'—')}</td>
+      <td><span class="small">${c.processo||'—'}</span></td>
+      <td><span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${c.tipo}</span></td>
+      <td class="mono">${c.prep_minutos||0}</td>
+      <td class="mono">${c.banho_minutos||0}</td>
+      <td><span class="small">${c.banho_fim||'—'}</span></td>
+      <td style="text-align:right;white-space:nowrap;">
+        <button class="btn btn-ghost btn-sm btn-icon" title="Editar" onclick="abrirEditar(${c.id})"><i class="bi bi-pencil-fill"></i></button>
+        <button class="btn btn-stop btn-sm btn-icon" title="Excluir" onclick="excluir(${c.id})"><i class="bi bi-trash-fill"></i></button>
+      </td>
+    </tr>`).join('');
+}
+
+/* ── Editar ── */
+function abrirEditar(id){
+  const c=CARDS.find(x=>x.id===id);if(!c)return;
+  document.getElementById('edId').value=c.id;
+  document.getElementById('edTitulo').textContent='#'+c.id+' · cesto '+c.numero_cesto;
+  document.getElementById('edNumero').value=c.numero_cesto;
+  document.getElementById('edEstado').value=c.estado;
+  document.getElementById('edProc').value=c.processo||'';
+  document.getElementById('edTipo').value=c.tipo||'Normal';
+  document.getElementById('edPrepMin').value=c.prep_minutos||0;
+  document.getElementById('edBanhoMin').value=c.banho_minutos||0;
+  document.getElementById('edNOper').value=c.n_operadores||1;
+  document.getElementById('edOpPrep').value=c.operador_prep||'';
+  document.getElementById('edObs').value=c.observacao||'';
+  document.getElementById('edObsBanho').value=c.obs_banho||'';
+  document.getElementById('edPrepIni').value=c.prep_inicio_input||'';
+  document.getElementById('edPrepFim').value=c.prep_fim_input||'';
+  document.getElementById('edBanhoIni').value=c.banho_inicio_input||'';
+  document.getElementById('edBanhoFim').value=c.banho_fim_input||'';
+  document.getElementById('edMsg').textContent='';
+  edItens=(c.itens&&c.itens.length)?JSON.parse(JSON.stringify(c.itens)):[];
+  renderItens();
+  document.getElementById('modalEditar').classList.add('open');
+}
+function fecharEditar(){document.getElementById('modalEditar').classList.remove('open');}
+document.getElementById('modalEditar').addEventListener('click',e=>{if(e.target.id==='modalEditar')fecharEditar();});
+
+function renderItens(){
+  const el=document.getElementById('edItens');
+  if(!edItens.length){el.innerHTML='<div class="muted small" style="padding:6px 0;">Sem OPs.</div>';return;}
+  el.innerHTML=edItens.map((it,i)=>`
+    <div class="item-op-edit">
+      <div class="item-op-head"><span class="item-op-n">${i+1}</span>
+        <button class="item-op-del" onclick="delItem(${i})"><i class="bi bi-trash"></i></button></div>
+      <div class="item-grid">
+        <div><label class="mini-label">OP</label><input class="input input-sm" value="${it.ordem||''}" oninput="setItem(${i},'ordem',this.value)"></div>
+        <div><label class="mini-label">Código</label><input class="input input-sm" value="${it.material||''}" oninput="setItem(${i},'material',this.value)"></div>
+        <div class="item-grid-full"><label class="mini-label">Descrição</label><input class="input input-sm" value="${(it.texto_breve||'').replace(/"/g,'&quot;')}" oninput="setItem(${i},'texto_breve',this.value)"></div>
+        <div><label class="mini-label">Qtd</label><input class="input input-sm" inputmode="numeric" value="${it.quantidade||0}" oninput="setItem(${i},'quantidade',this.value)"></div>
+      </div>
+    </div>`).join('');
+}
+function setItem(i,k,v){edItens[i][k]=(k==='quantidade')?(parseInt(v)||0):v;}
+function delItem(i){edItens.splice(i,1);renderItens();}
+function addItem(){edItens.push({ordem:'',material:'',texto_breve:'',quantidade:0});renderItens();}
+
+async function salvarEditar(){
+  const id=document.getElementById('edId').value;
+  const payload={
+    id, numero_cesto:document.getElementById('edNumero').value,
+    estado:document.getElementById('edEstado').value,
+    processo:document.getElementById('edProc').value,
+    tipo:document.getElementById('edTipo').value,
+    prep_minutos:document.getElementById('edPrepMin').value,
+    banho_minutos:document.getElementById('edBanhoMin').value,
+    n_operadores:document.getElementById('edNOper').value,
+    operador_prep:document.getElementById('edOpPrep').value,
+    observacao:document.getElementById('edObs').value,
+    obs_banho:document.getElementById('edObsBanho').value,
+    prep_inicio_input:document.getElementById('edPrepIni').value,
+    prep_fim_input:document.getElementById('edPrepFim').value,
+    banho_inicio_input:document.getElementById('edBanhoIni').value,
+    banho_fim_input:document.getElementById('edBanhoFim').value,
+    itens:edItens
+  };
+  try{
+    const d=await (await fetch('/api/admin/card/salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json();
+    if(d.sucesso){fecharEditar();carregar();}
+    else document.getElementById('edMsg').textContent=d.erro||'Não foi possível salvar.';
+  }catch(e){document.getElementById('edMsg').textContent='Erro ao salvar.';}
+}
+
+function excluirAtual(){const id=document.getElementById('edId').value;excluir(parseInt(id),true);}
+async function excluir(id,fromModal){
+  if(!confirm('Excluir o cesto #'+id+' definitivamente? Esta ação não pode ser desfeita.'))return;
+  try{
+    const d=await (await fetch('/api/admin/card/excluir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})).json();
+    if(d.sucesso){if(fromModal)fecharEditar();carregar();}else alert(d.erro||'Erro ao excluir.');
+  }catch(e){alert('Erro ao excluir.');}
+}
+
+/* ── Reset em massa ── */
+let _resetEscopo=null;
+const RESET_TXT={
+  concluidos:'Isto vai apagar TODOS os cestos concluídos (o histórico). Os cestos em andamento serão mantidos.',
+  ativos:'Isto vai apagar todos os cestos em andamento (preparando, fila e em banho). O histórico será mantido.',
+  tudo:'Isto vai apagar TODOS os cestos — ativos e histórico. O sistema recomeça do zero.'
+};
+function abrirReset(escopo){
+  _resetEscopo=escopo;
+  document.getElementById('resetTexto').textContent=RESET_TXT[escopo]||'';
+  document.getElementById('resetConfirma').value='';
+  document.getElementById('resetMsg').textContent='';
+  document.getElementById('modalReset').classList.add('open');
+  setTimeout(()=>document.getElementById('resetConfirma').focus(),200);
+}
+function fecharReset(){document.getElementById('modalReset').classList.remove('open');_resetEscopo=null;}
+document.getElementById('modalReset').addEventListener('click',e=>{if(e.target.id==='modalReset')fecharReset();});
+async function confirmarReset(){
+  const conf=document.getElementById('resetConfirma').value.trim();
+  if(conf!=='APAGAR'){document.getElementById('resetMsg').textContent='Digite APAGAR para confirmar.';return;}
+  try{
+    const d=await (await fetch('/api/admin/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({escopo:_resetEscopo,confirmacao:'APAGAR'})})).json();
+    if(d.sucesso){fecharReset();carregar();alert(d.apagados+' cesto(s) apagado(s).');}
+    else document.getElementById('resetMsg').textContent=d.erro||'Não foi possível apagar.';
+  }catch(e){document.getElementById('resetMsg').textContent='Erro ao apagar.';}
+}
+
+carregar();
+</script>
+{% endblock %}

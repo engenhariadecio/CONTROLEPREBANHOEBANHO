@@ -1430,6 +1430,179 @@ def admin_config():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Manutenção de cestos (admin) — ajustar/excluir manualmente e resetar histórico
+# ─────────────────────────────────────────────────────────────────────────────
+def _dt_para_input_local(dt):
+    """UTC armazenado -> 'YYYY-MM-DDTHH:MM' em horário local (UTC-3) p/ <input datetime-local>."""
+    if not dt:
+        return ''
+    return (dt - timedelta(hours=FUSO_LOCAL_HORAS)).strftime('%Y-%m-%dT%H:%M')
+
+
+def _input_local_para_dt(s):
+    """'YYYY-MM-DDTHH:MM' (local) -> datetime UTC. Vazio -> None."""
+    s = (s or '').strip()
+    if not s:
+        return None
+    s = s.replace(' ', 'T')
+    for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M'):
+        try:
+            local = datetime.strptime(s, fmt)
+            return local + timedelta(hours=FUSO_LOCAL_HORAS)
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
+def _card_admin_dict(c):
+    d = c.to_dict()
+    d['prep_inicio_input'] = _dt_para_input_local(c.prep_inicio)
+    d['prep_fim_input'] = _dt_para_input_local(c.prep_fim)
+    d['banho_inicio_input'] = _dt_para_input_local(c.banho_inicio)
+    d['banho_fim_input'] = _dt_para_input_local(c.banho_fim)
+    return d
+
+
+@app.route('/admin/cestos')
+@login_required('admin')
+def admin_cestos():
+    return render_template('cestos_admin.html', nome=session.get('nome'),
+                           processos=PROCESSOS, estados_ativos=list(ESTADOS_ATIVOS))
+
+
+@app.route('/api/admin/cards')
+@login_required('admin')
+def api_admin_cards():
+    """Lista TODOS os cestos (ativos e concluídos) para a tela de manutenção."""
+    db = Session()
+    try:
+        cards = db.query(Card).order_by(Card.id.desc()).all()
+        return jsonify({'cards': [_card_admin_dict(c) for c in cards],
+                        'total': len(cards)})
+    finally:
+        db.close()
+
+
+@app.route('/api/admin/card/salvar', methods=['POST'])
+@login_required('admin')
+def api_admin_card_salvar():
+    """Ajuste manual completo de um cesto (admin)."""
+    d = request.json or {}
+    db = Session()
+    try:
+        card = db.query(Card).get(int(d.get('id', 0)))
+        if not card:
+            return jsonify({'sucesso': False, 'erro': 'Cesto não encontrado.'}), 404
+
+        # número do cesto
+        if d.get('numero_cesto') not in (None, ''):
+            try:
+                card.numero_cesto = int(d.get('numero_cesto'))
+            except (ValueError, TypeError):
+                return jsonify({'sucesso': False, 'erro': 'Número do cesto inválido.'}), 400
+
+        # estado
+        if d.get('estado'):
+            estados_validos = (ST_PREPARANDO, ST_PREENCHER, ST_FILA_BANHO, ST_EM_BANHO, ST_CONCLUIDO)
+            if d['estado'] not in estados_validos:
+                return jsonify({'sucesso': False, 'erro': 'Estado inválido.'}), 400
+            card.estado = d['estado']
+
+        # campos de texto / meta
+        for campo in ('processo', 'observacao', 'obs_banho',
+                      'operador_prep', 'operador_prep2',
+                      'operador_banho_inicio', 'operador_banho_fim'):
+            if campo in d:
+                setattr(card, campo, (d.get(campo) or '').strip())
+        if d.get('tipo') in ('Normal', 'Retrabalho'):
+            card.tipo = d['tipo']
+        if 'operador_banho_inicio' in d:
+            card.operador_banho = (d.get('operador_banho_inicio') or '').strip() or card.operador_banho
+
+        # nº operadores
+        if d.get('n_operadores') not in (None, ''):
+            try:
+                n = int(d.get('n_operadores'))
+                card.n_operadores = n if n in (1, 2, 3) else card.n_operadores
+            except (ValueError, TypeError):
+                pass
+
+        # tempos (minutos)
+        for campo in ('prep_minutos', 'banho_minutos'):
+            if d.get(campo) not in (None, ''):
+                try:
+                    setattr(card, campo, round(float(d.get(campo)), 1))
+                except (ValueError, TypeError):
+                    pass
+
+        # datas/horas (avançado) — recebidas em horário local
+        for campo in ('prep_inicio', 'prep_fim', 'banho_inicio', 'banho_fim'):
+            chave = campo + '_input'
+            if chave in d:
+                setattr(card, campo, _input_local_para_dt(d.get(chave)))
+
+        # itens (OPs)
+        if 'itens' in d:
+            _salvar_itens(card, d)
+
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return jsonify({'sucesso': False,
+                            'erro': f'Já existe outro cesto ATIVO com o número {card.numero_cesto}. '
+                                    f'Mude o número ou o estado.'}), 400
+        return jsonify({'sucesso': True})
+    finally:
+        db.close()
+
+
+@app.route('/api/admin/card/excluir', methods=['POST'])
+@login_required('admin')
+def api_admin_card_excluir():
+    """Exclui um cesto específico (qualquer estado, inclusive concluído)."""
+    d = request.json or {}
+    db = Session()
+    try:
+        card = db.query(Card).get(int(d.get('id', 0)))
+        if not card:
+            return jsonify({'sucesso': False, 'erro': 'Cesto não encontrado.'}), 404
+        db.delete(card)
+        db.commit()
+        return jsonify({'sucesso': True})
+    finally:
+        db.close()
+
+
+@app.route('/api/admin/reset', methods=['POST'])
+@login_required('admin')
+def api_admin_reset():
+    """Reset em massa. escopo: 'concluidos' | 'ativos' | 'tudo'.
+    Exige confirmacao == 'APAGAR'."""
+    d = request.json or {}
+    escopo = d.get('escopo')
+    if d.get('confirmacao') != 'APAGAR':
+        return jsonify({'sucesso': False, 'erro': 'Confirmação inválida. Digite APAGAR.'}), 400
+    db = Session()
+    try:
+        if escopo == 'concluidos':
+            n = db.query(Card).filter_by(estado=ST_CONCLUIDO).delete(synchronize_session=False)
+        elif escopo == 'ativos':
+            n = db.query(Card).filter(Card.estado.in_(ESTADOS_ATIVOS)).delete(synchronize_session=False)
+        elif escopo == 'tudo':
+            n = db.query(Card).delete(synchronize_session=False)
+        else:
+            return jsonify({'sucesso': False, 'erro': 'Escopo inválido.'}), 400
+        db.commit()
+        return jsonify({'sucesso': True, 'apagados': int(n or 0)})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'sucesso': False, 'erro': str(e)}), 500
+    finally:
+        db.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Export Excel
 # ─────────────────────────────────────────────────────────────────────────────
 def _estilo_cabecalho(ws, headers):

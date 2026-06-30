@@ -672,3 +672,19 @@ img,canvas{max-width:100%;}
   .gp-kpi-ic{width:44px;height:44px;font-size:1.2rem;border-radius:12px;}
   .gp-kpi-val{font-size:1.7rem;}
 }
+
+/* ── Manutenção de cestos: zona de reset ── */
+.danger-zone{border:1.5px solid var(--red-soft);background:linear-gradient(180deg,#fff,#fdf6f5);}
+.reset-grid{display:flex;flex-direction:column;gap:10px;}
+.reset-item{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:#fff;}
+.reset-item-total{border-color:var(--red);background:linear-gradient(180deg,#fff,#fbeae9);}
+.reset-item .btn{flex:0 0 auto;}
+.ed-avancado{margin-top:16px;border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:#fafcff;}
+.ed-avancado summary{cursor:pointer;font-weight:700;color:var(--aco-900);display:flex;align-items:center;gap:7px;list-style:none;}
+.ed-avancado summary::-webkit-details-marker{display:none;}
+.ed-avancado[open] summary{margin-bottom:4px;}
+@media (max-width:560px){
+  .reset-item{flex-direction:column;align-items:stretch;}
+  .reset-item .btn{width:100%;justify-content:center;}
+}
