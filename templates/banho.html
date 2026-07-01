@@ -165,6 +165,23 @@ async function carregar(){
 
 /* ── Ver detalhes do cesto (todas as infos) ── */
 const _ESTADO_TXT={FILA_BANHO:'Na fila do banho',EM_BANHO:'Em banho'};
+function _operadoresBanhoHTML(c){
+  let html='';
+  const ops=c.operadores_prep||[];
+  if(ops.length){
+    html+=`<div style="margin-top:14px;"><span class="small muted"><i class="bi bi-people-fill"></i> Operadores da preparação</span>
+      <div class="det-oper">${ops.map(o=>`<span class="det-oper-chip">${o.nome||'—'}${o.matricula?` <span class="mat">mat. ${o.matricula}</span>`:''}</span>`).join('')}</div></div>`;
+  }
+  const bi=c.operador_banho_inicio,bim=c.oper_banho_ini_mat,bf=c.operador_banho_fim,bfm=c.oper_banho_fim_mat;
+  if(bi||bf){
+    html+=`<div style="margin-top:12px;"><span class="small muted"><i class="bi bi-droplet-fill"></i> Operador do banho</span>
+      <div class="det-oper">`+
+      (bi?`<span class="det-oper-chip">${bi}${bim?` <span class="mat">mat. ${bim}</span>`:''}${(bf&&bf!==bi)?' (início)':''}</span>`:'')+
+      ((bf&&bf!==bi)?`<span class="det-oper-chip">${bf}${bfm?` <span class="mat">mat. ${bfm}</span>`:''} (fim)</span>`:'')+
+      `</div></div>`;
+  }
+  return html;
+}
 function verDetalhesBanho(id){
   const c=_cacheCards[id];
   if(!c)return;
@@ -191,14 +208,13 @@ function verDetalhesBanho(id){
       <div><span class="small muted">Tempo de preparo</span><br><strong>${c.prep_minutos||0} min</strong></div>
       <div><span class="small muted">Espera na fila</span><br><strong>${esperaTxt}</strong></div>
       <div><span class="small muted">Nº operadores</span><br><strong>${c.n_operadores||1}</strong></div>
-      <div><span class="small muted">Operador preparação</span><br><strong>${c.operador_prep||'—'}</strong></div>
       <div><span class="small muted">Fim da preparação</span><br><strong>${c.prep_fim||'—'}</strong></div>
     </div>
+    ${_operadoresBanhoHTML(c)}
     ${c.observacao?`<div class="db-obs"><span class="small muted">Observação da preparação:</span><br>${c.observacao}</div>`:''}`;
   document.getElementById('modalDetalhesBanho').classList.add('open');
 }
-function fecharDetalhesBanho(){document.getElementById('modalDetalhesBanho').classList.remove('open');}
-document.getElementById('modalDetalhesBanho').addEventListener('click',e=>{if(e.target.id==='modalDetalhesBanho')fecharDetalhesBanho();});
+function fecharDetalhesBanho(){document.getElementById('modalDetalhesBanho').classList.remove('open');}document.getElementById('modalDetalhesBanho').addEventListener('click',e=>{if(e.target.id==='modalDetalhesBanho')fecharDetalhesBanho();});
 
 function tick(){
   const a=agoraServidor();

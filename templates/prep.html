@@ -24,7 +24,7 @@
     </div>
     <div class="modal-body">
 
-      <!-- VIEW 1: iniciar (escolhe nº de operadores) -->
+      <!-- VIEW 1: iniciar (escolhe nº de operadores e, se quiser, os nomes) -->
       <div id="viewIniciar" style="display:none;">
         <label class="label">Quantos operadores neste cesto?</label>
         <div class="opbtns">
@@ -32,7 +32,27 @@
           <button class="opbtn" id="op2btn" onclick="setNOper(2)">2</button>
           <button class="opbtn" id="op3btn" onclick="setNOper(3)">3</button>
         </div>
-        <button class="btn btn-aqua btn-block" style="margin-top:20px;" onclick="iniciarPrep()"><i class="bi bi-play-fill"></i>Iniciar preparação</button>
+
+        <!-- Pergunta: selecionar nomes? -->
+        <div id="opAsk" style="margin-top:22px;">
+          <label class="label">Deseja selecionar os operadores?</label>
+          <div class="op-ask">
+            <button class="btn btn-ghost" onclick="mostrarSelOper()"><i class="bi bi-person-check-fill"></i>Sim, escolher nomes</button>
+            <button class="btn btn-aqua" onclick="iniciarPrep()"><i class="bi bi-play-fill"></i>Não, iniciar direto</button>
+          </div>
+          <p class="hint" style="margin-top:12px;">Se não escolher, o cesto ficará no seu nome (líder logado).</p>
+        </div>
+
+        <!-- Seleção dos operadores -->
+        <div id="opSel" style="display:none;margin-top:18px;">
+          <label class="label">Selecione os operadores <span class="filtro-hint" id="opSelCount">— 0 de 1</span></label>
+          <input id="opSearch" class="input input-sm" placeholder="Buscar por nome ou matrícula…" oninput="renderOperLista()" style="margin-bottom:8px;">
+          <div id="opLista" class="op-lista"><div class="muted small" style="padding:8px;">Carregando operadores…</div></div>
+          <div style="display:flex;gap:10px;margin-top:14px;">
+            <button class="btn btn-ghost" style="flex:0 0 auto;" onclick="voltarAsk()"><i class="bi bi-arrow-left"></i>Voltar</button>
+            <button class="btn btn-aqua" style="flex:1;" id="opConfirmBtn" onclick="iniciarPrep()" disabled><i class="bi bi-play-fill"></i>Iniciar preparação</button>
+          </div>
+        </div>
       </div>
 
       <!-- VIEW 2: cronômetro -->
@@ -198,16 +218,64 @@ function tick(){
   if(modalEstado==='cron'&&cardAtual&&!cardAtual.pausado)document.getElementById('cronBig').textContent=fmtTempo(segPrep(cardAtual));
 }
 
+let OPERADORES=[];       // [{nome,matricula}]
+let _selOper=[];         // matrículas selecionadas (mantém ordem)
+async function carregarOperadores(){
+  try{ OPERADORES=await (await fetch('/api/operadores/prep')).json(); }catch(_){ OPERADORES=[]; }
+}
+
 function setNOper(n){
   nOper=n;
   document.getElementById('op1btn').classList.toggle('active',n===1);
   document.getElementById('op2btn').classList.toggle('active',n===2);
   document.getElementById('op3btn').classList.toggle('active',n===3);
+  // se estiver selecionando, respeita o novo limite
+  if(_selOper.length>nOper)_selOper=_selOper.slice(0,nOper);
+  if(document.getElementById('opSel').style.display!=='none')renderOperLista();
+}
+
+function mostrarSelOper(){
+  document.getElementById('opAsk').style.display='none';
+  document.getElementById('opSel').style.display='block';
+  document.getElementById('opSearch').value='';
+  renderOperLista();
+}
+function voltarAsk(){
+  document.getElementById('opSel').style.display='none';
+  document.getElementById('opAsk').style.display='block';
+}
+function toggleOper(m){
+  const i=_selOper.indexOf(m);
+  if(i>=0){ _selOper.splice(i,1); }        // desmarca
+  else if(nOper===1){ _selOper=[m]; }       // 1 operador = troca direto
+  else if(_selOper.length<nOper){ _selOper.push(m); }  // adiciona até o limite
+  // se já atingiu o limite (2 ou 3), é preciso desmarcar antes de trocar
+  renderOperLista();
+}
+function renderOperLista(){
+  const termo=(document.getElementById('opSearch').value||'').toLowerCase().trim();
+  const lista=OPERADORES.filter(o=>!termo||(o.nome||'').toLowerCase().includes(termo)||(o.matricula||'').toLowerCase().includes(termo));
+  const el=document.getElementById('opLista');
+  if(!OPERADORES.length){el.innerHTML='<div class="muted small" style="padding:8px;">Nenhum operador de preparação cadastrado. Cadastre em Usuários (perfil Preparação).</div>';}
+  else if(!lista.length){el.innerHTML='<div class="muted small" style="padding:8px;">Nenhum operador encontrado.</div>';}
+  else{
+    el.innerHTML=lista.map(o=>{
+      const sel=_selOper.includes(o.matricula);
+      return `<button type="button" class="op-item${sel?' sel':''}" onclick="toggleOper('${o.matricula}')">
+        <span class="op-check"><i class="bi ${sel?'bi-check-circle-fill':'bi-circle'}"></i></span>
+        <span class="op-nome">${o.nome||'—'}</span>
+        <span class="op-mat">mat. ${o.matricula||'—'}</span>
+      </button>`;}).join('');
+  }
+  document.getElementById('opSelCount').textContent=`— ${_selOper.length} de ${nOper}`;
+  document.getElementById('opConfirmBtn').disabled=(_selOper.length===0);
 }
 
 function abrirLivre(num){
-  cestoSel=num; modalEstado='iniciar'; cardAtual=null; setNOper(1);
+  cestoSel=num; modalEstado='iniciar'; cardAtual=null; _selOper=[]; setNOper(1);
   document.getElementById('mCesto').textContent=num;
+  document.getElementById('opAsk').style.display='block';
+  document.getElementById('opSel').style.display='none';
   mostrarView('iniciar');
   document.getElementById('modal').classList.add('open');
 }
@@ -331,7 +399,7 @@ function atualizarBotaoPausa(p){
 function fecharModal(){document.getElementById('modal').classList.remove('open');modalEstado='';cardAtual=null;itens=[];}
 
 async function iniciarPrep(){
-  const j=await (await fetch('/api/prep/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({numero_cesto:cestoSel,n_operadores:nOper})})).json();
+  const j=await (await fetch('/api/prep/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({numero_cesto:cestoSel,n_operadores:nOper,operadores:_selOper})})).json();
   if(j.sucesso){
     // re-sincroniza o relógio e abre o cronômetro já zerado (00:00) contando
     await sincronizarRelogio();
@@ -438,6 +506,7 @@ async function cancelarCesto(){
   }catch(e){msg.textContent='Erro ao cancelar.';}
 }
 
+carregarOperadores();
 sincronizarRelogio().then(()=>{carregar();setInterval(carregar,5000);setInterval(tick,1000);});
 setInterval(sincronizarRelogio,60000);
 </script>

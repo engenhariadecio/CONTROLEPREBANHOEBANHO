@@ -329,8 +329,26 @@ function verDetalhes(id){
       <div><span class="small muted">Total de peças</span><br><strong style="font-size:1.2rem;">${a.qtd_total||0}</strong></div>
       ${a.peso_total!==undefined?`<div><span class="small muted">Peso total</span><br><strong style="font-size:1.2rem;">${a.peso_total} kg</strong></div>`:''}
       ${a.area_total!==undefined?`<div><span class="small muted">Área total</span><br><strong style="font-size:1.2rem;">${a.area_total} m²</strong></div>`:''}
-    </div>`;
+    </div>
+    ${_operadoresHTML(a)}`;
   document.getElementById('modalDetalhes').classList.add('open');
+}
+function _operadoresHTML(a){
+  let html='';
+  const ops=a.operadores_prep||[];
+  if(ops.length){
+    html+=`<div style="margin-top:14px;"><span class="small muted"><i class="bi bi-people-fill"></i> Operadores da preparação</span>
+      <div class="det-oper">${ops.map(o=>`<span class="det-oper-chip">${o.nome||'—'}${o.matricula?` <span class="mat">mat. ${o.matricula}</span>`:''}</span>`).join('')}</div></div>`;
+  }
+  const bi=a.operador_banho_inicio, bim=a.oper_banho_ini_mat, bf=a.operador_banho_fim, bfm=a.oper_banho_fim_mat;
+  if(bi||bf){
+    html+=`<div style="margin-top:12px;"><span class="small muted"><i class="bi bi-droplet-fill"></i> Operador do banho</span>
+      <div class="det-oper">`+
+      (bi?`<span class="det-oper-chip">${bi}${bim?` <span class="mat">mat. ${bim}</span>`:''}${bf&&bf!==bi?' (início)':''}</span>`:'')+
+      ((bf&&bf!==bi)?`<span class="det-oper-chip">${bf}${bfm?` <span class="mat">mat. ${bfm}</span>`:''} (fim)</span>`:'')+
+      `</div></div>`;
+  }
+  return html;
 }
 function fecharDetalhes(){document.getElementById('modalDetalhes').classList.remove('open');}
 function tickAtivos(){

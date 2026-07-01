@@ -10,7 +10,7 @@
     <form method="POST">
       <input type="hidden" name="acao" value="adicionar">
       <div class="grid-2">
-        <div class="field" style="margin:0;"><label class="label">Login</label><input class="input input-sm" name="novo_usuario" required autocapitalize="none"></div>
+        <div class="field" style="margin:0;"><label class="label">Matrícula (login)</label><input class="input input-sm" name="novo_usuario" required autocapitalize="none" placeholder="Ex: 12345"></div>
         <div class="field" style="margin:0;"><label class="label">Nome completo</label><input class="input input-sm" name="novo_nome" required></div>
         <div class="field" style="margin:0;"><label class="label">Senha</label><input class="input input-sm" type="text" name="nova_senha" required></div>
         <div class="field" style="margin:0;"><label class="label">Perfil</label>
@@ -29,7 +29,7 @@
   <div class="panel" style="overflow:hidden;">
     <div class="table-wrap">
       <table class="tbl">
-        <thead><tr><th>Login</th><th>Nome</th><th>Perfil</th><th>Nova senha</th><th></th></tr></thead>
+        <thead><tr><th>Matrícula</th><th>Nome</th><th>Perfil</th><th>Nova senha</th><th></th></tr></thead>
         <tbody>
           {% for u in usuarios %}
           <tr>

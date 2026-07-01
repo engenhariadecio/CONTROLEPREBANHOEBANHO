@@ -452,6 +452,40 @@ def turno_de_card(c):
     return turno_num(dt)
 
 
+def _op_lista_prep(card):
+    """Lista [{nome, matricula}] dos operadores da preparação."""
+    if card.operadores_prep_json:
+        try:
+            arr = json.loads(card.operadores_prep_json)
+            if isinstance(arr, list):
+                out = []
+                for x in arr:
+                    if isinstance(x, dict):
+                        out.append({'nome': x.get('nome', ''), 'matricula': x.get('matricula', '')})
+                    elif x:
+                        out.append({'nome': str(x), 'matricula': ''})
+                if out:
+                    return out
+        except (ValueError, TypeError):
+            pass
+    out = []
+    if card.operador_prep:
+        out.append({'nome': card.operador_prep, 'matricula': ''})
+    if card.operador_prep2:
+        out.append({'nome': card.operador_prep2, 'matricula': ''})
+    return out
+
+
+def _op_txt(lista):
+    """'Nome (matrícula); Nome2 (matrícula2)'"""
+    partes = []
+    for o in lista:
+        n = o.get('nome', '')
+        m = o.get('matricula', '')
+        partes.append(f"{n} ({m})" if m else n)
+    return '; '.join(p for p in partes if p)
+
+
 def _pausas_resumo(pausas_json):
     try:
         mapa = json.loads(pausas_json) if pausas_json else {}
@@ -481,11 +515,14 @@ class Card(Base):
 
     operador_prep = Column(String(120), default='')
     operador_prep2 = Column(String(120), default='')
+    operadores_prep_json = Column(Text, default='')   # [{nome, matricula}, ...]
     n_operadores = Column(Integer, default=1)
     # operador que INICIOU o banho
     operador_banho_inicio = Column(String(120), default='')
+    oper_banho_ini_mat = Column(String(50), default='')
     # operador que FINALIZOU o banho
     operador_banho_fim = Column(String(120), default='')
+    oper_banho_fim_mat = Column(String(50), default='')
     # campo legado (mantido para compatibilidade)
     operador_banho = Column(String(120), default='')
 
@@ -551,10 +588,14 @@ class Card(Base):
             'observacao': self.observacao or '',
             'obs_banho': self.obs_banho or '',
             'operador_prep': self.operador_prep, 'operador_prep2': self.operador_prep2 or '',
+            'operadores_prep': _op_lista_prep(self),
+            'operadores_prep_txt': _op_txt(_op_lista_prep(self)),
             'n_operadores': self.n_operadores or 1,
             'operador_banho': self.operador_banho or '',
             'operador_banho_inicio': self.operador_banho_inicio or self.operador_banho or '',
             'operador_banho_fim': self.operador_banho_fim or '',
+            'oper_banho_ini_mat': self.oper_banho_ini_mat or '',
+            'oper_banho_fim_mat': self.oper_banho_fim_mat or '',
             'prep_inicio': fmt(self.prep_inicio), 'prep_fim': fmt(self.prep_fim),
             'prep_inicio_data': fmt_data(self.prep_inicio), 'prep_inicio_hora': fmt_hora(self.prep_inicio),
             'prep_fim_data': fmt_data(self.prep_fim), 'prep_fim_hora': fmt_hora(self.prep_fim),
@@ -599,6 +640,9 @@ def _migrar_colunas():
         'obs_banho': 'TEXT',
         'operador_banho_inicio': "VARCHAR(120) DEFAULT ''",
         'operador_banho_fim': "VARCHAR(120) DEFAULT ''",
+        'operadores_prep_json': 'TEXT',
+        'oper_banho_ini_mat': "VARCHAR(50) DEFAULT ''",
+        'oper_banho_fim_mat': "VARCHAR(50) DEFAULT ''",
     }
     with engine.begin() as conn:
         for col, tipo in novas.items():
@@ -755,6 +799,18 @@ def _lista_operadores_prep():
         return [u.nome for u in db.query(Usuario)
                 .filter(Usuario.perfil.in_(('prep', 'banho', 'admin')))
                 .order_by(Usuario.nome).all()]
+    finally:
+        db.close()
+
+
+@app.route('/api/operadores/prep')
+@login_required('prep', 'banho')
+def api_operadores_prep():
+    """Operadores de preparação (nome + matrícula=login) para o líder selecionar."""
+    db = Session()
+    try:
+        us = db.query(Usuario).filter(Usuario.perfil == 'prep').order_by(Usuario.nome).all()
+        return jsonify([{'nome': u.nome, 'matricula': u.login} for u in us])
     finally:
         db.close()
 
@@ -1113,9 +1169,21 @@ def api_prep_iniciar():
             n_op = n_op if n_op in (1, 2, 3) else 1
         except (ValueError, TypeError):
             n_op = 1
+        # operadores selecionados pelo líder (matrículas). Se vazio, usa o líder logado.
+        operadores = []
+        for m in (d.get('operadores') or [])[:3]:
+            m = str(m).strip()
+            if not m:
+                continue
+            u = db.query(Usuario).filter_by(login=m).first()
+            operadores.append({'nome': u.nome if u else m, 'matricula': m})
+        if not operadores:
+            operadores = [{'nome': session.get('nome', ''), 'matricula': session.get('usuario', '')}]
         card = Card(estado=ST_PREPARANDO, numero_cesto=numero,
-                    operador_prep=session.get('nome', ''),
-                    operador_prep2='', n_operadores=n_op,
+                    operador_prep=operadores[0]['nome'],
+                    operador_prep2=(operadores[1]['nome'] if len(operadores) > 1 else ''),
+                    operadores_prep_json=json.dumps(operadores, ensure_ascii=False),
+                    n_operadores=n_op,
                     prep_inicio=datetime.utcnow())
         db.add(card)
         try:
@@ -1312,6 +1380,7 @@ def api_banho_iniciar():
         card.banho_inicio = datetime.utcnow()
         nome_op = session.get('nome', '')
         card.operador_banho_inicio = nome_op
+        card.oper_banho_ini_mat = session.get('usuario', '')
         card.operador_banho = nome_op  # compatibilidade
         card.estado = ST_EM_BANHO
         db.commit()
@@ -1334,6 +1403,7 @@ def api_banho_finalizar():
         card.obs_banho = (d.get('obs_banho') or '').strip()
         nome_op = session.get('nome', '')
         card.operador_banho_fim = nome_op
+        card.oper_banho_fim_mat = session.get('usuario', '')
         card.estado = ST_CONCLUIDO
         db.commit()
         return jsonify({'sucesso': True, 'banho_minutos': card.banho_minutos})
@@ -1779,7 +1849,7 @@ def _gerar_excel(tipo, turnos=None):
                         dd['id'], dd['numero_cesto'], it['ordem'], it['material'],
                         it['texto_breve'], it['quantidade'], area_it, peso_it,
                         dd['processo'], dd['tipo'],
-                        dd['operador_prep'], dd['n_operadores'],
+                        (dd['operadores_prep_txt'] or dd['operador_prep']), dd['n_operadores'],
                         dd['prep_inicio_data'], dd['prep_inicio_hora'],
                         dd['prep_fim_data'], dd['prep_fim_hora'],
                         dd['prep_minutos'], dd['total_pausa_min'],
@@ -1801,7 +1871,7 @@ def _gerar_excel(tipo, turnos=None):
                         dd['id'], dd['numero_cesto'], it['ordem'], it['material'],
                         it['texto_breve'], it['quantidade'], area_it, peso_it,
                         dd['processo'], dd['tipo'],
-                        dd['operador_prep'], dd['n_operadores'],
+                        (dd['operadores_prep_txt'] or dd['operador_prep']), dd['n_operadores'],
                         dd['prep_inicio_data'], dd['prep_inicio_hora'],
                         dd['prep_fim_data'], dd['prep_fim_hora'],
                         dd['prep_minutos'], dd['total_pausa_min'],

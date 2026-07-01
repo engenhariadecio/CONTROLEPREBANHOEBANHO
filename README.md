@@ -1,5 +1,19 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v5
+- Pré-banho: após escolher 1, 2 ou 3 operadores, aparece a caixa
+  "Deseja selecionar os operadores?".
+  • "Sim, escolher nomes" abre a lista de operadores de preparação (perfil
+    "prep"), com NOME COMPLETO e MATRÍCULA (o login é a matrícula). O líder marca
+    quem está no cesto.
+  • "Não, iniciar direto" registra no nome do líder logado.
+- Banho: sempre 1 operador — puxa automaticamente o operador logado (nome + matrícula).
+- Painel de Gerência: no "Ver detalhes" aparecem os operadores da preparação e do
+  banho com nome + matrícula. Nos relatórios Excel, a coluna "Operador Prep" traz
+  nome + matrícula de todos.
+- Usuários: campo renomeado para "Matrícula (login)". Cadastre os operadores com
+  perfil "Operador de preparação" para aparecerem na seleção.
+
 ## Ajustes v4
 - Painel de Gerência com MENU de duas visões:
   • "Painel ao vivo" — cestos em tempo real por categoria;
