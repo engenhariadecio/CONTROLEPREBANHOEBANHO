@@ -332,7 +332,21 @@ function fecharModal(){document.getElementById('modal').classList.remove('open')
 
 async function iniciarPrep(){
   const j=await (await fetch('/api/prep/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({numero_cesto:cestoSel,n_operadores:nOper})})).json();
-  if(j.sucesso){fecharModal();carregar();}else alert(j.erro);
+  if(j.sucesso){
+    // re-sincroniza o relógio e abre o cronômetro já zerado (00:00) contando
+    await sincronizarRelogio();
+    try{
+      const g=await (await fetch('/api/cestos')).json();
+      const c=g.find(x=>x.ocupado&&x.card&&x.card.id===j.id);
+      if(c){
+        cardAtual=c.card; cestoSel=c.card.numero_cesto; modalEstado='cron';
+        document.getElementById('mCesto').textContent=c.card.numero_cesto;
+        mostrarView('cron'); atualizarBotaoPausa(false);
+        document.getElementById('cronBig').textContent=fmtTempo(segPrep(c.card));
+      }else{ fecharModal(); }
+    }catch(_){ fecharModal(); }
+    carregar();
+  }else alert(j.erro);
 }
 /* ── Pausar: retomar direto, pausar pede motivo (o modal de motivo É a confirmação) ── */
 function pedirPausa(){

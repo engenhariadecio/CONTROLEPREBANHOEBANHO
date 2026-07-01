@@ -1,3 +1,17 @@
+# Controle de Produtividade — Pré-Banho e Banho
+
+## Ajustes desta versão
+- Login continua ativo por 30 dias e em VÁRIOS dispositivos ao mesmo tempo
+  (cada aparelho tem seu login; um não desloga o outro). A chave de sessão é
+  guardada no banco, então redeploys no Railway não deslogam ninguém.
+- Preparação: o cronômetro abre já em 00:00 ao iniciar.
+- Banho: números e tempos na cor da logo (verde→azul); tempo "Esperando" grande;
+  botões Iniciar/Sair em evidência e "Ver detalhes" menor.
+- Painel de Gerência: 100% responsivo (celular/tablet), linha do tempo estilo
+  Excel com níveis Ano / Mês / Dia (rolagem lateral, não quebra o layout) e
+  gráficos com visual profissional na identidade da empresa.
+- Painel Admin: mesma identidade visual da marca.
+
 # Controle de Produtividade — Pré-Banho e Banho (Pintura Eletrostática)
 
 Monitoramento em tempo real do tratamento de peças (pré-banho e banho):

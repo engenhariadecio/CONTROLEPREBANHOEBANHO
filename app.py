@@ -36,6 +36,12 @@ from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'troque-esta-chave-em-producao')
+# Sessões duráveis: o usuário fica logado por 30 dias e em vários dispositivos ao
+# mesmo tempo (cada aparelho tem seu próprio cookie; nada desloga o outro).
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Lista mestra em memória (carregada do arquivo — sem banco de dados)
@@ -690,6 +696,7 @@ def login():
         try:
             u = db.query(Usuario).filter_by(login=login_u).first()
             if u and check_password_hash(u.senha_hash, senha):
+                session.permanent = True   # mantém logado por muito tempo
                 session['usuario'] = u.login
                 session['nome'] = u.nome
                 session['perfil'] = u.perfil
@@ -1759,7 +1766,37 @@ def remove_session(exc=None):
     Session.remove()
 
 
+def _garantir_secret_key():
+    """Mantém a MESMA chave de sessão entre reinícios/deploys, para os usuários
+    não serem deslogados. Usa SECRET_KEY do ambiente se existir; senão guarda uma
+    chave fixa no banco (compartilhada por todos os workers/deploys)."""
+    if os.environ.get('SECRET_KEY'):
+        return
+    db = Session()
+    try:
+        row = db.query(Config).filter_by(chave='secret_key').first()
+        if not row or not row.valor:
+            import secrets as _secrets
+            nova = _secrets.token_hex(32)
+            try:
+                db.add(Config(chave='secret_key', valor=nova))
+                db.commit()
+                app.secret_key = nova
+            except IntegrityError:
+                db.rollback()
+                row = db.query(Config).filter_by(chave='secret_key').first()
+                if row and row.valor:
+                    app.secret_key = row.valor
+        else:
+            app.secret_key = row.valor
+    except Exception as e:
+        print(f'[secret_key] aviso: {e}')
+    finally:
+        db.close()
+
+
 init_db()
+_garantir_secret_key()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

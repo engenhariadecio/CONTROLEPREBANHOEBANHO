@@ -130,9 +130,9 @@ async function carregar(){
           <div class="cron cron-banho cron-el" data-tipo="corrido" data-ini="${c.banho_inicio_iso}">${fmtTempo(seg)}</div>
         </div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
-        <button class="btn btn-stop btn-sm" onclick="finalizar(${c.id},'${c.numero_cesto}')"><i class="bi bi-stop-circle-fill"></i>Sair do banho</button>
-        <button class="btn btn-ghost btn-sm" onclick="verDetalhesBanho(${c.id})"><i class="bi bi-eye"></i>Ver detalhes</button>
+      <div class="flow-cta-wrap">
+        <button class="btn btn-stop flow-cta" onclick="finalizar(${c.id},'${c.numero_cesto}')"><i class="bi bi-stop-circle-fill"></i>Sair do banho</button>
+        <button class="btn-detalhes" onclick="verDetalhesBanho(${c.id})"><i class="bi bi-eye"></i>Ver detalhes</button>
       </div>
     </div>`;
   }).join(''):'<div class="empty panel"><i class="bi bi-droplet"></i>Nenhum cesto em banho.</div>';
@@ -141,7 +141,7 @@ async function carregar(){
   fl.innerHTML=j.fila.length?j.fila.map((c,i)=>{
     const segEspera=c.prep_fim_iso?tempoUtilSegundos(new Date(c.prep_fim_iso).getTime(),agoraServidor()):0;
     return `
-    <div class="flow-card">
+    <div class="flow-card fila-card">
       <div class="flow-left">
         <span class="fila-pos">${i+1}</span>
         <div class="cesto-badge">${c.numero_cesto}</div>
@@ -149,12 +149,16 @@ async function carregar(){
           <div class="top">${c.processo||'Sem processo'} <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${c.tipo}</span></div>
           <div class="ln">${c.n_itens>1?('<strong>'+c.n_itens+' OPs</strong> · '+(c.texto_breve||'')):('OP <strong>'+(c.ordem||'—')+'</strong> · '+(c.texto_breve||''))}</div>
           <div class="ln">${c.qtd_total||0} peças · ${c.peso_total||0} kg · ${c.area_total||0} m²</div>
-          <div class="ln muted" style="font-size:12px;">prep ${c.prep_minutos} min · esperando: <span class="cron-el cron-espera" data-tipo="fila" data-ini="${c.prep_fim_iso}" style="font-weight:700;color:var(--violet,#7C5CFC);">${fmtTempo(segEspera)}</span></div>
+          <div class="ln muted" style="font-size:12px;">prep ${c.prep_minutos} min</div>
         </div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
-        <button class="btn btn-aqua btn-sm" onclick="iniciar(${c.id},'${c.numero_cesto}')"><i class="bi bi-play-fill"></i>Iniciar banho</button>
-        <button class="btn btn-ghost btn-sm" onclick="verDetalhesBanho(${c.id})"><i class="bi bi-eye"></i>Ver detalhes</button>
+      <div class="flow-cta-wrap">
+        <div class="espera-box">
+          <span class="espera-lbl"><i class="bi bi-hourglass-split"></i>Esperando</span>
+          <span class="espera-cron cron-el" data-tipo="fila" data-ini="${c.prep_fim_iso}">${fmtTempo(segEspera)}</span>
+        </div>
+        <button class="btn btn-aqua flow-cta" onclick="iniciar(${c.id},'${c.numero_cesto}')"><i class="bi bi-play-fill"></i>Iniciar banho</button>
+        <button class="btn-detalhes" onclick="verDetalhesBanho(${c.id})"><i class="bi bi-eye"></i>Ver detalhes</button>
       </div>
     </div>`;}).join(''):'<div class="empty panel"><i class="bi bi-inbox"></i>Fila vazia.</div>';
 }

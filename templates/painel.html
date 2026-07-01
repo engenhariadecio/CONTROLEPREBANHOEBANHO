@@ -50,26 +50,32 @@
     <input type="hidden" id="fDe"><input type="hidden" id="fAte">
     <div class="gp-card-head"><i class="bi bi-funnel-fill"></i>Filtros do histórico</div>
     <div class="filtros-row">
-      <!-- Linha do tempo (slicer estilo Excel) -->
-      <div style="flex:none;">
-        <label class="filtro-label">Linha do tempo <span class="filtro-hint">— clique ou arraste para selecionar</span></label>
-        <div class="slicer">
-          <div class="slicer-head">
-            <span class="slicer-title">Data</span>
-            <div class="slicer-tools">
-              <button class="slicer-nivel" id="slicerNivel" onclick="alternarNivel()">MESES <i class="bi bi-chevron-down"></i></button>
-              <button class="slicer-clear" id="slicerClear" onclick="limparSlicer()" title="Limpar filtro"><i class="bi bi-funnel"></i></button>
+      <!-- Linha do tempo (estilo Excel: Ano / Mês / Dia) -->
+      <div class="tl-wrap">
+        <label class="filtro-label">Linha do tempo <span class="filtro-hint">— toque para o início e o fim do período</span></label>
+        <div class="tl">
+          <div class="tl-head">
+            <span class="tl-title"><i class="bi bi-calendar3"></i>Data</span>
+            <div class="tl-levels">
+              <button data-niv="ano" onclick="setNivel('ano')">Ano</button>
+              <button data-niv="mes" class="on" onclick="setNivel('mes')">Mês</button>
+              <button data-niv="dia" onclick="setNivel('dia')">Dia</button>
             </div>
           </div>
-          <div class="slicer-periodo" id="slicerPeriodo">Todos os períodos</div>
-          <div class="slicer-track-wrap">
-            <div class="slicer-track" id="slicerTrack"></div>
+          <div class="tl-nav" id="tlNav">
+            <button class="tl-nav-btn" onclick="navCtx(-1)" aria-label="Anterior"><i class="bi bi-chevron-left"></i></button>
+            <span class="tl-nav-lbl" id="tlNavLbl">—</span>
+            <button class="tl-nav-btn" onclick="navCtx(1)" aria-label="Próximo"><i class="bi bi-chevron-right"></i></button>
           </div>
-          <div class="slicer-scroll"><div class="slicer-scroll-thumb" id="slicerThumb"></div></div>
+          <div class="tl-strip-wrap"><div class="tl-strip" id="tlStrip"></div></div>
+          <div class="tl-foot">
+            <span class="tl-periodo" id="tlPeriodo"><i class="bi bi-calendar-check"></i>Todos os períodos</span>
+            <button class="tl-clear" id="tlClear" onclick="tlLimpar()"><i class="bi bi-x-circle"></i>Limpar</button>
+          </div>
         </div>
       </div>
       <!-- Busca por OP / código / descrição -->
-      <div style="flex:1;min-width:280px;">
+      <div class="busca-wrap">
         <label class="filtro-label">OP / Código / Item <span class="filtro-hint">— digite a OP, o código ou a descrição</span></label>
         <div class="busca-combo">
           <i class="bi bi-search busca-icon"></i>
@@ -263,113 +269,113 @@ function tickAtivos(){
   });
 }
 
-// ── Slicer estilo Excel (meses ou dias) ────────────────────────────────────
+// ── Linha do tempo estilo Excel: Ano / Mês / Dia ───────────────────────────
 const MESES_PT=['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-let _nivel='meses';        // 'meses' ou 'dias'
-let _segmentos=[];         // [{lbl, ano, dias:[...], iniIdx}]
-let _selIni=null,_selFim=null,_arrastando=false;
-let _diasDisponiveis=[];   // ['dd/mm', ...]
+const MESES_LB=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+let _niv='mes';
+let _anoCtx=new Date().getFullYear();
+let _mesCtx=new Date().getMonth()+1;   // 1-12
+let _segs=[];
+let _selA=null,_selB=null,_selEstado='vazio';
 
-async function montarSlicer(){
-  const track=document.getElementById('slicerTrack');
-  if(!track)return;
-  if(track.querySelector('.slicer-seg.sel'))return; // preserva seleção do usuário
-  try{
-    const d=await (await fetch('/api/painel/dados')).json();
-    _diasDisponiveis=Object.keys(d.por_dia||{});
-    construirSegmentos();
-    renderSlicer();
-  }catch(_){}
-}
+function _ultimoDia(ano,mes){return new Date(ano,mes,0).getDate();}
 
-function construirSegmentos(){
-  const ano=new Date().getFullYear();
-  if(_nivel==='meses'){
-    // 12 meses do ano atual
-    _segmentos=MESES_PT.map((m,i)=>({lbl:m,ano:ano,mes:i+1,
-      qtd:_diasDisponiveis.filter(dia=>+dia.split('/')[1]===i+1).length}));
-  }else{
-    // dias: gera os últimos 31 dias OU os dias que têm dados (o que for mais útil)
-    // aqui usamos um range dos dias com dados, preenchendo os intermediários
-    const set=new Set(_diasDisponiveis);
-    const hoje=new Date();
-    _segmentos=[];
-    for(let k=30;k>=0;k--){
-      const dt=new Date(hoje);dt.setDate(hoje.getDate()-k);
-      const dd=String(dt.getDate()).padStart(2,'0');
-      const mm=String(dt.getMonth()+1).padStart(2,'0');
-      const dia=`${dd}/${mm}`;
-      _segmentos.push({lbl:dd,sub:MESES_PT[dt.getMonth()],ano:dt.getFullYear(),mes:dt.getMonth()+1,diaNum:dt.getDate(),temDado:set.has(dia),diaStr:dia});
+function construirSegs(){
+  const anoAtual=new Date().getFullYear();
+  _segs=[];
+  if(_niv==='ano'){
+    for(let a=anoAtual-2;a<=anoAtual;a++){
+      _segs.push({lbl:String(a),sub:'',de:`${a}-01-01`,ate:`${a}-12-31`,txt:`ano de ${a}`});
+    }
+  }else if(_niv==='mes'){
+    for(let m=1;m<=12;m++){
+      const ud=_ultimoDia(_anoCtx,m);
+      _segs.push({lbl:MESES_PT[m-1],sub:String(_anoCtx),
+        de:`${_anoCtx}-${String(m).padStart(2,'0')}-01`,
+        ate:`${_anoCtx}-${String(m).padStart(2,'0')}-${String(ud).padStart(2,'0')}`,
+        txt:`${MESES_LB[m-1]}/${_anoCtx}`});
+    }
+  }else{ // dia
+    const ud=_ultimoDia(_anoCtx,_mesCtx);
+    const nomesDS=['dom','seg','ter','qua','qui','sex','sáb'];
+    for(let d=1;d<=ud;d++){
+      const wd=new Date(_anoCtx,_mesCtx-1,d).getDay();
+      const iso=`${_anoCtx}-${String(_mesCtx).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      _segs.push({lbl:String(d).padStart(2,'0'),sub:nomesDS[wd],de:iso,ate:iso,
+        txt:`${String(d).padStart(2,'0')}/${String(_mesCtx).padStart(2,'0')}/${_anoCtx}`,fds:(wd===0||wd===6)});
     }
   }
 }
 
 function renderSlicer(){
-  const track=document.getElementById('slicerTrack');
-  track.innerHTML=_segmentos.map((s,i)=>{
-    const sub=_nivel==='meses'?(i===0||_segmentos[i-1].ano!==s.ano?`<span class="slicer-seg-ano">${s.ano}</span>`:''):(s.sub||'');
-    const top=_nivel==='meses'?s.lbl:`${s.sub||''}`;
-    const lblTop=_nivel==='meses'?`<span class="slicer-seg-ano" style="visibility:${(i===0||_segmentos[i-1].ano!==s.ano)?'visible':'hidden'}">${s.ano}</span>`:`<span class="slicer-seg-ano">${(i===0||_segmentos[i-1].mes!==s.mes)?s.sub:''}</span>`;
-    return `<div class="slicer-seg" data-idx="${i}">
-      <span class="slicer-seg-lbl">${lblTop}${s.lbl}</span>
-      <span class="slicer-bar"></span>
-    </div>`;
-  }).join('');
-  // eventos de clique/arraste
-  [...track.querySelectorAll('.slicer-seg')].forEach(seg=>{
-    seg.addEventListener('pointerdown',e=>{e.preventDefault();_arrastando=true;_selIni=_selFim=+seg.dataset.idx;pintarSel();});
-    seg.addEventListener('pointerenter',()=>{if(_arrastando){_selFim=+seg.dataset.idx;pintarSel();}});
-  });
+  construirSegs();
+  // nav de contexto
+  const nav=document.getElementById('tlNav'), lbl=document.getElementById('tlNavLbl');
+  if(_niv==='ano'){nav.style.display='none';}
+  else if(_niv==='mes'){nav.style.display='';lbl.textContent=_anoCtx;}
+  else{nav.style.display='';lbl.textContent=`${MESES_PT[_mesCtx-1]} ${_anoCtx}`;}
+  // segmentos
+  const strip=document.getElementById('tlStrip');
+  strip.innerHTML=_segs.map((s,i)=>`
+    <button class="tl-seg${s.fds?' fds':''}" data-idx="${i}" onclick="tlTap(${i})">
+      ${s.sub?`<span class="tl-seg-sub">${s.sub}</span>`:''}
+      <span class="tl-seg-lbl">${s.lbl}</span>
+    </button>`).join('');
   pintarSel();
 }
-document.addEventListener('pointerup',()=>{if(_arrastando){_arrastando=false;aplicarSlicer();}});
 
-function pintarSel(){
-  if(_selIni===null){document.querySelectorAll('.slicer-seg').forEach(s=>s.classList.remove('sel'));return;}
-  const lo=Math.min(_selIni,_selFim),hi=Math.max(_selIni,_selFim);
-  document.querySelectorAll('.slicer-seg').forEach(s=>{const i=+s.dataset.idx;s.classList.toggle('sel',i>=lo&&i<=hi);});
+function tlTap(i){
+  if(_selEstado==='vazio'||_selEstado==='completo'){_selA=_selB=i;_selEstado='inicio';}
+  else{_selB=i;_selEstado='completo';}
+  pintarSel();aplicarSlicer();
 }
-
-function nomeMes(i){return ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][i];}
-
+function pintarSel(){
+  const segs=document.querySelectorAll('.tl-seg');
+  if(_selA===null){segs.forEach(s=>s.classList.remove('sel','ini','fim'));return;}
+  const lo=Math.min(_selA,_selB),hi=Math.max(_selA,_selB);
+  segs.forEach(s=>{const i=+s.dataset.idx;
+    s.classList.toggle('sel',i>=lo&&i<=hi);
+    s.classList.toggle('ini',i===lo);
+    s.classList.toggle('fim',i===hi);
+  });
+}
 function aplicarSlicer(){
-  if(_selIni===null)return;
-  const lo=Math.min(_selIni,_selFim),hi=Math.max(_selIni,_selFim);
-  const a=_segmentos[lo],b=_segmentos[hi];
-  const ano=new Date().getFullYear();
-  let de,ate,txt;
-  if(_nivel==='meses'){
-    de=`${a.ano}-${String(a.mes).padStart(2,'0')}-01`;
-    const ultimoDia=new Date(b.ano,b.mes,0).getDate();
-    ate=`${b.ano}-${String(b.mes).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}`;
-    txt=lo===hi?`${nomeMes(a.mes-1)} de ${a.ano}`:`${nomeMes(a.mes-1)} de ${a.ano} – ${nomeMes(b.mes-1)} de ${b.ano}`;
-  }else{
-    de=`${a.ano}-${String(a.mes).padStart(2,'0')}-${String(a.diaNum).padStart(2,'0')}`;
-    ate=`${b.ano}-${String(b.mes).padStart(2,'0')}-${String(b.diaNum).padStart(2,'0')}`;
-    txt=lo===hi?`${a.lbl} ${a.sub} ${a.ano}`:`${a.lbl} ${a.sub} – ${b.lbl} ${b.sub} ${b.ano}`;
-  }
-  document.getElementById('fDe').value=de;
-  document.getElementById('fAte').value=ate;
-  document.getElementById('slicerPeriodo').textContent=txt;
-  document.getElementById('slicerClear').classList.add('ativo');
+  if(_selA===null)return;
+  const lo=Math.min(_selA,_selB),hi=Math.max(_selA,_selB);
+  const a=_segs[lo],b=_segs[hi];
+  document.getElementById('fDe').value=a.de;
+  document.getElementById('fAte').value=b.ate;
+  const txt=(lo===hi)?a.txt:`${a.txt} – ${b.txt}`;
+  document.getElementById('tlPeriodo').innerHTML='<i class="bi bi-calendar-check"></i>'+txt;
+  document.getElementById('tlClear').classList.add('on');
   if(window.atualizar)window.atualizar();
 }
-
-function alternarNivel(){
-  _nivel=(_nivel==='meses')?'dias':'meses';
-  document.getElementById('slicerNivel').innerHTML=(_nivel==='meses'?'MESES':'DIAS')+' <i class="bi bi-chevron-down"></i>';
-  _selIni=_selFim=null;
-  construirSegmentos();renderSlicer();
+function setNivel(n){
+  if(_niv===n)return;
+  _niv=n;_selA=_selB=null;_selEstado='vazio';
+  document.querySelectorAll('.tl-levels button').forEach(b=>b.classList.toggle('on',b.dataset.niv===n));
+  renderSlicer();
 }
-function limparSlicer(){
-  _selIni=_selFim=null;
-  document.querySelectorAll('.slicer-seg').forEach(s=>s.classList.remove('sel'));
+function navCtx(dir){
+  if(_niv==='mes'){_anoCtx+=dir;}
+  else if(_niv==='dia'){
+    _mesCtx+=dir;
+    if(_mesCtx>12){_mesCtx=1;_anoCtx++;}
+    if(_mesCtx<1){_mesCtx=12;_anoCtx--;}
+  }
+  _selA=_selB=null;_selEstado='vazio';
+  renderSlicer();
+}
+function tlLimpar(){
+  _selA=_selB=null;_selEstado='vazio';
   document.getElementById('fDe').value='';
   document.getElementById('fAte').value='';
-  document.getElementById('slicerPeriodo').textContent='Todos os períodos';
-  document.getElementById('slicerClear').classList.remove('ativo');
+  document.getElementById('tlPeriodo').innerHTML='<i class="bi bi-calendar-check"></i>Todos os períodos';
+  document.getElementById('tlClear').classList.remove('on');
+  pintarSel();
   if(window.atualizar)window.atualizar();
 }
+function montarSlicer(){ if(document.getElementById('tlStrip') && !document.querySelector('.tl-seg')) renderSlicer(); }
 
 // ── Busca por OP / código / descrição (filtra a tabela de histórico) ───────
 let _termoBusca='';

@@ -24,35 +24,36 @@
 </div>
 
 <!-- ÁREA 1: Quantidade de cestos -->
-<div class="area-titulo"><i class="bi bi-boxes"></i>Quantidade de cestos</div>
-<div class="kpi-row">
-  <div class="kpi"><div class="kpi-val" id="kTotal">0</div><div class="kpi-lbl"><i class="bi bi-check2-all"></i>Concluídos</div></div>
-  <div class="kpi k-amber"><div class="kpi-val" id="kAnd">0</div><div class="kpi-lbl"><i class="bi bi-hourglass-split"></i>Em andamento</div></div>
-  <div class="kpi k-green"><div class="kpi-val" id="kBanhoNormal">0</div><div class="kpi-lbl"><i class="bi bi-droplet"></i>Banho normal</div></div>
-  <div class="kpi k-red"><div class="kpi-val" id="kBanhoRetrab">0</div><div class="kpi-lbl"><i class="bi bi-arrow-repeat"></i>Banho retrabalho</div></div>
+<div class="gp-secao"><i class="bi bi-boxes"></i>Quantidade de cestos</div>
+<div class="gp-kpis">
+  <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-check2-all"></i></div><div><div class="gp-kpi-val" id="kTotal">0</div><div class="gp-kpi-lbl">Concluídos</div></div></div>
+  <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kAnd">0</div><div class="gp-kpi-lbl">Em andamento</div></div></div>
+  <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-droplet-fill"></i></div><div><div class="gp-kpi-val" id="kBanhoNormal">0</div><div class="gp-kpi-lbl">Banho normal</div></div></div>
+  <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kBanhoRetrab">0</div><div class="gp-kpi-lbl">Banho retrabalho</div></div></div>
 </div>
 
 <!-- ÁREA 2: Tempo médio -->
-<div class="area-titulo"><i class="bi bi-clock-history"></i>Tempo médio (min)</div>
-<div class="kpi-row">
-  <div class="kpi k-violet"><div class="kpi-val" id="kPrep">0</div><div class="kpi-lbl"><i class="bi bi-stopwatch"></i>Preparo</div></div>
-  <div class="kpi k-amber"><div class="kpi-val" id="kEspera">0</div><div class="kpi-lbl"><i class="bi bi-hourglass-split"></i>Espera (fila)</div></div>
-  <div class="kpi k-sky"><div class="kpi-val" id="kBanho">0</div><div class="kpi-lbl"><i class="bi bi-droplet"></i>Banho</div></div>
+<div class="gp-secao"><i class="bi bi-clock-fill"></i>Tempo médio (min)</div>
+<div class="gp-kpis gp-kpis-3">
+  <div class="gp-kpi"><div class="gp-kpi-ic ic-violet"><i class="bi bi-stopwatch-fill"></i></div><div><div class="gp-kpi-val" id="kPrep">0</div><div class="gp-kpi-lbl">Preparo</div></div></div>
+  <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kEspera">0</div><div class="gp-kpi-lbl">Espera (fila)</div></div></div>
+  <div class="gp-kpi"><div class="gp-kpi-ic ic-sky"><i class="bi bi-droplet-half"></i></div><div><div class="gp-kpi-val" id="kBanho">0</div><div class="gp-kpi-lbl">Banho</div></div></div>
 </div>
 
 <!-- ÁREA 3: Totais processados -->
-<div class="area-titulo"><i class="bi bi-bar-chart-line"></i>Totais processados</div>
-<div class="kpi-row">
-  <div class="kpi k-teal"><div class="kpi-val" id="kPecas">0</div><div class="kpi-lbl"><i class="bi bi-stack"></i>Peças totais</div></div>
-  <div class="kpi k-teal"><div class="kpi-val" id="kPeso">0</div><div class="kpi-lbl"><i class="bi bi-box-seam"></i>Peso total (kg)</div></div>
-  <div class="kpi k-teal"><div class="kpi-val" id="kArea">0</div><div class="kpi-lbl"><i class="bi bi-rulers"></i>Área total (m²)</div></div>
+<div class="gp-secao"><i class="bi bi-bar-chart-line-fill"></i>Totais processados</div>
+<div class="gp-kpis gp-kpis-3">
+  <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-stack"></i></div><div><div class="gp-kpi-val" id="kPecas">0</div><div class="gp-kpi-lbl">Peças totais</div></div></div>
+  <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-box-seam"></i></div><div><div class="gp-kpi-val" id="kPeso">0</div><div class="gp-kpi-lbl">Peso total (kg)</div></div></div>
+  <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-rulers"></i></div><div><div class="gp-kpi-val" id="kArea">0</div><div class="gp-kpi-lbl">Área total (m²)</div></div></div>
 </div>
 
-<div class="panel panel-pad" style="margin-bottom:18px;">
-  <div class="section-title" style="font-size:1rem;margin-bottom:14px;"><i class="bi bi-diagram-3-fill"></i>Andamento em tempo real</div>
+<div class="gp-secao"><i class="bi bi-diagram-3-fill"></i>Andamento em tempo real</div>
+<div class="gp-card" style="margin-bottom:6px;">
   <div id="andamento" class="andamento-grid"><div class="muted small">Carregando…</div></div>
 </div>
 
+<div class="gp-secao"><i class="bi bi-pie-chart-fill"></i>Análise gráfica</div>
 <div class="chart-grid-3">
   <div class="chart-box"><h6><i class="bi bi-pie-chart-fill"></i>Normal × Retrabalho</h6><canvas id="chartTipo" height="200"></canvas></div>
   <div class="chart-box"><h6><i class="bi bi-bar-chart-fill"></i>Por processo</h6><canvas id="chartProc" height="200"></canvas></div>
@@ -64,7 +65,8 @@
   <div class="chart-box"><h6><i class="bi bi-rulers"></i>Área processada por dia (m²)</h6><canvas id="chartArea" height="180"></canvas></div>
 </div>
 
-<div class="panel panel-brand" style="overflow:hidden;">
+<div class="gp-secao"><i class="bi bi-table"></i>Registros do período</div>
+<div class="gp-card" style="overflow:hidden;padding:0;">
   <div class="table-wrap">
     <table class="tbl">
       <thead><tr>
