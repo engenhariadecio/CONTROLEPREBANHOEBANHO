@@ -181,7 +181,7 @@ textarea.input{min-height:auto;resize:vertical;}
   box-shadow:var(--shadow-sm);padding:15px 17px;
   display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
 }
-.flow-card.live{border:2px solid var(--sky);background:linear-gradient(180deg,var(--sky-soft),#fff);}
+.flow-card.live,.flow-card.fila-card{border:2px solid var(--sky);background:linear-gradient(180deg,var(--sky-soft),#fff);}
 .flow-left{display:flex;align-items:center;gap:15px;min-width:0;}
 .cesto-badge{
   width:60px;height:60px;border-radius:15px;flex-shrink:0;
