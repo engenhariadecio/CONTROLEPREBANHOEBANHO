@@ -777,3 +777,17 @@ img,canvas{max-width:100%;}
   .cat-menu{gap:7px;}
   .cat-tab{flex:1 1 auto;justify-content:center;padding:9px 10px;font-size:.8rem;}
 }
+
+/* ── Menu de visões do Painel de Gerência (Ao vivo / Histórico) ── */
+.view-menu{display:flex;gap:10px;margin:4px 0 20px;background:#fff;border:1px solid var(--line);
+  border-radius:16px;padding:6px;box-shadow:var(--shadow-sm);}
+.view-tab{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:9px;
+  border:none;background:none;font-family:inherit;font-weight:800;font-size:.95rem;color:var(--slate);
+  padding:13px 16px;border-radius:12px;cursor:pointer;transition:.15s;}
+.view-tab i{font-size:1.1rem;}
+.view-tab:hover{background:var(--bg);color:var(--ink);}
+.view-tab.on{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;
+  box-shadow:0 6px 18px rgba(22,104,192,.26);}
+@media (max-width:560px){
+  .view-tab{font-size:.85rem;padding:11px 8px;gap:6px;}
+}

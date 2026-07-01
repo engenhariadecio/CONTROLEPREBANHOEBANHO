@@ -1,5 +1,13 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v4
+- Painel de Gerência com MENU de duas visões:
+  • "Painel ao vivo" — cestos em tempo real por categoria;
+  • "Histórico & análises" — filtros, KPIs, gráficos (inclui Cestos por turno),
+    produção por turno, produção por operador e a tabela completa de histórico.
+- Filtro de turno agora é MÚLTIPLA seleção (marque 1, 2 ou os 3 turnos).
+- Linha do tempo já abre com a DATA DE HOJE marcada como padrão.
+
 ## Ajustes v3
 - Turnos: 1º 06:01–15:30 | 2º 15:31–00:00 | 3º 00:01–06:00.
   Filtro por turno no Painel de Gerência e no Admin; coluna "Turno" nos

@@ -45,115 +45,157 @@
     })();
   </script>
 
-  <!-- ── Filtros ── -->
-  <section class="gp-card gp-filtros">
-    <input type="hidden" id="fDe"><input type="hidden" id="fAte">
-    <div class="gp-card-head"><i class="bi bi-funnel-fill"></i>Filtros do histórico</div>
-    <div class="filtros-row">
-      <!-- Linha do tempo (estilo Excel: Ano / Mês / Dia) -->
-      <div class="tl-wrap">
-        <label class="filtro-label">Linha do tempo <span class="filtro-hint">— arraste (ou toque) para selecionar o período</span></label>
-        <div class="tl">
-          <div class="tl-head">
-            <span class="tl-title"><i class="bi bi-calendar3"></i>Data</span>
-            <div class="tl-levels">
-              <button data-niv="ano" onclick="setNivel('ano')">Ano</button>
-              <button data-niv="mes" class="on" onclick="setNivel('mes')">Mês</button>
-              <button data-niv="dia" onclick="setNivel('dia')">Dia</button>
-            </div>
-          </div>
-          <div class="tl-nav" id="tlNav">
-            <button class="tl-nav-btn" onclick="navCtx(-1)" aria-label="Anterior"><i class="bi bi-chevron-left"></i></button>
-            <span class="tl-nav-lbl" id="tlNavLbl">—</span>
-            <button class="tl-nav-btn" onclick="navCtx(1)" aria-label="Próximo"><i class="bi bi-chevron-right"></i></button>
-          </div>
-          <div class="tl-strip-wrap"><div class="tl-strip" id="tlStrip"></div></div>
-          <div class="tl-foot">
-            <span class="tl-periodo" id="tlPeriodo"><i class="bi bi-calendar-check"></i>Todos os períodos</span>
-            <button class="tl-clear" id="tlClear" onclick="tlLimpar()"><i class="bi bi-x-circle"></i>Limpar</button>
-          </div>
-        </div>
-      </div>
-      <!-- Busca por OP / código / descrição -->
-      <div class="busca-wrap">
-        <label class="filtro-label">OP / Código / Item <span class="filtro-hint">— digite a OP, o código ou a descrição</span></label>
-        <div class="busca-combo">
-          <i class="bi bi-search busca-icon"></i>
-          <input id="buscaItem" type="text" autocomplete="off" placeholder="Todas as OPs e itens" class="busca-input" oninput="filtrarBusca()">
-          <button id="buscaClear" class="busca-clear" onclick="limparBusca()" style="display:none;">&times;</button>
-        </div>
-        <label class="filtro-label" style="margin-top:14px;">Turno</label>
-        <div class="turno-seg" id="turnoSeg">
-          <button class="on" data-turno="" onclick="setTurno('')"><i class="bi bi-clock-history"></i>Todos</button>
-          <button data-turno="1" onclick="setTurno('1')">1º <span>06:01–15:30</span></button>
-          <button data-turno="2" onclick="setTurno('2')">2º <span>15:31–00:00</span></button>
-          <button data-turno="3" onclick="setTurno('3')">3º <span>00:01–06:00</span></button>
-        </div>
-        <select id="fTurno" class="hidden-sel" style="display:none;"><option value=""></option><option value="1"></option><option value="2"></option><option value="3"></option></select>
-        <p class="filtro-desc">Filtra <strong>indicadores, gráficos e histórico</strong> pelo turno em que o banho foi concluído.</p>
-      </div>
+  <!-- ══ MENU DE VISÕES ══ -->
+  <div class="view-menu">
+    <button class="view-tab on" data-view="live" onclick="setView('live')"><i class="bi bi-broadcast-pin"></i>Painel ao vivo</button>
+    <button class="view-tab" data-view="hist" onclick="setView('hist')"><i class="bi bi-bar-chart-line-fill"></i>Histórico &amp; análises</button>
+  </div>
+
+  <!-- ══════════════════ VISÃO: AO VIVO ══════════════════ -->
+  <section id="viewLive">
+    <div class="gp-secao"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos ativos agora<span class="gp-secao-tag" id="ativosTag"></span></div>
+    <div class="cat-menu" id="catMenu">
+      <button class="cat-tab on" data-cat="" onclick="setCategoria('')"><i class="bi bi-grid-fill"></i>Todos <span class="cat-count" id="cnt-todos">0</span></button>
+      <button class="cat-tab" data-cat="EM_BANHO" onclick="setCategoria('EM_BANHO')"><i class="bi bi-droplet-fill"></i>Em banho <span class="cat-count" id="cnt-EM_BANHO">0</span></button>
+      <button class="cat-tab" data-cat="FILA_BANHO" onclick="setCategoria('FILA_BANHO')"><i class="bi bi-list-ol"></i>Fila do banho <span class="cat-count" id="cnt-FILA_BANHO">0</span></button>
+      <button class="cat-tab" data-cat="PREPARANDO" onclick="setCategoria('PREPARANDO')"><i class="bi bi-hourglass-split"></i>Preparando <span class="cat-count" id="cnt-PREPARANDO">0</span></button>
+      <button class="cat-tab" data-cat="PREENCHER" onclick="setCategoria('PREENCHER')"><i class="bi bi-pencil-square"></i>Preenchendo <span class="cat-count" id="cnt-PREENCHER">0</span></button>
+    </div>
+    <div id="ativosWrap" class="ativos-cats">
+      <div class="gp-card muted small" style="padding:16px;">Carregando…</div>
     </div>
   </section>
 
-  <!-- ── Cestos ativos agora (agrupados por etapa) ── -->
-  <div class="gp-secao"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos ativos agora<span class="gp-secao-tag" id="ativosTag"></span></div>
-  <div class="cat-menu" id="catMenu">
-    <button class="cat-tab on" data-cat="" onclick="setCategoria('')"><i class="bi bi-grid-fill"></i>Todos <span class="cat-count" id="cnt-todos">0</span></button>
-    <button class="cat-tab" data-cat="EM_BANHO" onclick="setCategoria('EM_BANHO')"><i class="bi bi-droplet-fill"></i>Em banho <span class="cat-count" id="cnt-EM_BANHO">0</span></button>
-    <button class="cat-tab" data-cat="FILA_BANHO" onclick="setCategoria('FILA_BANHO')"><i class="bi bi-list-ol"></i>Fila do banho <span class="cat-count" id="cnt-FILA_BANHO">0</span></button>
-    <button class="cat-tab" data-cat="PREPARANDO" onclick="setCategoria('PREPARANDO')"><i class="bi bi-hourglass-split"></i>Preparando <span class="cat-count" id="cnt-PREPARANDO">0</span></button>
-    <button class="cat-tab" data-cat="PREENCHER" onclick="setCategoria('PREENCHER')"><i class="bi bi-pencil-square"></i>Preenchendo <span class="cat-count" id="cnt-PREENCHER">0</span></button>
-  </div>
-  <div id="ativosWrap" class="ativos-cats">
-    <div class="gp-card muted small" style="padding:16px;">Carregando…</div>
-  </div>
+  <!-- ══════════════════ VISÃO: HISTÓRICO & ANÁLISES ══════════════════ -->
+  <section id="viewHist" style="display:none;">
 
-  <!-- ── Indicadores ── -->
-  <div class="gp-secao"><i class="bi bi-clipboard2-data-fill"></i>Quantidade de cestos</div>
-  <div class="gp-kpis">
-    <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-check2-all"></i></div><div><div class="gp-kpi-val" id="kTotal">0</div><div class="gp-kpi-lbl">Concluídos</div></div></div>
-    <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kAnd">0</div><div class="gp-kpi-lbl">Em andamento</div></div></div>
-    <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-droplet-fill"></i></div><div><div class="gp-kpi-val" id="kBanhoNormal">0</div><div class="gp-kpi-lbl">Banho normal</div></div></div>
-    <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kBanhoRetrab">0</div><div class="gp-kpi-lbl">Banho retrabalho</div></div></div>
-  </div>
+    <!-- Filtros -->
+    <section class="gp-card gp-filtros">
+      <input type="hidden" id="fDe"><input type="hidden" id="fAte">
+      <div class="gp-card-head"><i class="bi bi-funnel-fill"></i>Filtros do histórico</div>
+      <div class="filtros-row">
+        <!-- Linha do tempo -->
+        <div class="tl-wrap">
+          <label class="filtro-label">Linha do tempo <span class="filtro-hint">— arraste (ou toque) para selecionar o período</span></label>
+          <div class="tl">
+            <div class="tl-head">
+              <span class="tl-title"><i class="bi bi-calendar3"></i>Data</span>
+              <div class="tl-levels">
+                <button data-niv="ano" onclick="setNivel('ano')">Ano</button>
+                <button data-niv="mes" onclick="setNivel('mes')">Mês</button>
+                <button data-niv="dia" class="on" onclick="setNivel('dia')">Dia</button>
+              </div>
+            </div>
+            <div class="tl-nav" id="tlNav">
+              <button class="tl-nav-btn" onclick="navCtx(-1)" aria-label="Anterior"><i class="bi bi-chevron-left"></i></button>
+              <span class="tl-nav-lbl" id="tlNavLbl">—</span>
+              <button class="tl-nav-btn" onclick="navCtx(1)" aria-label="Próximo"><i class="bi bi-chevron-right"></i></button>
+            </div>
+            <div class="tl-strip-wrap"><div class="tl-strip" id="tlStrip"></div></div>
+            <div class="tl-foot">
+              <span class="tl-periodo" id="tlPeriodo"><i class="bi bi-calendar-check"></i>Todos os períodos</span>
+              <button class="tl-clear" id="tlClear" onclick="tlLimpar()"><i class="bi bi-x-circle"></i>Limpar</button>
+            </div>
+          </div>
+        </div>
+        <!-- Busca + Turno -->
+        <div class="busca-wrap">
+          <label class="filtro-label">OP / Código / Item <span class="filtro-hint">— digite a OP, o código ou a descrição</span></label>
+          <div class="busca-combo">
+            <i class="bi bi-search busca-icon"></i>
+            <input id="buscaItem" type="text" autocomplete="off" placeholder="Todas as OPs e itens" class="busca-input" oninput="filtrarBusca()">
+            <button id="buscaClear" class="busca-clear" onclick="limparBusca()" style="display:none;">&times;</button>
+          </div>
+          <label class="filtro-label" style="margin-top:14px;">Turno <span class="filtro-hint">— pode marcar 1, 2 ou os 3</span></label>
+          <div class="turno-seg" id="turnoSeg">
+            <button class="on" data-turno="" onclick="setTodosTurnos()"><i class="bi bi-clock-history"></i>Todos</button>
+            <button data-turno="1" onclick="toggleTurno('1')">1º <span>06:01–15:30</span></button>
+            <button data-turno="2" onclick="toggleTurno('2')">2º <span>15:31–00:00</span></button>
+            <button data-turno="3" onclick="toggleTurno('3')">3º <span>00:01–06:00</span></button>
+          </div>
+          <input type="hidden" id="fTurno" value="">
+          <p class="filtro-desc">Filtra <strong>indicadores, gráficos e histórico</strong> pelo turno em que o banho foi concluído.</p>
+        </div>
+      </div>
+    </section>
 
-  <div class="gp-secao"><i class="bi bi-clock-fill"></i>Tempo médio (min)</div>
-  <div class="gp-kpis gp-kpis-3">
-    <div class="gp-kpi"><div class="gp-kpi-ic ic-violet"><i class="bi bi-stopwatch-fill"></i></div><div><div class="gp-kpi-val" id="kPrep">0</div><div class="gp-kpi-lbl">Preparo</div></div></div>
-    <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kEspera">0</div><div class="gp-kpi-lbl">Espera (fila)</div></div></div>
-    <div class="gp-kpi"><div class="gp-kpi-ic ic-sky"><i class="bi bi-droplet-half"></i></div><div><div class="gp-kpi-val" id="kBanho">0</div><div class="gp-kpi-lbl">Banho</div></div></div>
-  </div>
-
-  <div class="gp-secao"><i class="bi bi-bar-chart-line-fill"></i>Totais processados</div>
-  <div class="gp-kpis gp-kpis-2">
-    <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-stack"></i></div><div><div class="gp-kpi-val" id="kPecas">0</div><div class="gp-kpi-lbl">Peças totais</div></div></div>
-    <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-rulers"></i></div><div><div class="gp-kpi-val" id="kArea">0</div><div class="gp-kpi-lbl">Área total (m²)</div></div></div>
-  </div>
-
-  <!-- ── Gráficos ── -->
-  <div class="gp-secao"><i class="bi bi-pie-chart-fill"></i>Análise gráfica</div>
-  <div class="chart-grid-3">
-    <div class="chart-box"><h6><i class="bi bi-pie-chart-fill"></i>Normal × Retrabalho</h6><canvas id="chartTipo" height="200"></canvas></div>
-    <div class="chart-box"><h6><i class="bi bi-bar-chart-fill"></i>Cestos por processo</h6><canvas id="chartProc" height="200"></canvas></div>
-    <div class="chart-box"><h6><i class="bi bi-graph-up"></i>Cestos por dia</h6><canvas id="chartDia" height="200"></canvas></div>
-  </div>
-  <div class="chart-grid" style="grid-template-columns:1fr;">
-    <div class="chart-box"><h6><i class="bi bi-rulers"></i>Área processada por dia (m²)</h6><canvas id="chartArea" height="180"></canvas></div>
-  </div>
-
-  <!-- ── Histórico ── -->
-  <div class="gp-secao"><i class="bi bi-clock-history"></i>Histórico dos cestos concluídos</div>
-  <div class="gp-card" style="overflow:hidden;padding:0;">
-    <div class="table-wrap">
-      <table class="tbl">
-        <thead><tr>
-          <th>#</th><th>Cesto</th><th>OP</th><th>Código</th><th>Texto breve</th><th>Qtd</th>
-          <th>Processo</th><th>Tipo</th><th>Turno</th><th>Prep</th><th>Banho</th><th>Fim</th>
-        </tr></thead>
-        <tbody id="histBody"><tr><td colspan="12" class="empty">Carregando…</td></tr></tbody>
-      </table>
+    <!-- Indicadores principais -->
+    <div class="gp-secao"><i class="bi bi-clipboard2-data-fill"></i>Quantidade de cestos</div>
+    <div class="gp-kpis">
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-check2-all"></i></div><div><div class="gp-kpi-val" id="kTotal">0</div><div class="gp-kpi-lbl">Concluídos</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kAnd">0</div><div class="gp-kpi-lbl">Em andamento</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-droplet-fill"></i></div><div><div class="gp-kpi-val" id="kBanhoNormal">0</div><div class="gp-kpi-lbl">Banho normal</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kBanhoRetrab">0</div><div class="gp-kpi-lbl">Banho retrabalho</div></div></div>
     </div>
-  </div>
+
+    <div class="gp-secao"><i class="bi bi-clock-fill"></i>Tempo médio (min)</div>
+    <div class="gp-kpis gp-kpis-3">
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-violet"><i class="bi bi-stopwatch-fill"></i></div><div><div class="gp-kpi-val" id="kPrep">0</div><div class="gp-kpi-lbl">Preparo</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kEspera">0</div><div class="gp-kpi-lbl">Espera (fila)</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-sky"><i class="bi bi-droplet-half"></i></div><div><div class="gp-kpi-val" id="kBanho">0</div><div class="gp-kpi-lbl">Banho</div></div></div>
+    </div>
+
+    <div class="gp-secao"><i class="bi bi-bar-chart-line-fill"></i>Totais e qualidade</div>
+    <div class="gp-kpis gp-kpis-3">
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-stack"></i></div><div><div class="gp-kpi-val" id="kPecas">0</div><div class="gp-kpi-lbl">Peças totais</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-box-seam"></i></div><div><div class="gp-kpi-val" id="kPeso">0</div><div class="gp-kpi-lbl">Peso total (kg)</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-rulers"></i></div><div><div class="gp-kpi-val" id="kArea">0</div><div class="gp-kpi-lbl">Área total (m²)</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-list-ol"></i></div><div><div class="gp-kpi-val" id="kTotalOps">0</div><div class="gp-kpi-lbl">OPs processadas</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-boxes"></i></div><div><div class="gp-kpi-val" id="kMediaPecas">0</div><div class="gp-kpi-lbl">Média peças/cesto</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kTaxaRetrab">0%</div><div class="gp-kpi-lbl">Taxa de retrabalho</div></div></div>
+    </div>
+
+    <!-- Gráficos -->
+    <div class="gp-secao"><i class="bi bi-pie-chart-fill"></i>Análise gráfica</div>
+    <div class="chart-grid-3">
+      <div class="chart-box"><h6><i class="bi bi-pie-chart-fill"></i>Normal × Retrabalho</h6><canvas id="chartTipo" height="200"></canvas></div>
+      <div class="chart-box"><h6><i class="bi bi-clock-history"></i>Cestos por turno</h6><canvas id="chartTurno" height="200"></canvas></div>
+      <div class="chart-box"><h6><i class="bi bi-bar-chart-fill"></i>Cestos por processo</h6><canvas id="chartProc" height="200"></canvas></div>
+    </div>
+    <div class="chart-grid">
+      <div class="chart-box"><h6><i class="bi bi-graph-up"></i>Cestos concluídos por dia</h6><canvas id="chartDia" height="180"></canvas></div>
+      <div class="chart-box"><h6><i class="bi bi-box-seam"></i>Peso processado por dia (kg)</h6><canvas id="chartPeso" height="180"></canvas></div>
+    </div>
+    <div class="chart-grid" style="grid-template-columns:1fr;">
+      <div class="chart-box"><h6><i class="bi bi-rulers"></i>Área processada por dia (m²)</h6><canvas id="chartArea" height="170"></canvas></div>
+    </div>
+
+    <!-- Produção por turno (tabela) -->
+    <div class="gp-secao"><i class="bi bi-clock-history"></i>Produção por turno</div>
+    <div class="gp-card" style="overflow:hidden;padding:0;">
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>Turno</th><th>Horário</th><th>Cestos</th><th>Peças</th><th>Peso (kg)</th><th>Área (m²)</th><th>Retrabalho</th></tr></thead>
+          <tbody id="turnoBody"><tr><td colspan="7" class="empty">Carregando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Produção por operador -->
+    <div class="gp-secao"><i class="bi bi-people-fill"></i>Produção por operador (preparação)</div>
+    <div class="gp-card" style="overflow:hidden;padding:0;">
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>#</th><th>Operador</th><th>Cestos</th><th>Peças</th></tr></thead>
+          <tbody id="operadoresBody"><tr><td colspan="4" class="empty">Carregando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Histórico -->
+    <div class="gp-secao"><i class="bi bi-clock-history"></i>Histórico dos cestos concluídos</div>
+    <div class="gp-card" style="overflow:hidden;padding:0;">
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>#</th><th>Cesto</th><th>OP</th><th>Código</th><th>Texto breve</th><th>Qtd</th>
+            <th>Processo</th><th>Tipo</th><th>Turno</th><th>Prep</th><th>Banho</th><th>Fim</th>
+          </tr></thead>
+          <tbody id="histBody"><tr><td colspan="12" class="empty">Carregando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 
   <footer class="gp-footer">
     <img src="{{ url_for('static', filename='logo_decio.png') }}" alt="Décio">
@@ -444,15 +486,52 @@ function tlLimpar(){
   pintarSel();
   if(window.atualizar)window.atualizar();
 }
-function montarSlicer(){ if(document.getElementById('tlStrip') && !document.querySelector('.tl-seg')) renderSlicer(); }
+function montarSlicer(){ if(document.getElementById('tlStrip') && !document.querySelector('.tl-seg')) selDefaultHoje(); }
 
-// ── Filtro por turno ───────────────────────────────────────────────────────
-function setTurno(v){
-  const sel=document.getElementById('fTurno');
-  if(sel)sel.value=v;
-  document.querySelectorAll('#turnoSeg button').forEach(b=>b.classList.toggle('on',(b.dataset.turno||'')===v));
+// Deixa a DATA DE HOJE marcada como padrão (nível dia)
+function selDefaultHoje(){
+  _niv='dia';
+  const h=new Date();
+  _anoCtx=h.getFullYear(); _mesCtx=h.getMonth()+1;
+  document.querySelectorAll('.tl-levels button').forEach(b=>b.classList.toggle('on',b.dataset.niv==='dia'));
+  renderSlicer();
+  const idx=h.getDate()-1;
+  _selA=_selB=idx; _selEstado='completo';
+  pintarSel(); aplicarSlicer();
+  const seg=document.querySelector('.tl-seg[data-idx="'+idx+'"]');
+  if(seg&&seg.scrollIntoView)seg.scrollIntoView({inline:'center',block:'nearest'});
+}
+
+// ── Menu de visões (Ao vivo / Histórico) ────────────────────────────────────
+function setView(v){
+  document.querySelectorAll('.view-menu .view-tab').forEach(b=>b.classList.toggle('on',b.dataset.view===v));
+  document.getElementById('viewLive').style.display=(v==='live')?'':'none';
+  document.getElementById('viewHist').style.display=(v==='hist')?'':'none';
+  if(v==='hist'){
+    if(window.atualizar)window.atualizar();
+    // garante que os gráficos ocupem o tamanho certo depois de aparecerem
+    setTimeout(()=>{ if(window.resizeCharts)window.resizeCharts(); },60);
+  }
+}
+
+// ── Filtro por turno (múltipla seleção: 1, 2 ou os 3) ───────────────────────
+let _turnos=new Set();
+function _syncTurno(){
+  const el=document.getElementById('fTurno');
+  const arr=[...  _turnos].sort();
+  if(el)el.value=arr.join(',');
+  document.querySelectorAll('#turnoSeg button').forEach(b=>{
+    const t=b.dataset.turno||'';
+    if(t==='')b.classList.toggle('on',_turnos.size===0);
+    else b.classList.toggle('on',_turnos.has(t));
+  });
   if(window.atualizar)window.atualizar();
 }
+function toggleTurno(t){
+  if(_turnos.has(t))_turnos.delete(t); else _turnos.add(t);
+  _syncTurno();
+}
+function setTodosTurnos(){ _turnos.clear(); _syncTurno(); }
 
 // ── Busca por OP / código / descrição (filtra a tabela de histórico) ───────
 let _termoBusca='';

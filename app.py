@@ -1344,7 +1344,7 @@ def api_banho_finalizar():
 # ─────────────────────────────────────────────────────────────────────────────
 # Dados dos dashboards
 # ─────────────────────────────────────────────────────────────────────────────
-def _coletar_dados(de=None, ate=None, turno=None):
+def _coletar_dados(de=None, ate=None, turnos=None):
     db = Session()
     try:
         cards = db.query(Card).filter_by(estado=ST_CONCLUIDO).all()
@@ -1357,7 +1357,7 @@ def _coletar_dados(de=None, ate=None, turno=None):
                 return False
             if ate and dia > ate:
                 return False
-            if turno in (1, 2, 3) and turno_de_card(c) != turno:
+            if turnos and turno_de_card(c) not in turnos:
                 return False
             return True
         cards = [c for c in cards if dentro(c)]
@@ -1387,6 +1387,14 @@ def _coletar_dados(de=None, ate=None, turno=None):
         peso_total_geral = 0.0
         area_total_geral = 0.0
         pecas_total_geral = 0
+        total_ops = 0
+        # análises extras p/ a gerência
+        turno_cestos = {1: 0, 2: 0, 3: 0}
+        turno_pecas = {1: 0, 2: 0, 3: 0}
+        turno_peso = {1: 0.0, 2: 0.0, 3: 0.0}
+        turno_area = {1: 0.0, 2: 0.0, 3: 0.0}
+        turno_retrab = {1: 0, 2: 0, 3: 0}
+        por_operador = {}   # operador prep -> {cestos, pecas}
         for c in cards:
             p = c.processo or 'Sem processo'
             por_proc[p] = por_proc.get(p, 0) + 1
@@ -1398,6 +1406,24 @@ def _coletar_dados(de=None, ate=None, turno=None):
             peso_total_geral += dd['peso_total']
             area_total_geral += dd['area_total']
             pecas_total_geral += dd['qtd_total']
+            total_ops += dd['n_itens'] or 1
+            t = turno_de_card(c)
+            if t in turno_cestos:
+                turno_cestos[t] += 1
+                turno_pecas[t] += dd['qtd_total']
+                turno_peso[t] = round(turno_peso[t] + dd['peso_total'], 2)
+                turno_area[t] = round(turno_area[t] + dd['area_total'], 3)
+                if c.tipo == 'Retrabalho':
+                    turno_retrab[t] += 1
+            op = (c.operador_prep or '—').strip() or '—'
+            reg = por_operador.setdefault(op, {'cestos': 0, 'pecas': 0})
+            reg['cestos'] += 1
+            reg['pecas'] += dd['qtd_total']
+        # ordena operadores por produção (top primeiro)
+        operadores = sorted(
+            ({'nome': k, 'cestos': v['cestos'], 'pecas': v['pecas']} for k, v in por_operador.items()),
+            key=lambda x: x['cestos'], reverse=True)
+        total = len(cards)
         return {
             'total': len(cards), 'normais': normais, 'retrabalhos': retrab,
             'em_andamento': len(ativos),
@@ -1410,6 +1436,18 @@ def _coletar_dados(de=None, ate=None, turno=None):
             'peso_total_geral': round(peso_total_geral, 1),
             'area_total_geral': round(area_total_geral, 2),
             'pecas_total_geral': pecas_total_geral,
+            'total_ops': total_ops,
+            'media_pecas_cesto': round(pecas_total_geral / total, 1) if total else 0,
+            'taxa_retrab': round(100 * retrab / total, 1) if total else 0,
+            'turnos': {
+                'labels': ['1º turno', '2º turno', '3º turno'],
+                'cestos': [turno_cestos[1], turno_cestos[2], turno_cestos[3]],
+                'pecas': [turno_pecas[1], turno_pecas[2], turno_pecas[3]],
+                'peso': [round(turno_peso[1], 1), round(turno_peso[2], 1), round(turno_peso[3], 1)],
+                'area': [round(turno_area[1], 2), round(turno_area[2], 2), round(turno_area[3], 2)],
+                'retrabalho': [turno_retrab[1], turno_retrab[2], turno_retrab[3]],
+            },
+            'operadores': operadores,
             'ativos': [c.to_dict() for c in ativos],
             'registros': [c.to_dict() for c in sorted(cards, key=lambda x: x.id, reverse=True)[:200]],
         }
@@ -1427,11 +1465,16 @@ def _parse_datas():
 
 
 def _parse_turno():
-    try:
-        t = int(request.args.get('turno', '') or 0)
-        return t if t in (1, 2, 3) else None
-    except (ValueError, TypeError):
+    """Aceita 1 ou vários turnos: ?turno=1  ou  ?turno=1,2 . Vazio = todos."""
+    raw = (request.args.get('turno', '') or '').strip()
+    if not raw:
         return None
+    s = set()
+    for parte in raw.replace(';', ',').split(','):
+        parte = parte.strip()
+        if parte in ('1', '2', '3'):
+            s.add(int(parte))
+    return s or None
 
 
 @app.route('/api/dashboard/dados')
@@ -1669,12 +1712,12 @@ def _estilo_cabecalho(ws, headers):
     ws.row_dimensions[1].height = 28
 
 
-def _gerar_excel(tipo, turno=None):
+def _gerar_excel(tipo, turnos=None):
     db = Session()
     try:
         cards = db.query(Card).filter_by(estado=ST_CONCLUIDO).order_by(Card.id).all()
-        if turno in (1, 2, 3):
-            cards = [c for c in cards if turno_de_card(c) == turno]
+        if turnos:
+            cards = [c for c in cards if turno_de_card(c) in turnos]
         wb = Workbook()
         ws = wb.active
 

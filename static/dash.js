@@ -1,6 +1,6 @@
 // Lógica compartilhada do dashboard admin e do painel público.
 // Define window.DASH_ENDPOINT antes de carregar este arquivo.
-let chartTipo, chartProc, chartDia, chartPeso, chartArea;
+let chartTipo, chartProc, chartDia, chartPeso, chartArea, chartTurno;
 const ESTADOS={
   PREPARANDO:{t:'Preparando',c:'#F59E0B',i:'hourglass-split'},
   PREENCHER:{t:'Preencher',c:'#64748b',i:'pencil-square'},
@@ -56,10 +56,33 @@ async function atualizar(){
   set('kPecas',d.pecas_total_geral!==undefined?d.pecas_total_geral:0);
   set('kPeso',d.peso_total_geral!==undefined?d.peso_total_geral:0);
   set('kArea',d.area_total_geral!==undefined?d.area_total_geral:0);
+  set('kTotalOps',d.total_ops!==undefined?d.total_ops:0);
+  set('kMediaPecas',d.media_pecas_cesto!==undefined?d.media_pecas_cesto:0);
+  set('kTaxaRetrab',(d.taxa_retrab!==undefined?d.taxa_retrab:0)+'%');
   renderAtivos(d.ativos);
   renderCharts(d);
+  if(document.getElementById('turnoBody')) renderTurnoTable(d.turnos);
+  if(document.getElementById('operadoresBody')) renderOperadores(d.operadores);
   if(document.getElementById('tbody')) renderTabela(d.registros);
   if(document.getElementById('histBody')) renderHistorico(d.registros);
+}
+function renderTurnoTable(t){
+  const tb=document.getElementById('turnoBody'); if(!tb)return;
+  if(!t||!t.labels){tb.innerHTML='<tr><td colspan="7" class="empty">Sem dados.</td></tr>';return;}
+  const horas=['06:01–15:30','15:31–00:00','00:01–06:00'];
+  let html='';
+  for(let i=0;i<3;i++){
+    html+=`<tr><td><span class="pill pill-turno">${t.labels[i]}</span></td><td><span class="small">${horas[i]}</span></td>
+      <td class="mono"><strong>${t.cestos[i]}</strong></td><td class="mono">${t.pecas[i]}</td>
+      <td class="mono">${t.peso[i]}</td><td class="mono">${t.area[i]}</td><td class="mono">${t.retrabalho[i]}</td></tr>`;
+  }
+  tb.innerHTML=html;
+}
+function renderOperadores(ops){
+  const tb=document.getElementById('operadoresBody'); if(!tb)return;
+  if(!ops||!ops.length){tb.innerHTML='<tr><td colspan="4" class="empty">Sem dados no período.</td></tr>';return;}
+  tb.innerHTML=ops.map((o,i)=>`<tr><td>${i+1}</td><td><strong>${o.nome||'—'}</strong></td>
+    <td class="mono">${o.cestos}</td><td class="mono">${o.pecas}</td></tr>`).join('');
 }
 function renderHistorico(regs){
   const tb=document.getElementById('histBody');
@@ -95,6 +118,9 @@ function renderAtivos(ativos){
 
 function renderCharts(d){
   _setupChartDefaults();
+  // se a área de gráficos ainda está oculta (visão Histórico não aberta), aguarda
+  const _anchor=document.getElementById('chartTipo');
+  if(_anchor && _anchor.offsetParent===null && !chartTipo) return;
   const labels=Object.keys(d.por_processo), data=Object.values(d.por_processo);
   const diaL=Object.keys(d.por_dia), diaD=Object.values(d.por_dia);
   const baseOpts={responsive:true,maintainAspectRatio:true,aspectRatio:1.7,animation:{duration:600}};
@@ -122,6 +148,17 @@ function renderCharts(d){
     chartTipo.data.datasets[0].data=[d.normais,d.retrabalhos];chartTipo.update();
     chartProc.data.labels=labels;chartProc.data.datasets[0].data=data;chartProc.update();
     if(chartDia){chartDia.data.labels=diaL;chartDia.data.datasets[0].data=diaD;chartDia.update();}
+  }
+  // Cestos por turno (barras)
+  const cvT=document.getElementById('chartTurno');
+  if(cvT && d.turnos){
+    if(!chartTurno){
+      chartTurno=new Chart(cvT,{type:'bar',
+        data:{labels:d.turnos.labels,datasets:[{data:d.turnos.cestos,borderRadius:8,maxBarThickness:60,
+          backgroundColor:[ '#2BA45C','#1E8FC4','#1668C0' ]}]},
+        options:{...baseOpts,plugins:{legend:{display:false}},
+          scales:{y:{beginAtZero:true,ticks:{stepSize:1,precision:0},grid:_gridCfg},x:{grid:{display:false}}}}});
+    }else{chartTurno.data.labels=d.turnos.labels;chartTurno.data.datasets[0].data=d.turnos.cestos;chartTurno.update();}
   }
   // peso e área por dia (linha)
   const pesoL=Object.keys(d.peso_por_dia||{}), pesoD=Object.values(d.peso_por_dia||{});
@@ -179,3 +216,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   setInterval(atualizar,8000);
 });
 window.atualizar=atualizar;
+function resizeCharts(){
+  [chartTipo,chartProc,chartDia,chartPeso,chartArea,chartTurno].forEach(c=>{try{c&&c.resize();}catch(_){}});
+}
+window.resizeCharts=resizeCharts;
