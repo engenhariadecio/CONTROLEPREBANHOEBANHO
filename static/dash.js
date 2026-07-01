@@ -38,8 +38,9 @@ const _gridCfg={color:'rgba(86,97,111,.10)',drawBorder:false};
 function getRange(){
   const de=document.getElementById('fDe')?.value||'';
   const ate=document.getElementById('fAte')?.value||'';
+  const turno=document.getElementById('fTurno')?.value||'';
   const p=new URLSearchParams();
-  if(de)p.set('de',de); if(ate)p.set('ate',ate);
+  if(de)p.set('de',de); if(ate)p.set('ate',ate); if(turno)p.set('turno',turno);
   return p.toString()?('?'+p.toString()):'';
 }
 
@@ -62,15 +63,16 @@ async function atualizar(){
 }
 function renderHistorico(regs){
   const tb=document.getElementById('histBody');
-  if(!regs||!regs.length){tb.innerHTML='<tr><td colspan="11" class="empty">Nenhum cesto concluído ainda.</td></tr>';return;}
+  if(!regs||!regs.length){tb.innerHTML='<tr><td colspan="12" class="empty">Nenhum cesto concluído ainda.</td></tr>';return;}
   tb.innerHTML=regs.map(r=>{
     // texto pesquisável: todas as OPs, códigos e descrições do cesto
     const itens=(r.itens&&r.itens.length)?r.itens:[{ordem:r.ordem,material:r.material,texto_breve:r.texto_breve}];
-    const busca=(r.numero_cesto+' '+itens.map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' ')+' '+(r.processo||'')+' '+(r.tipo||'')).toLowerCase();
+    const busca=(r.numero_cesto+' '+itens.map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' ')+' '+(r.processo||'')+' '+(r.tipo||'')+' '+(r.turno_lbl||'')).toLowerCase();
     return `<tr class="${r.tipo==='Retrabalho'?'retrab':''}" data-busca="${busca.replace(/"/g,'')}">
     <td>${r.id}</td><td><strong>${r.numero_cesto}</strong></td><td>${r.n_itens>1?(r.ordem+' +'+(r.n_itens-1)):(r.ordem||'—')}</td>
     <td>${r.material||'—'}</td><td><span class="small">${r.texto_breve||'—'}</span></td><td>${r.qtd_total}</td>
     <td>${r.processo||'—'}</td><td><span class="pill ${r.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${r.tipo}</span></td>
+    <td><span class="pill pill-turno">${r.turno_lbl||'—'}</span></td>
     <td class="mono">${r.prep_minutos}</td><td class="mono">${r.banho_minutos}</td>
     <td><span class="small">${r.banho_fim||''}</span></td>
   </tr>`;}).join('');
@@ -146,13 +148,14 @@ function renderCharts(d){
 
 function renderTabela(regs){
   const tb=document.getElementById('tbody');
-  if(!regs.length){tb.innerHTML='<tr><td colspan="11" class="empty">Nenhum registro no período.</td></tr>';return;}
+  if(!regs.length){tb.innerHTML='<tr><td colspan="12" class="empty">Nenhum registro no período.</td></tr>';return;}
   tb.innerHTML=regs.map(r=>`<tr class="${r.tipo==='Retrabalho'?'retrab':''}"
     data-txt="${(r.numero_cesto+' '+r.ordem+' '+r.material+' '+(r.texto_breve||'')+' '+r.operador_prep+' '+r.operador_banho).toLowerCase()}"
     data-tipo="${r.tipo}" data-proc="${r.processo}">
     <td>${r.id}</td><td><strong>${r.numero_cesto}</strong></td><td>${r.n_itens>1?(r.ordem+' +'+(r.n_itens-1)):(r.ordem||'—')}</td>
     <td>${r.material||'—'}</td><td><span class="small">${r.texto_breve||'—'}</span></td><td>${r.qtd_total}</td>
     <td>${r.processo||'—'}</td><td><span class="pill ${r.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${r.tipo}</span></td>
+    <td><span class="pill pill-turno">${r.turno_lbl||'—'}</span></td>
     <td class="mono">${r.prep_minutos}</td><td class="mono">${r.banho_minutos}</td>
     <td><span class="small">${r.banho_fim||''}</span></td>
   </tr>`).join('');
@@ -171,7 +174,7 @@ function aplicarFiltroTexto(){
 
 document.addEventListener('DOMContentLoaded',()=>{
   ['fTexto','fTipo','fProc'].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener(id==='fTexto'?'input':'change',aplicarFiltroTexto);});
-  ['fDe','fAte'].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener('change',atualizar);});
+  ['fDe','fAte','fTurno'].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener('change',atualizar);});
   atualizar();
   setInterval(atualizar,8000);
 });

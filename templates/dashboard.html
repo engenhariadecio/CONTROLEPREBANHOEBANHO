@@ -5,18 +5,19 @@
 <div class="section-head">
   <div class="section-title"><i class="bi bi-grid-1x2-fill"></i>Dashboard</div>
   <div class="export-bar">
-    <a href="{{ url_for('download_prebanho') }}" class="btn btn-ghost btn-sm"><i class="bi bi-file-earmark-excel"></i>Excel pré-banho</a>
-    <a href="{{ url_for('download_banho') }}" class="btn btn-ghost btn-sm"><i class="bi bi-file-earmark-excel"></i>Excel banho</a>
-    <a href="{{ url_for('download_geral') }}" class="btn btn-ghost btn-sm"><i class="bi bi-file-earmark-excel"></i>Excel geral</a>
+    <a href="#" onclick="baixar('prebanho');return false;" class="btn btn-brand btn-sm"><i class="bi bi-file-earmark-excel"></i>Excel pré-banho</a>
+    <a href="#" onclick="baixar('banho');return false;" class="btn btn-brand btn-sm"><i class="bi bi-file-earmark-excel"></i>Excel banho</a>
+    <a href="#" onclick="baixar('geral');return false;" class="btn btn-brand btn-sm"><i class="bi bi-file-earmark-excel"></i>Excel geral</a>
     <a href="{{ url_for('painel_gerencia') }}" target="_blank" class="btn btn-ghost btn-sm"><i class="bi bi-tv"></i>Painel de gerência</a>
   </div>
 </div>
 
 <!-- Filtros de data -->
-<div class="panel panel-brand panel-pad" style="margin-bottom:18px;">
+<div class="gp-card" style="margin-bottom:18px;">
   <div class="filter-bar" style="margin:0;">
     <div><label class="label">De</label><input type="date" id="fDe" class="input input-sm"></div>
     <div><label class="label">Até</label><input type="date" id="fAte" class="input input-sm"></div>
+    <div><label class="label">Turno</label><select id="fTurno" class="select input-sm"><option value="">Todos os turnos</option><option value="1">1º turno (06:01–15:30)</option><option value="2">2º turno (15:31–00:00)</option><option value="3">3º turno (00:01–06:00)</option></select></div>
     <div><label class="label">Buscar</label><input type="text" id="fTexto" class="input input-sm" placeholder="Cesto, OP, código, operador…"></div>
     <div><label class="label">Tipo</label><select id="fTipo" class="select input-sm"><option value="">Todos</option><option>Normal</option><option>Retrabalho</option></select></div>
     <div><label class="label">Processo</label><select id="fProc" class="select input-sm"><option value="">Todos</option>{% for p in processos %}<option>{{ p }}</option>{% endfor %}</select></div>
@@ -71,15 +72,25 @@
     <table class="tbl">
       <thead><tr>
         <th>#</th><th>Cesto</th><th>OP</th><th>Código</th><th>Texto breve</th><th>Qtd</th>
-        <th>Processo</th><th>Tipo</th><th>Prep</th><th>Banho</th><th>Fim</th>
+        <th>Processo</th><th>Tipo</th><th>Turno</th><th>Prep</th><th>Banho</th><th>Fim</th>
       </tr></thead>
-      <tbody id="tbody"><tr><td colspan="11" class="empty">Carregando…</td></tr></tbody>
+      <tbody id="tbody"><tr><td colspan="12" class="empty">Carregando…</td></tr></tbody>
     </table>
   </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
-<script>window.DASH_ENDPOINT='/api/dashboard/dados';</script>
+<script>window.DASH_ENDPOINT='/api/dashboard/dados';
+function baixar(tipo){
+  const t=document.getElementById('fTurno')?.value||'';
+  const de=document.getElementById('fDe')?.value||'';
+  const ate=document.getElementById('fAte')?.value||'';
+  const p=new URLSearchParams();
+  if(t)p.set('turno',t); if(de)p.set('de',de); if(ate)p.set('ate',ate);
+  const qs=p.toString()?('?'+p.toString()):'';
+  window.location='/api/download/'+tipo+qs;
+}
+</script>
 <script src="{{ url_for('static', filename='dash.js') }}"></script>
 {% endblock %}

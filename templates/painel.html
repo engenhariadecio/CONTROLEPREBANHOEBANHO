@@ -52,7 +52,7 @@
     <div class="filtros-row">
       <!-- Linha do tempo (estilo Excel: Ano / Mês / Dia) -->
       <div class="tl-wrap">
-        <label class="filtro-label">Linha do tempo <span class="filtro-hint">— toque para o início e o fim do período</span></label>
+        <label class="filtro-label">Linha do tempo <span class="filtro-hint">— arraste (ou toque) para selecionar o período</span></label>
         <div class="tl">
           <div class="tl-head">
             <span class="tl-title"><i class="bi bi-calendar3"></i>Data</span>
@@ -82,13 +82,28 @@
           <input id="buscaItem" type="text" autocomplete="off" placeholder="Todas as OPs e itens" class="busca-input" oninput="filtrarBusca()">
           <button id="buscaClear" class="busca-clear" onclick="limparBusca()" style="display:none;">&times;</button>
         </div>
-        <p class="filtro-desc">Filtre o <strong>histórico</strong> por número da OP, código do item ou descrição da peça.</p>
+        <label class="filtro-label" style="margin-top:14px;">Turno</label>
+        <div class="turno-seg" id="turnoSeg">
+          <button class="on" data-turno="" onclick="setTurno('')"><i class="bi bi-clock-history"></i>Todos</button>
+          <button data-turno="1" onclick="setTurno('1')">1º <span>06:01–15:30</span></button>
+          <button data-turno="2" onclick="setTurno('2')">2º <span>15:31–00:00</span></button>
+          <button data-turno="3" onclick="setTurno('3')">3º <span>00:01–06:00</span></button>
+        </div>
+        <select id="fTurno" class="hidden-sel" style="display:none;"><option value=""></option><option value="1"></option><option value="2"></option><option value="3"></option></select>
+        <p class="filtro-desc">Filtra <strong>indicadores, gráficos e histórico</strong> pelo turno em que o banho foi concluído.</p>
       </div>
     </div>
   </section>
 
   <!-- ── Cestos ativos agora (agrupados por etapa) ── -->
   <div class="gp-secao"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos ativos agora<span class="gp-secao-tag" id="ativosTag"></span></div>
+  <div class="cat-menu" id="catMenu">
+    <button class="cat-tab on" data-cat="" onclick="setCategoria('')"><i class="bi bi-grid-fill"></i>Todos <span class="cat-count" id="cnt-todos">0</span></button>
+    <button class="cat-tab" data-cat="EM_BANHO" onclick="setCategoria('EM_BANHO')"><i class="bi bi-droplet-fill"></i>Em banho <span class="cat-count" id="cnt-EM_BANHO">0</span></button>
+    <button class="cat-tab" data-cat="FILA_BANHO" onclick="setCategoria('FILA_BANHO')"><i class="bi bi-list-ol"></i>Fila do banho <span class="cat-count" id="cnt-FILA_BANHO">0</span></button>
+    <button class="cat-tab" data-cat="PREPARANDO" onclick="setCategoria('PREPARANDO')"><i class="bi bi-hourglass-split"></i>Preparando <span class="cat-count" id="cnt-PREPARANDO">0</span></button>
+    <button class="cat-tab" data-cat="PREENCHER" onclick="setCategoria('PREENCHER')"><i class="bi bi-pencil-square"></i>Preenchendo <span class="cat-count" id="cnt-PREENCHER">0</span></button>
+  </div>
   <div id="ativosWrap" class="ativos-cats">
     <div class="gp-card muted small" style="padding:16px;">Carregando…</div>
   </div>
@@ -133,9 +148,9 @@
       <table class="tbl">
         <thead><tr>
           <th>#</th><th>Cesto</th><th>OP</th><th>Código</th><th>Texto breve</th><th>Qtd</th>
-          <th>Processo</th><th>Tipo</th><th>Prep</th><th>Banho</th><th>Fim</th>
+          <th>Processo</th><th>Tipo</th><th>Turno</th><th>Prep</th><th>Banho</th><th>Fim</th>
         </tr></thead>
-        <tbody id="histBody"><tr><td colspan="11" class="empty">Carregando…</td></tr></tbody>
+        <tbody id="histBody"><tr><td colspan="12" class="empty">Carregando…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -200,38 +215,55 @@ function _cardAtivoHTML(c){
     </div>
     <div class="ativo-info">${c.n_itens>1?(c.n_itens+' OPs'):('OP '+(c.ordem||'—'))} · <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}" style="font-size:.6rem;">${c.tipo}</span> · ${c.qtd_total||0} pç</div>
     ${cronHTML}
-    <button class="btn btn-ghost btn-sm btn-block" style="margin-top:10px;font-size:.78rem;" onclick="verDetalhes(${c.id})"><i class="bi bi-eye"></i>Ver detalhes</button>
+    <button class="btn-detalhes btn-detalhes-block" onclick="verDetalhes(${c.id})"><i class="bi bi-eye"></i>Ver detalhes</button>
   </div>`;
+}
+
+let _catSel='';
+function setCategoria(cat){
+  _catSel=cat;
+  document.querySelectorAll('#catMenu .cat-tab').forEach(b=>b.classList.toggle('on',(b.dataset.cat||'')===cat));
+  pintarAtivos();
+}
+
+function pintarAtivos(){
+  const wrap=document.getElementById('ativosWrap');
+  if(!wrap)return;
+  const ativos=(window._ativosCache||[]);
+  const tag=document.getElementById('ativosTag');
+  if(tag)tag.textContent=ativos.length?(ativos.length+(ativos.length>1?' cestos':' cesto')):'';
+  // contadores por categoria
+  const cont={EM_BANHO:0,FILA_BANHO:0,PREPARANDO:0,PREENCHER:0};
+  ativos.forEach(c=>{if(cont[c.estado]!==undefined)cont[c.estado]++;});
+  const t=document.getElementById('cnt-todos'); if(t)t.textContent=ativos.length;
+  Object.keys(cont).forEach(k=>{const e=document.getElementById('cnt-'+k);if(e)e.textContent=cont[k];});
+  if(!ativos.length){wrap.innerHTML='<div class="gp-card gp-vazio"><i class="bi bi-clipboard-check"></i>Nenhum cesto ativo no momento.</div>';return;}
+  const grupos={};
+  ativos.forEach(c=>{(grupos[c.estado]=grupos[c.estado]||[]).push(c);});
+  let html='';
+  ORDEM_CAT.forEach(est=>{
+    if(_catSel && est!==_catSel)return;
+    const lista=grupos[est];
+    if(!lista||!lista.length)return;
+    const e=ESTADO_INFO[est];
+    html+=`<div class="cat-bloco">
+      <div class="cat-head" style="--cor:${e.c};">
+        <span class="cat-dot" style="background:${e.c};"></span>
+        <span class="cat-nome"><i class="bi bi-${e.i}"></i> ${e.t}</span>
+        <span class="cat-qtd">${lista.length}</span>
+      </div>
+      <div class="ativos-grid">${lista.map(_cardAtivoHTML).join('')}</div>
+    </div>`;
+  });
+  if(!html)html='<div class="gp-card gp-vazio"><i class="bi bi-inbox"></i>Nenhum cesto nesta categoria agora.</div>';
+  wrap.innerHTML=html;
 }
 
 async function carregarAtivos(){
   try{
     const d=await (await fetch('/api/painel/dados')).json();
-    const wrap=document.getElementById('ativosWrap');
-    if(!wrap)return;
-    const ativos=(d.ativos||[]);
-    window._ativosCache=ativos;
-    const tag=document.getElementById('ativosTag');
-    if(tag)tag.textContent=ativos.length?(ativos.length+(ativos.length>1?' cestos':' cesto')):'';
-    if(!ativos.length){wrap.innerHTML='<div class="gp-card gp-vazio"><i class="bi bi-clipboard-check"></i>Nenhum cesto ativo no momento.</div>';return;}
-    // agrupa por estado
-    const grupos={};
-    ativos.forEach(c=>{(grupos[c.estado]=grupos[c.estado]||[]).push(c);});
-    let html='';
-    ORDEM_CAT.forEach(est=>{
-      const lista=grupos[est];
-      if(!lista||!lista.length)return;
-      const e=ESTADO_INFO[est];
-      html+=`<div class="cat-bloco">
-        <div class="cat-head" style="--cor:${e.c};">
-          <span class="cat-dot" style="background:${e.c};"></span>
-          <span class="cat-nome"><i class="bi bi-${e.i}"></i> ${e.t}</span>
-          <span class="cat-qtd">${lista.length}</span>
-        </div>
-        <div class="ativos-grid">${lista.map(_cardAtivoHTML).join('')}</div>
-      </div>`;
-    });
-    wrap.innerHTML=html;
+    window._ativosCache=(d.ativos||[]);
+    pintarAtivos();
   }catch(_){}
 }
 function verDetalhes(id){
@@ -314,20 +346,57 @@ function renderSlicer(){
   if(_niv==='ano'){nav.style.display='none';}
   else if(_niv==='mes'){nav.style.display='';lbl.textContent=_anoCtx;}
   else{nav.style.display='';lbl.textContent=`${MESES_PT[_mesCtx-1]} ${_anoCtx}`;}
-  // segmentos
+  // segmentos (sem onclick — a seleção é por arrastar/tocar, ver bindTimeline)
   const strip=document.getElementById('tlStrip');
   strip.innerHTML=_segs.map((s,i)=>`
-    <button class="tl-seg${s.fds?' fds':''}" data-idx="${i}" onclick="tlTap(${i})">
+    <button class="tl-seg${s.fds?' fds':''}" data-idx="${i}" type="button">
       ${s.sub?`<span class="tl-seg-sub">${s.sub}</span>`:''}
       <span class="tl-seg-lbl">${s.lbl}</span>
     </button>`).join('');
+  bindTimeline();
   pintarSel();
 }
 
-function tlTap(i){
-  if(_selEstado==='vazio'||_selEstado==='completo'){_selA=_selB=i;_selEstado='inicio';}
-  else{_selB=i;_selEstado='completo';}
-  pintarSel();aplicarSlicer();
+// ── Seleção por ARRASTAR (funciona no mouse e no toque) ──
+let _dragging=false,_moved=false;
+function _segIdxFromPoint(x,y){
+  const el=document.elementFromPoint(x,y);
+  const seg=el&&el.closest?el.closest('.tl-seg'):null;
+  return seg?+seg.dataset.idx:null;
+}
+function _autoScroll(x){
+  const wrap=document.querySelector('.tl-strip-wrap');if(!wrap)return;
+  const r=wrap.getBoundingClientRect(),edge=46;
+  if(x>r.right-edge) wrap.scrollLeft+=16;
+  else if(x<r.left+edge) wrap.scrollLeft-=16;
+}
+function bindTimeline(){
+  const strip=document.getElementById('tlStrip');
+  if(!strip||strip._bound)return; strip._bound=true;
+  strip.addEventListener('pointerdown',e=>{
+    const seg=e.target.closest('.tl-seg'); if(!seg)return;
+    e.preventDefault();
+    _dragging=true;_moved=false;
+    _selA=_selB=+seg.dataset.idx;_selEstado='inicio';
+    try{strip.setPointerCapture(e.pointerId);}catch(_){}
+    pintarSel();
+  });
+  strip.addEventListener('pointermove',e=>{
+    if(!_dragging)return;
+    e.preventDefault();
+    _autoScroll(e.clientX);
+    const idx=_segIdxFromPoint(e.clientX,e.clientY);
+    if(idx!==null&&idx!==_selB){_selB=idx;_moved=true;pintarSel();}
+  });
+  const fim=e=>{
+    if(!_dragging)return;
+    _dragging=false;
+    try{strip.releasePointerCapture(e.pointerId);}catch(_){}
+    _selEstado='completo';
+    aplicarSlicer();
+  };
+  strip.addEventListener('pointerup',fim);
+  strip.addEventListener('pointercancel',fim);
 }
 function pintarSel(){
   const segs=document.querySelectorAll('.tl-seg');
@@ -376,6 +445,14 @@ function tlLimpar(){
   if(window.atualizar)window.atualizar();
 }
 function montarSlicer(){ if(document.getElementById('tlStrip') && !document.querySelector('.tl-seg')) renderSlicer(); }
+
+// ── Filtro por turno ───────────────────────────────────────────────────────
+function setTurno(v){
+  const sel=document.getElementById('fTurno');
+  if(sel)sel.value=v;
+  document.querySelectorAll('#turnoSeg button').forEach(b=>b.classList.toggle('on',(b.dataset.turno||'')===v));
+  if(window.atualizar)window.atualizar();
+}
 
 // ── Busca por OP / código / descrição (filtra a tabela de histórico) ───────
 let _termoBusca='';

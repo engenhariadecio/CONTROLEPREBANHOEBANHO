@@ -420,6 +420,38 @@ def tempo_util_segundos(inicio_utc, fim_utc, cfg=None):
     return int(max(0, total))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Turnos de trabalho
+#   1º turno: 06:01 – 15:30 | 2º turno: 15:31 – 00:00 | 3º turno: 00:01 – 06:00
+# ─────────────────────────────────────────────────────────────────────────────
+TURNOS = {1: '1º turno', 2: '2º turno', 3: '3º turno'}
+
+
+def turno_num(dt_utc):
+    """Retorna 1, 2 ou 3 conforme o horário local (UTC-3). 0 se sem data."""
+    if not dt_utc:
+        return 0
+    local = dt_utc - timedelta(hours=FUSO_LOCAL_HORAS)
+    M = local.hour * 60 + local.minute
+    if M == 0:               # 00:00 pertence ao 2º turno (que vai até 00:00)
+        return 2
+    if 1 <= M <= 360:        # 00:01 – 06:00
+        return 3
+    if 361 <= M <= 930:      # 06:01 – 15:30
+        return 1
+    return 2                 # 15:31 – 23:59
+
+
+def turno_label(n):
+    return TURNOS.get(n, '—')
+
+
+def turno_de_card(c):
+    """Turno do cesto — baseado no fim do banho (evento que o conclui)."""
+    dt = c.banho_fim or c.banho_inicio or c.prep_fim or c.prep_inicio
+    return turno_num(dt)
+
+
 def _pausas_resumo(pausas_json):
     try:
         mapa = json.loads(pausas_json) if pausas_json else {}
@@ -529,6 +561,8 @@ class Card(Base):
             'prep_minutos': round(self.prep_minutos or 0, 1),
             'total_pausa_min': total_pausa_min,
             'espera_min': espera_min,
+            'turno': turno_de_card(self),
+            'turno_lbl': turno_label(turno_de_card(self)),
             'espera_seg_atual': (tempo_util_segundos(self.prep_fim, datetime.utcnow())
                                  if self.estado == ST_FILA_BANHO and self.prep_fim else 0),
             'banho_inicio': fmt(self.banho_inicio), 'banho_fim': fmt(self.banho_fim),
@@ -1310,7 +1344,7 @@ def api_banho_finalizar():
 # ─────────────────────────────────────────────────────────────────────────────
 # Dados dos dashboards
 # ─────────────────────────────────────────────────────────────────────────────
-def _coletar_dados(de=None, ate=None):
+def _coletar_dados(de=None, ate=None, turno=None):
     db = Session()
     try:
         cards = db.query(Card).filter_by(estado=ST_CONCLUIDO).all()
@@ -1322,6 +1356,8 @@ def _coletar_dados(de=None, ate=None):
             if de and dia < de:
                 return False
             if ate and dia > ate:
+                return False
+            if turno in (1, 2, 3) and turno_de_card(c) != turno:
                 return False
             return True
         cards = [c for c in cards if dentro(c)]
@@ -1390,18 +1426,26 @@ def _parse_datas():
     return pd(request.args.get('de')), pd(request.args.get('ate'))
 
 
+def _parse_turno():
+    try:
+        t = int(request.args.get('turno', '') or 0)
+        return t if t in (1, 2, 3) else None
+    except (ValueError, TypeError):
+        return None
+
+
 @app.route('/api/dashboard/dados')
 @login_required('admin')
 def api_dashboard_dados():
     de, ate = _parse_datas()
-    return jsonify(_coletar_dados(de, ate))
+    return jsonify(_coletar_dados(de, ate, _parse_turno()))
 
 
 @app.route('/api/painel/dados')
 @login_required()
 def api_painel_dados():
     de, ate = _parse_datas()
-    return jsonify(_coletar_dados(de, ate))
+    return jsonify(_coletar_dados(de, ate, _parse_turno()))
 
 
 @app.route('/api/config/agenda')
@@ -1625,10 +1669,12 @@ def _estilo_cabecalho(ws, headers):
     ws.row_dimensions[1].height = 28
 
 
-def _gerar_excel(tipo):
+def _gerar_excel(tipo, turno=None):
     db = Session()
     try:
         cards = db.query(Card).filter_by(estado=ST_CONCLUIDO).order_by(Card.id).all()
+        if turno in (1, 2, 3):
+            cards = [c for c in cards if turno_de_card(c) == turno]
         wb = Workbook()
         ws = wb.active
 
@@ -1640,8 +1686,8 @@ def _gerar_excel(tipo):
                        'Início Prep - Data', 'Início Prep - Hora',
                        'Fim Prep - Data', 'Fim Prep - Hora',
                        'Tempo prep (min)', 'Tempo parada (min)',
-                       'Pausas (por motivo)', 'Observação']
-            larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 18, 9, 16, 14, 16, 14, 13, 14, 30, 28]
+                       'Pausas (por motivo)', 'Observação', 'Turno']
+            larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 18, 9, 16, 14, 16, 14, 13, 14, 30, 28, 10]
 
         elif tipo == 'banho':
             ws.title = 'Banho'
@@ -1652,8 +1698,8 @@ def _gerar_excel(tipo):
                        'Fim Prep - Data', 'Fim Prep - Hora',
                        'Início Banho - Data', 'Início Banho - Hora',
                        'Final Banho - Data', 'Final Banho - Hora',
-                       'Tempo espera (min)', 'Tempo banho (min)', 'Observação banho']
-            larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 20, 20, 16, 14, 16, 14, 16, 14, 14, 14, 28]
+                       'Tempo espera (min)', 'Tempo banho (min)', 'Observação banho', 'Turno']
+            larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 20, 20, 16, 14, 16, 14, 16, 14, 14, 14, 28, 10]
 
         else:  # geral
             ws.title = 'Geral'
@@ -1668,9 +1714,9 @@ def _gerar_excel(tipo):
                        'Início Banho - Data', 'Início Banho - Hora',
                        'Final Banho - Data', 'Final Banho - Hora',
                        'Tempo espera (min)', 'Tempo banho (min)', 'Total prep+banho (min)',
-                       'Observação Prep', 'Observação Banho']
+                       'Observação Prep', 'Observação Banho', 'Turno']
             larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 18, 9, 16, 14, 16, 14, 13, 14,
-                    20, 20, 16, 14, 16, 14, 14, 14, 16, 28, 28]
+                    20, 20, 16, 14, 16, 14, 14, 14, 16, 28, 28, 10]
 
         _estilo_cabecalho(ws, headers)
 
@@ -1694,7 +1740,7 @@ def _gerar_excel(tipo):
                         dd['prep_inicio_data'], dd['prep_inicio_hora'],
                         dd['prep_fim_data'], dd['prep_fim_hora'],
                         dd['prep_minutos'], dd['total_pausa_min'],
-                        dd['pausas']['texto'], dd['observacao']
+                        dd['pausas']['texto'], dd['observacao'], dd['turno_lbl']
                     ])
                 elif tipo == 'banho':
                     ws.append([
@@ -1705,7 +1751,7 @@ def _gerar_excel(tipo):
                         dd['prep_fim_data'], dd['prep_fim_hora'],
                         dd['banho_inicio_data'], dd['banho_inicio_hora'],
                         dd['banho_fim_data'], dd['banho_fim_hora'],
-                        dd['espera_min'], dd['banho_minutos'], dd['obs_banho']
+                        dd['espera_min'], dd['banho_minutos'], dd['obs_banho'], dd['turno_lbl']
                     ])
                 else:  # geral
                     ws.append([
@@ -1720,7 +1766,7 @@ def _gerar_excel(tipo):
                         dd['banho_inicio_data'], dd['banho_inicio_hora'],
                         dd['banho_fim_data'], dd['banho_fim_hora'],
                         dd['espera_min'], dd['banho_minutos'], total_prep_banho,
-                        dd['observacao'], dd['obs_banho']
+                        dd['observacao'], dd['obs_banho'], dd['turno_lbl']
                     ])
 
         for i, w in enumerate(larg, 1):
@@ -1737,7 +1783,7 @@ def _gerar_excel(tipo):
 @app.route('/api/download/prebanho')
 @login_required('admin')
 def download_prebanho():
-    buf = _gerar_excel('prebanho')
+    buf = _gerar_excel('prebanho', _parse_turno())
     stamp = datetime.now().strftime('%Y%m%d_%H%M')
     return send_file(buf, as_attachment=True, download_name=f'prebanho_{stamp}.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -1746,7 +1792,7 @@ def download_prebanho():
 @app.route('/api/download/banho')
 @login_required('admin')
 def download_banho():
-    buf = _gerar_excel('banho')
+    buf = _gerar_excel('banho', _parse_turno())
     stamp = datetime.now().strftime('%Y%m%d_%H%M')
     return send_file(buf, as_attachment=True, download_name=f'banho_{stamp}.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -1755,7 +1801,7 @@ def download_banho():
 @app.route('/api/download/geral')
 @login_required('admin')
 def download_geral():
-    buf = _gerar_excel('geral')
+    buf = _gerar_excel('geral', _parse_turno())
     stamp = datetime.now().strftime('%Y%m%d_%H%M')
     return send_file(buf, as_attachment=True, download_name=f'relatorio_geral_{stamp}.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

@@ -201,10 +201,14 @@ textarea.input{min-height:auto;resize:vertical;}
 .flow-cta-wrap{display:flex;flex-direction:column;gap:9px;align-items:stretch;min-width:190px;}
 .flow-cta{min-height:54px;font-size:1.02rem;font-weight:800;border-radius:14px;box-shadow:0 8px 20px rgba(22,104,192,.22);}
 .flow-cta i{font-size:1.15rem;}
-.btn-detalhes{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:transparent;
-  border:1px solid var(--line);color:var(--slate);font-weight:700;font-size:.78rem;
-  padding:7px 10px;border-radius:10px;cursor:pointer;transition:.15s;min-height:36px;}
-.btn-detalhes:hover{border-color:var(--brand-blue);color:var(--brand-blue);background:var(--sky-soft);}
+.btn-detalhes{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));
+  border:none;color:#fff;font-weight:800;font-size:.8rem;
+  padding:8px 14px;border-radius:11px;cursor:pointer;transition:.15s;min-height:38px;
+  box-shadow:0 4px 12px rgba(22,104,192,.22);}
+.btn-detalhes:hover{filter:brightness(1.06);color:#fff;transform:translateY(-1px);}
+.btn-detalhes i{font-size:.95rem;}
+.btn-detalhes-block{width:100%;margin-top:10px;}
 
 /* Caixa "Esperando" — bem visível na fila */
 .espera-box{display:flex;flex-direction:column;align-items:center;gap:2px;
@@ -724,4 +728,52 @@ img,canvas{max-width:100%;}
 @media (max-width:560px){
   .reset-item{flex-direction:column;align-items:stretch;}
   .reset-item .btn{width:100%;justify-content:center;}
+}
+
+/* ════════════════════════════════════════════════════════════════
+   AJUSTES v3 — turno, menu de categorias, botões da marca
+   ════════════════════════════════════════════════════════════════ */
+
+/* Botão com a identidade da marca (verde→azul) */
+.btn-brand{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;border:none;
+  box-shadow:0 6px 16px rgba(22,104,192,.24);}
+.btn-brand:hover{color:#fff;filter:brightness(1.06);transform:translateY(-1px);}
+
+/* Timeline: arraste horizontal seleciona; scroll vertical da página continua funcionando */
+.tl-strip{touch-action:pan-y;}
+.tl-seg{touch-action:pan-y;}
+
+/* Segmentos de turno (filtro) */
+.turno-seg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.turno-seg button{display:flex;flex-direction:column;align-items:center;gap:2px;justify-content:center;
+  border:1.5px solid var(--line);background:#fff;border-radius:12px;padding:9px 6px;cursor:pointer;
+  font-family:inherit;font-weight:800;font-size:.9rem;color:var(--ink);transition:.15s;min-height:52px;}
+.turno-seg button span{font-size:.58rem;font-weight:700;color:var(--muted,#8B94A3);letter-spacing:.2px;}
+.turno-seg button i{font-size:.95rem;color:var(--brand-blue);}
+.turno-seg button:hover{border-color:var(--brand-blue);background:var(--sky-soft);}
+.turno-seg button.on{border-color:transparent;background:linear-gradient(135deg,var(--brand-green),var(--brand-blue));
+  color:#fff;box-shadow:0 5px 14px rgba(22,104,192,.24);}
+.turno-seg button.on span,.turno-seg button.on i{color:rgba(255,255,255,.9);}
+
+/* Pill de turno nas tabelas */
+.pill-turno{background:#eaf1fb;color:var(--brand-blue);border:1px solid #d6e4f7;}
+
+/* Menu de categorias dos cestos ativos (painel gerência) */
+.cat-menu{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:16px;}
+.cat-tab{display:inline-flex;align-items:center;gap:8px;border:1.5px solid var(--line);background:#fff;
+  border-radius:12px;padding:9px 15px;cursor:pointer;font-family:inherit;font-weight:800;font-size:.85rem;
+  color:var(--ink);transition:.15s;}
+.cat-tab i{color:var(--brand-blue);font-size:1rem;}
+.cat-tab:hover{border-color:var(--brand-blue);background:var(--sky-soft);}
+.cat-tab.on{border-color:transparent;background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;
+  box-shadow:0 6px 16px rgba(22,104,192,.24);}
+.cat-tab.on i{color:#fff;}
+.cat-count{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 7px;border-radius:11px;
+  background:var(--bg);color:var(--slate);font-size:.72rem;font-weight:800;}
+.cat-tab.on .cat-count{background:rgba(255,255,255,.25);color:#fff;}
+
+@media (max-width:560px){
+  .turno-seg{grid-template-columns:repeat(2,1fr);}
+  .cat-menu{gap:7px;}
+  .cat-tab{flex:1 1 auto;justify-content:center;padding:9px 10px;font-size:.8rem;}
 }

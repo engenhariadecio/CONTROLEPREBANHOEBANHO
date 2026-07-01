@@ -1,5 +1,17 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v3
+- Turnos: 1º 06:01–15:30 | 2º 15:31–00:00 | 3º 00:01–06:00.
+  Filtro por turno no Painel de Gerência e no Admin; coluna "Turno" nos
+  relatórios Excel (pré-banho, banho e geral). O botão de Excel respeita o
+  turno/período selecionados.
+- Painel de Gerência: linha do tempo Ano/Mês/Dia agora com seleção por
+  ARRASTAR (mouse e toque) com rolagem automática nas bordas; menu de
+  categorias (Todos/Em banho/Fila/Preparando/Preenchendo) para entrar em cada
+  etapa; todos os botões "Ver detalhes" na cor da logo; layout mais estruturado
+  e 100% responsivo (celular/tablet).
+- Painel Admin: identidade da marca (KPIs, seções e botões verde→azul).
+
 ## Ajustes desta versão
 - Login continua ativo por 30 dias e em VÁRIOS dispositivos ao mesmo tempo
   (cada aparelho tem seu login; um não desloga o outro). A chave de sessão é
