@@ -1,5 +1,12 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v6
+- Pré-banho: até 4 operadores. No "Sim, escolher nomes" há um campo para DIGITAR
+  um nome fora da lista (operador manual) e chips mostrando os selecionados.
+  Ao iniciar, a aba do cesto FECHA automaticamente (o cronômetro segue no card).
+- Banho: os cestos da fila de espera agora têm o MESMO layout dos "em banho"
+  (tempo de espera como cronômetro inline). O botão "Iniciar banho" continua igual.
+
 ## Ajustes v5
 - Pré-banho: após escolher 1, 2 ou 3 operadores, aparece a caixa
   "Deseja selecionar os operadores?".

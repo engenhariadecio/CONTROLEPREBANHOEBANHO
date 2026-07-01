@@ -1166,17 +1166,28 @@ def api_prep_iniciar():
             return jsonify({'sucesso': False, 'erro': f'Cesto {numero} já está em uso.'}), 400
         try:
             n_op = int(d.get('n_operadores', 1))
-            n_op = n_op if n_op in (1, 2, 3) else 1
+            n_op = n_op if n_op in (1, 2, 3, 4) else 1
         except (ValueError, TypeError):
             n_op = 1
-        # operadores selecionados pelo líder (matrículas). Se vazio, usa o líder logado.
+        # operadores selecionados pelo líder. Cada item pode ser a matrícula (login)
+        # OU um objeto {nome, matricula}. Nome digitado fora da lista vem sem matrícula.
         operadores = []
-        for m in (d.get('operadores') or [])[:3]:
-            m = str(m).strip()
-            if not m:
-                continue
-            u = db.query(Usuario).filter_by(login=m).first()
-            operadores.append({'nome': u.nome if u else m, 'matricula': m})
+        for item in (d.get('operadores') or [])[:4]:
+            if isinstance(item, dict):
+                nome = (item.get('nome') or '').strip()
+                mat = (item.get('matricula') or '').strip()
+                if mat:
+                    u = db.query(Usuario).filter_by(login=mat).first()
+                    if u and not nome:
+                        nome = u.nome
+                if nome or mat:
+                    operadores.append({'nome': nome or mat, 'matricula': mat})
+            else:
+                mat = str(item).strip()
+                if not mat:
+                    continue
+                u = db.query(Usuario).filter_by(login=mat).first()
+                operadores.append({'nome': u.nome if u else mat, 'matricula': mat})
         if not operadores:
             operadores = [{'nome': session.get('nome', ''), 'matricula': session.get('usuario', '')}]
         card = Card(estado=ST_PREPARANDO, numero_cesto=numero,

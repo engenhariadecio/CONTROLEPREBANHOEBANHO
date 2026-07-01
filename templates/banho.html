@@ -143,20 +143,15 @@ async function carregar(){
     return `
     <div class="flow-card fila-card">
       <div class="flow-left">
-        <span class="fila-pos">${i+1}</span>
         <div class="cesto-badge">${c.numero_cesto}</div>
         <div class="flow-info">
-          <div class="top">${c.processo||'Sem processo'} <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${c.tipo}</span></div>
-          <div class="ln">${c.n_itens>1?('<strong>'+c.n_itens+' OPs</strong> · '+(c.texto_breve||'')):('OP <strong>'+(c.ordem||'—')+'</strong> · '+(c.texto_breve||''))}</div>
-          <div class="ln">${c.qtd_total||0} peças · ${c.peso_total||0} kg · ${c.area_total||0} m²</div>
-          <div class="ln muted" style="font-size:12px;">prep ${c.prep_minutos} min</div>
+          <div class="top">${c.processo||'Sem processo'} <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${c.tipo}</span> <span class="pos-fila">${i+1}º na fila</span></div>
+          <div class="ln">${c.n_itens>1?('<strong>'+c.n_itens+' OPs</strong>'):('OP <strong>'+(c.ordem||'—')+'</strong>')} · ${c.qtd_total||0} pç</div>
+          <div class="ln muted" style="font-size:12px;">${c.peso_total||0} kg · ${c.area_total||0} m² · prep ${c.prep_minutos} min</div>
+          <div class="cron cron-espera cron-el" data-tipo="fila" data-ini="${c.prep_fim_iso}">${fmtTempo(segEspera)}<span class="cron-suf">esperando</span></div>
         </div>
       </div>
       <div class="flow-cta-wrap">
-        <div class="espera-box">
-          <span class="espera-lbl"><i class="bi bi-hourglass-split"></i>Esperando</span>
-          <span class="espera-cron cron-el" data-tipo="fila" data-ini="${c.prep_fim_iso}">${fmtTempo(segEspera)}</span>
-        </div>
         <button class="btn btn-aqua flow-cta" onclick="iniciar(${c.id},'${c.numero_cesto}')"><i class="bi bi-play-fill"></i>Iniciar banho</button>
         <button class="btn-detalhes" onclick="verDetalhesBanho(${c.id})"><i class="bi bi-eye"></i>Ver detalhes</button>
       </div>

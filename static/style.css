@@ -195,6 +195,9 @@ textarea.input{min-height:auto;resize:vertical;}
 .flow-info .top{font-weight:700;color:var(--ink);font-size:.95rem;}
 .cron{font-family:'JetBrains Mono',monospace;font-size:1.8rem;font-weight:800;color:var(--amber);letter-spacing:1px;}
 .cron-banho{font-size:2.1rem;background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:var(--brand-blue);}
+.cron-espera{font-size:2.1rem;color:var(--amber);display:inline-flex;align-items:baseline;gap:8px;}
+.cron-suf{font-family:'Manrope',sans-serif;font-size:.62rem;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--slate);-webkit-text-fill-color:var(--slate);}
+.pos-fila{display:inline-block;font-size:.66rem;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--violet);background:var(--violet-soft);border-radius:8px;padding:2px 8px;vertical-align:middle;}
 .fila-pos{width:30px;height:30px;border-radius:50%;background:var(--violet-soft);color:var(--violet);display:grid;place-items:center;font-weight:800;font-size:.85rem;flex-shrink:0;}
 
 /* Coluna de ações à direita dos cards do banho */
@@ -314,7 +317,7 @@ textarea.input{min-height:auto;resize:vertical;}
 
 /* ── 1/2 operadores ─────────────────────────────────────────── */
 .opbtns{display:flex;gap:10px;}
-.opbtn{flex:1;padding:16px;border:2px solid var(--line);border-radius:var(--r-sm);background:#fff;font-family:inherit;font-weight:700;font-size:1rem;color:var(--slate);cursor:pointer;transition:.15s;}
+.opbtn{flex:1;padding:14px 8px;border:2px solid var(--line);border-radius:var(--r-sm);background:#fff;font-family:inherit;font-weight:700;font-size:1rem;color:var(--slate);cursor:pointer;transition:.15s;}
 .opbtn.active{border-color:var(--aqua);background:var(--aqua-soft);color:var(--aco-900);}
 /* ── Cronômetro grande ──────────────────────────────────────── */
 .cron-big{font-family:'JetBrains Mono',monospace;font-size:3.6rem;font-weight:800;color:var(--aco-900);letter-spacing:2px;line-height:1;}
@@ -368,13 +371,11 @@ textarea.input{min-height:auto;resize:vertical;}
 @media(max-width:640px){
   .flow-left{flex:1 1 100%;}
   .flow-cta-wrap{flex:1 1 100%;min-width:0;flex-direction:row;flex-wrap:wrap;align-items:center;}
-  .espera-box{flex:1 1 100%;flex-direction:row;justify-content:center;gap:10px;padding:8px 12px;}
-  .espera-cron{font-size:1.9rem;}
   .flow-cta{flex:1 1 60%;}
   .btn-detalhes{flex:0 0 auto;min-height:44px;}
   .cesto-badge{width:52px;height:52px;font-size:1.4rem;}
   .cron{font-size:1.5rem;}
-  .cron-banho{font-size:1.8rem;}
+  .cron-banho,.cron-espera{font-size:1.8rem;}
 }
 
 /* KPIs: 2 colunas no tablet retrato, sem espremer */
@@ -813,3 +814,15 @@ img,canvas{max-width:100%;}
 .det-oper-chip{display:inline-flex;align-items:center;gap:7px;background:var(--aqua-soft);border:1px solid #cfe9dc;
   border-radius:10px;padding:5px 11px;font-weight:700;font-size:.82rem;color:var(--ink);}
 .det-oper-chip .mat{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--brand-blue);font-weight:700;}
+
+/* ── Nome manual + chips de selecionados (pré-banho) ── */
+.op-add{display:flex;gap:8px;margin-bottom:4px;}
+.op-add .input{flex:1;}
+.op-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px;min-height:8px;}
+.op-chip{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(120deg,var(--aqua-soft),var(--sky-soft));
+  border:1px solid #cfe4de;border-radius:999px;padding:5px 6px 5px 12px;font-weight:800;font-size:.83rem;color:var(--ink);}
+.op-chip-mat{font-family:'JetBrains Mono',monospace;font-size:.68rem;font-weight:700;color:var(--brand-blue);
+  background:#eaf1fb;border:1px solid #d6e4f7;padding:2px 7px;border-radius:8px;}
+.op-chip-x{border:none;background:#fff;color:var(--red);width:22px;height:22px;border-radius:50%;
+  cursor:pointer;font-size:1rem;line-height:1;display:grid;place-items:center;box-shadow:var(--shadow-sm);}
+.op-chip-x:hover{background:var(--red);color:#fff;}
