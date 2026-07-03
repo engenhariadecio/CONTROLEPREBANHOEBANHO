@@ -1,5 +1,13 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v8
+- Usuário com MÚLTIPLOS ACESSOS: no cadastro (Admin › Usuários) marque os painéis
+  que a pessoa pode usar (Pré-banho, Banho, Gerência, Admin). Uma pessoa só, um login.
+- No LOGIN, se o usuário tiver mais de um acesso, aparece a tela "Escolha o painel"
+  e ele entra no que quiser. Com um acesso só, entra direto.
+- Botão "Trocar painel" no topo para quem tem vários acessos (troca sem sair).
+- Acessos de usuários já cadastrados podem ser editados na própria lista.
+
 ## Ajustes v7
 - Textos padronizados no fluxo: Preparando cesto → Aguardando cadastro →
   Aguardando banho → Em banho (pré-banho, banho, painel de gerência e admin).

@@ -29,6 +29,9 @@
     <a href="{{ url_for('admin_config') }}" class="tb-btn" title="Configurações de jornada"><i class="bi bi-gear-fill"></i></a>
     <a href="{{ url_for('admin_usuarios') }}" class="tb-btn" title="Usuários"><i class="bi bi-people-fill"></i></a>
     {% endif %}
+    {% if (session.get('perfis') | length) > 1 %}
+    <a href="{{ url_for('selecionar') }}" class="topbar-trocar" title="Trocar de painel"><i class="bi bi-arrow-left-right"></i>Trocar painel</a>
+    {% endif %}
     <a href="{{ url_for('logout') }}" class="tb-btn tb-btn-exit" title="Sair"><i class="bi bi-box-arrow-right"></i></a>
   </div>
 </header>

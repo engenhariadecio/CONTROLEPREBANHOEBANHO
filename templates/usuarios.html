@@ -1,9 +1,12 @@
 {% extends 'base.html' %}
 {% block title %}Usuários — Controle Produtividade{% endblock %}
 {% block content %}
-<div style="max-width:820px;margin:0 auto;">
+<div style="max-width:900px;margin:0 auto;">
   <div class="section-head"><div class="section-title"><i class="bi bi-people-fill"></i>Usuários</div></div>
   {% if msg %}<div class="alert alert-ok"><i class="bi bi-check-circle-fill"></i>{{ msg }}</div>{% endif %}
+
+  {% set acessos_lbl = {'prep':'Preparação','banho':'Banho','painel':'Gerência','admin':'Admin'} %}
+  {% set acessos_desc = [('prep','Pré-banho','hourglass-split'),('banho','Banho','droplet-fill'),('painel','Gerência','bar-chart-line-fill'),('admin','Admin','gear-fill')] %}
 
   <div class="panel panel-pad" style="margin-bottom:20px;">
     <div class="section-title" style="font-size:1rem;margin-bottom:16px;"><i class="bi bi-person-plus-fill"></i>Adicionar usuário</div>
@@ -13,13 +16,14 @@
         <div class="field" style="margin:0;"><label class="label">Matrícula (login)</label><input class="input input-sm" name="novo_usuario" required autocapitalize="none" placeholder="Ex: 12345"></div>
         <div class="field" style="margin:0;"><label class="label">Nome completo</label><input class="input input-sm" name="novo_nome" required></div>
         <div class="field" style="margin:0;"><label class="label">Senha</label><input class="input input-sm" type="text" name="nova_senha" required></div>
-        <div class="field" style="margin:0;"><label class="label">Perfil</label>
-          <select class="select input-sm" name="novo_perfil">
-            <option value="prep">Operador de preparação</option>
-            <option value="banho">Operador de banho</option>
-            <option value="painel">Gerência (painel — só visualização)</option>
-            <option value="admin">Administrador</option>
-          </select>
+        <div class="field col-full" style="margin:0;">
+          <label class="label">Acessos (pode marcar mais de um)</label>
+          <div class="acessos-check">
+            {% for val, txt, ic in acessos_desc %}
+            <label class="acesso-chip"><input type="checkbox" name="novo_perfis" value="{{ val }}" {% if val=='prep' %}checked{% endif %}><span><i class="bi bi-{{ ic }}"></i>{{ txt }}</span></label>
+            {% endfor %}
+          </div>
+          <div class="hint">O usuário poderá entrar em qualquer painel marcado. No login, se tiver mais de um, ele escolhe para qual entrar.</div>
         </div>
         <div class="col-full"><button class="btn btn-primary btn-block"><i class="bi bi-plus-circle"></i>Adicionar usuário</button></div>
       </div>
@@ -29,13 +33,29 @@
   <div class="panel" style="overflow:hidden;">
     <div class="table-wrap">
       <table class="tbl">
-        <thead><tr><th>Matrícula</th><th>Nome</th><th>Perfil</th><th>Nova senha</th><th></th></tr></thead>
+        <thead><tr><th>Matrícula</th><th>Nome</th><th>Acessos</th><th>Nova senha</th><th></th></tr></thead>
         <tbody>
           {% for u in usuarios %}
           <tr>
             <td><strong>{{ u.login }}</strong></td>
             <td>{{ u.nome }}</td>
-            <td><span class="pill {% if u.perfil=='admin' %}pill-retrab{% elif u.perfil=='banho' %}pill-banho{% elif u.perfil=='painel' %}pill-fila{% else %}pill-normal{% endif %}">{% if u.perfil=='prep' %}Preparação{% elif u.perfil=='banho' %}Banho{% elif u.perfil=='painel' %}Gerência{% elif u.perfil=='admin' %}Admin{% else %}{{ u.perfil }}{% endif %}</span></td>
+            <td>
+              <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px;">
+                {% for p in u.perfis %}
+                <span class="pill {% if p=='admin' %}pill-retrab{% elif p=='banho' %}pill-banho{% elif p=='painel' %}pill-fila{% else %}pill-normal{% endif %}">{{ acessos_lbl.get(p, p) }}</span>
+                {% endfor %}
+              </div>
+              <form method="POST" class="acessos-edit">
+                <input type="hidden" name="acao" value="acessos">
+                <input type="hidden" name="usuario_acessos" value="{{ u.login }}">
+                <div class="acessos-check acessos-check-sm">
+                  {% for val, txt, ic in acessos_desc %}
+                  <label class="acesso-chip"><input type="checkbox" name="acessos" value="{{ val }}" {% if val in u.perfis %}checked{% endif %}><span>{{ acessos_lbl.get(val, val) }}</span></label>
+                  {% endfor %}
+                </div>
+                <button class="btn btn-ghost btn-sm" title="Salvar acessos" style="margin-top:6px;"><i class="bi bi-save"></i>Salvar acessos</button>
+              </form>
+            </td>
             <td>
               <form method="POST" style="display:flex;gap:6px;min-width:200px;">
                 <input type="hidden" name="acao" value="senha">

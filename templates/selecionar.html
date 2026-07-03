@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}Selecionar painel — Controle Produtividade{% endblock %}
+{% block content %}
+<div class="sel-wrap">
+  <div class="sel-head">
+    <div class="login-logo" style="width:56px;height:56px;margin:0 auto 12px;"><img src="{{ url_for('static', filename='logo_decio.png') }}" alt="Décio" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;"></div>
+    <h1 class="sel-title">Olá, {{ nome }}</h1>
+    <p class="sel-sub">Escolha para qual painel deseja entrar</p>
+  </div>
+
+  <div class="sel-grid">
+    {% for p in paineis %}
+    <a href="{{ url_for('ir_painel', perfil=p.perfil) }}" class="sel-card">
+      <div class="sel-ic"><i class="bi bi-{{ p.icone }}"></i></div>
+      <div class="sel-info">
+        <div class="sel-nome">{{ p.titulo }}</div>
+        <div class="sel-desc">{{ p.desc }}</div>
+      </div>
+      <i class="bi bi-chevron-right sel-seta"></i>
+    </a>
+    {% endfor %}
+  </div>
+
+  <a href="{{ url_for('logout') }}" class="sel-sair"><i class="bi bi-box-arrow-left"></i>Sair</a>
+</div>
+{% endblock %}

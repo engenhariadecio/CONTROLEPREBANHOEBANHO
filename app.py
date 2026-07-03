@@ -292,10 +292,23 @@ class Usuario(Base):
     login = Column(String(50), unique=True, nullable=False)
     nome = Column(String(120), nullable=False)
     senha_hash = Column(String(255), nullable=False)
-    perfil = Column(String(20), nullable=False)
+    perfil = Column(String(20), nullable=False)      # perfil principal (compat)
+    perfis = Column(Text, default='')                # lista de acessos: "prep,banho,painel"
+
+    def acessos(self):
+        lst = [p.strip() for p in (self.perfis or '').split(',') if p.strip()]
+        if not lst and self.perfil:
+            lst = [self.perfil]
+        # remove duplicados preservando ordem
+        vistos = []
+        for p in lst:
+            if p not in vistos:
+                vistos.append(p)
+        return vistos
 
     def to_dict(self):
-        return {'id': self.id, 'login': self.login, 'nome': self.nome, 'perfil': self.perfil}
+        return {'id': self.id, 'login': self.login, 'nome': self.nome,
+                'perfil': self.perfil, 'perfis': self.acessos()}
 
 
 class Config(Base):
@@ -749,6 +762,15 @@ def _migrar_colunas():
                     conn.execute(text(f'ALTER TABLE cards ADD COLUMN {col} {tipo}'))
                 except Exception:
                     pass
+    # coluna 'perfis' (múltiplos acessos) na tabela usuarios
+    if 'usuarios' in insp.get_table_names():
+        cols_u = {c['name'] for c in insp.get_columns('usuarios')}
+        if 'perfis' not in cols_u:
+            with engine.begin() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE usuarios ADD COLUMN perfis TEXT DEFAULT ''"))
+                except Exception:
+                    pass
 
 
 def _resolver_duplicados_ativos():
@@ -821,7 +843,8 @@ def init_db():
                 seed.append((f'op{i}', f'Operador {i}', 'op1234', 'prep'))
             for login, nome, senha, perfil in seed:
                 db.add(Usuario(login=login, nome=nome,
-                               senha_hash=generate_password_hash(senha), perfil=perfil))
+                               senha_hash=generate_password_hash(senha),
+                               perfil=perfil, perfis=perfil))
             db.commit()
     finally:
         db.close()
@@ -834,11 +857,21 @@ def login_required(*perfis):
         def wrapper(*a, **kw):
             if 'usuario' not in session:
                 return redirect(url_for('login'))
-            if perfis and session.get('perfil') not in perfis and session.get('perfil') != 'admin':
-                return redirect(url_for('login'))
+            tem = set(session.get('perfis') or ([session.get('perfil')] if session.get('perfil') else []))
+            if perfis and 'admin' not in tem and not (set(perfis) & tem):
+                # logado mas sem acesso a este painel
+                return redirect(url_for('selecionar') if len(tem) != 1 else url_for('login'))
             return f(*a, **kw)
         return wrapper
     return deco
+
+
+_DESTINO = {'admin': 'dashboard', 'banho': 'tela_banho',
+            'prep': 'tela_prep', 'painel': 'painel_gerencia'}
+
+
+def _rota_do_perfil(p):
+    return _DESTINO.get(p, 'login')
 
 
 def _norm_ordem(v):
@@ -872,17 +905,54 @@ def login():
         try:
             u = db.query(Usuario).filter_by(login=login_u).first()
             if u and check_password_hash(u.senha_hash, senha):
+                acessos = u.acessos()
                 session.permanent = True   # mantém logado por muito tempo
                 session['usuario'] = u.login
                 session['nome'] = u.nome
-                session['perfil'] = u.perfil
-                destino = {'admin': 'dashboard', 'banho': 'tela_banho',
-                           'prep': 'tela_prep', 'painel': 'painel_gerencia'}.get(u.perfil, 'login')
-                return redirect(url_for(destino))
+                session['perfis'] = acessos
+                if len(acessos) == 1:
+                    session['perfil'] = acessos[0]
+                    return redirect(url_for(_rota_do_perfil(acessos[0])))
+                # vários acessos: deixa o usuário escolher o painel
+                session.pop('perfil', None)
+                return redirect(url_for('selecionar'))
             erro = 'Usuário ou senha incorretos.'
         finally:
             db.close()
     return render_template('login.html', erro=erro)
+
+
+_PAINEL_INFO = {
+    'prep':   {'titulo': 'Pré-banho',  'desc': 'Preparação dos cestos', 'icone': 'hourglass-split'},
+    'banho':  {'titulo': 'Banho',      'desc': 'Fila e banho dos cestos', 'icone': 'droplet-fill'},
+    'painel': {'titulo': 'Gerência',   'desc': 'Painel de acompanhamento', 'icone': 'bar-chart-line-fill'},
+    'admin':  {'titulo': 'Administração', 'desc': 'Dashboard e configurações', 'icone': 'gear-fill'},
+}
+
+
+@app.route('/selecionar')
+def selecionar():
+    if 'usuario' not in session:
+        return redirect(url_for('login'))
+    acessos = session.get('perfis') or []
+    if len(acessos) == 1:
+        session['perfil'] = acessos[0]
+        return redirect(url_for(_rota_do_perfil(acessos[0])))
+    paineis = [{'perfil': p, 'rota': _rota_do_perfil(p), **_PAINEL_INFO.get(p, {'titulo': p, 'desc': '', 'icone': 'grid'})}
+               for p in acessos if p in _PAINEL_INFO]
+    return render_template('selecionar.html', nome=session.get('nome'), paineis=paineis)
+
+
+@app.route('/ir/<perfil>')
+def ir_painel(perfil):
+    """Entra em um painel específico (para o qual o usuário tem acesso)."""
+    if 'usuario' not in session:
+        return redirect(url_for('login'))
+    acessos = set(session.get('perfis') or [])
+    if perfil in acessos or 'admin' in acessos:
+        session['perfil'] = perfil
+        return redirect(url_for(_rota_do_perfil(perfil)))
+    return redirect(url_for('selecionar'))
 
 
 @app.route('/logout')
@@ -934,10 +1004,8 @@ def dashboard():
 
 @app.route('/painel')
 @app.route('/gerencia')
+@login_required('painel')
 def painel_gerencia():
-    # Painel de Gerência: acesso SOMENTE com login (usuário e senha).
-    if 'usuario' not in session:
-        return redirect(url_for('login'))
     return render_template('painel.html', processos=PROCESSOS,
                            nome=session.get('nome'), perfil=session.get('perfil'))
 
@@ -954,14 +1022,29 @@ def admin_usuarios():
                 nu = request.form.get('novo_usuario', '').strip()
                 nn = request.form.get('novo_nome', '').strip()
                 ns = request.form.get('nova_senha', '')
-                npf = request.form.get('novo_perfil', 'prep')
+                acessos = [p for p in request.form.getlist('novo_perfis')
+                           if p in ('prep', 'banho', 'painel', 'admin')]
+                if not acessos:
+                    acessos = ['prep']
                 if nu and nn and ns and not db.query(Usuario).filter_by(login=nu).first():
                     db.add(Usuario(login=nu, nome=nn,
-                                   senha_hash=generate_password_hash(ns), perfil=npf))
+                                   senha_hash=generate_password_hash(ns),
+                                   perfil=acessos[0], perfis=','.join(acessos)))
                     db.commit()
-                    msg = f'Usuário {nn} adicionado.'
+                    msg = f'Usuário {nn} adicionado com acesso a: {", ".join(acessos)}.'
                 elif db.query(Usuario).filter_by(login=nu).first():
                     msg = 'Esse login já existe.'
+            elif acao == 'acessos':
+                u = db.query(Usuario).filter_by(login=request.form.get('usuario_acessos')).first()
+                acessos = [p for p in request.form.getlist('acessos')
+                           if p in ('prep', 'banho', 'painel', 'admin')]
+                if u and acessos:
+                    u.perfis = ','.join(acessos)
+                    u.perfil = acessos[0]
+                    db.commit()
+                    msg = f'Acessos de {u.nome} atualizados: {", ".join(acessos)}.'
+                elif u and not acessos:
+                    msg = 'Selecione pelo menos um acesso.'
             elif acao == 'remover':
                 u = db.query(Usuario).filter_by(login=request.form.get('usuario_remover')).first()
                 if u and u.login != 'admin':
@@ -1143,7 +1226,8 @@ def api_admin_restaurar():
         for u in dados.get('usuarios', []):
             if u.get('login') and u['login'] not in logins:
                 novo = Usuario(login=u['login'], nome=u.get('nome', ''),
-                               senha_hash=u.get('senha_hash', ''), perfil=u.get('perfil', 'prep'))
+                               senha_hash=u.get('senha_hash', ''), perfil=u.get('perfil', 'prep'),
+                               perfis=u.get('perfis') or u.get('perfil', 'prep'))
                 db.add(novo); ru += 1
         ids = {c.id for c in db.query(Card.id).all()}
         for cd in dados.get('cards', []):
