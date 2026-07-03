@@ -3,9 +3,9 @@
 {% block content %}
 
 <div class="layout-sel">
-  <button class="layout-btn active" id="lbAmbos" onclick="setLayout('ambos')"><i class="bi bi-layout-split"></i>Em banho e fila</button>
-  <button class="layout-btn" id="lbBanho" onclick="setLayout('banho')"><i class="bi bi-droplet-fill"></i>Só em banho</button>
-  <button class="layout-btn" id="lbFila" onclick="setLayout('fila')"><i class="bi bi-list-ol"></i>Só fila de espera</button>
+  <button class="layout-btn active" id="lbAmbos" onclick="setLayout('ambos')"><i class="bi bi-layout-split"></i>Todos</button>
+  <button class="layout-btn" id="lbBanho" onclick="setLayout('banho')"><i class="bi bi-droplet-fill"></i>Em banho</button>
+  <button class="layout-btn" id="lbFila" onclick="setLayout('fila')"><i class="bi bi-list-ol"></i>Aguardando banho</button>
 </div>
 
 <div class="banho-cols" id="banhoCols">
@@ -14,7 +14,7 @@
     <div id="emBanho" class="flow-list"><div class="muted small">Carregando…</div></div>
   </div>
   <div id="colFila">
-    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-list-ol"></i>Fila de espera</div>
+    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-list-ol"></i>Aguardando banho</div>
     <div id="fila" class="flow-list"><div class="muted small">Carregando…</div></div>
   </div>
 </div>
@@ -159,7 +159,7 @@ async function carregar(){
 }
 
 /* ── Ver detalhes do cesto (todas as infos) ── */
-const _ESTADO_TXT={FILA_BANHO:'Na fila do banho',EM_BANHO:'Em banho'};
+const _ESTADO_TXT={FILA_BANHO:'Aguardando banho',EM_BANHO:'Em banho'};
 function _operadoresBanhoHTML(c){
   let html='';
   const ops=c.operadores_prep||[];
@@ -192,6 +192,7 @@ function verDetalhesBanho(id){
       <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${c.tipo}</span>
       <span class="pill pill-banho">${c.processo||'Sem processo'}</span>
     </div>
+    ${c.motivo_retrabalho?`<div class="db-obs" style="margin-bottom:12px;"><span class="small muted"><i class="bi bi-arrow-repeat"></i> Motivo do retrabalho:</span> <strong>${c.motivo_retrabalho}</strong></div>`:''}
     <div class="table-wrap"><table class="tbl">
       <thead><tr><th>OP</th><th>Código</th><th>Descrição</th><th>Qtd</th></tr></thead>
       <tbody>${linhas}</tbody>

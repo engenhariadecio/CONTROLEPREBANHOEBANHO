@@ -1,15 +1,16 @@
 {% extends 'base.html' %}
 {% block title %}Configurações — Controle Produtividade{% endblock %}
 {% block content %}
-<div style="max-width:760px;margin:0 auto;">
+<div style="max-width:820px;margin:0 auto;">
   <div class="section-head"><div class="section-title"><i class="bi bi-gear-fill"></i>Configurações de jornada</div></div>
   {% if msg %}<div class="alert alert-ok"><i class="bi bi-check-circle-fill"></i>{{ msg }}</div>{% endif %}
 
   <div class="panel panel-pad" style="margin-bottom:18px;">
     <p class="small muted" style="margin-bottom:18px;">
-      Defina o expediente da fábrica. O <strong>tempo de espera na fila do banho</strong> só conta dentro do
-      expediente — fora dele (noite, fim de semana, feriado) o cronômetro <strong>congela</strong> automaticamente,
-      em vez de seguir contando a madrugada e o fim de semana inteiro.
+      Defina a jornada da fábrica em <strong>3 turnos</strong>. O <strong>tempo de espera na fila do banho</strong>
+      só conta dentro dos turnos — fora deles (fora de expediente, domingo) o cronômetro <strong>congela</strong>.
+      Use os <strong>expedientes fora do padrão</strong> para lançar hora extra, trabalho em fim de semana/feriado
+      (<strong>TURNO EXTRA</strong>) ou paradas de produção (<strong>PARADA</strong>).
     </p>
 
     <form method="POST">
@@ -27,68 +28,110 @@
 
       <div class="cfg-divisor"></div>
 
-      <!-- Horário -->
-      <div class="grid-2" style="margin-bottom:6px;">
-        <div class="field" style="margin:0;">
-          <label class="label">Início do expediente</label>
-          <input type="time" name="hora_inicio" class="input input-sm" value="{{ cfg.hora_inicio }}">
+      <label class="label" style="margin-bottom:12px;display:block;font-size:1rem;"><i class="bi bi-clock-history"></i> Turnos padrão</label>
+      {% for t in cfg.turnos %}
+        {% set i = loop.index %}
+        <div class="turno-cfg">
+          <div class="turno-cfg-head">
+            <strong>{{ t.nome }}</strong>
+            <label class="switch">
+              <input type="checkbox" name="t{{ i }}_ativo" {% if t.ativo %}checked{% endif %}>
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <input type="hidden" name="t{{ i }}_nome" value="{{ t.nome }}">
+          <div class="grid-2" style="margin-bottom:8px;">
+            <div class="field" style="margin:0;"><label class="label">Início</label>
+              <input type="time" name="t{{ i }}_ini" value="{{ t.ini }}" class="input input-sm"></div>
+            <div class="field" style="margin:0;"><label class="label">Fim</label>
+              <input type="time" name="t{{ i }}_fim" value="{{ t.fim }}" class="input input-sm"></div>
+          </div>
+          <label class="label">Dias da semana</label>
+          <div class="dias-check">
+            {% for dn in ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'] %}
+              {% set dv = loop.index0 %}
+              <label class="dia-chip"><input type="checkbox" name="t{{ i }}_dias" value="{{ dv }}" {% if dv in t.dias %}checked{% endif %}><span>{{ dn }}</span></label>
+            {% endfor %}
+          </div>
         </div>
-        <div class="field" style="margin:0;">
-          <label class="label">Fim do expediente</label>
-          <input type="time" name="hora_fim" class="input input-sm" value="{{ cfg.hora_fim }}">
-        </div>
-      </div>
+      {% endfor %}
+      <p class="small muted" style="margin:2px 0 0;">Para turno que vira a madrugada, o fim <strong>00:00</strong> significa meia-noite (fim do dia).</p>
 
       <div class="cfg-divisor"></div>
 
-      <!-- Dias da semana -->
-      <label class="label" style="margin-bottom:10px;display:block;">Trabalha aos fins de semana?</label>
-      <div class="cfg-toggle-row" style="border:none;padding:6px 0;">
-        <div class="cfg-toggle-title" style="font-size:.95rem;"><i class="bi bi-calendar-event"></i> Sábado</div>
-        <label class="switch">
-          <input type="checkbox" name="trabalha_sabado" {% if cfg.trabalha_sabado %}checked{% endif %}>
-          <span class="switch-slider"></span>
-        </label>
+      <!-- Expedientes fora do padrão -->
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+        <label class="label" style="margin:0;font-size:1rem;"><i class="bi bi-calendar-plus"></i> Expedientes fora do padrão</label>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="addExcecao()"><i class="bi bi-plus-lg"></i>Adicionar</button>
       </div>
-      <div class="cfg-toggle-row" style="border:none;padding:6px 0;">
-        <div class="cfg-toggle-title" style="font-size:.95rem;"><i class="bi bi-calendar-event"></i> Domingo</div>
-        <label class="switch">
-          <input type="checkbox" name="trabalha_domingo" {% if cfg.trabalha_domingo %}checked{% endif %}>
-          <span class="switch-slider"></span>
-        </label>
-      </div>
-      <p class="small muted" style="margin:6px 0 0;">Segunda a sexta são sempre dias de trabalho (salvo feriado abaixo).</p>
-
-      <div class="cfg-divisor"></div>
-
-      <!-- Exceções -->
-      <div class="grid-2" style="margin-bottom:4px;">
-        <div class="field" style="margin:0;">
-          <label class="label"><i class="bi bi-calendar-plus"></i> Dias extras trabalhados</label>
-          <textarea name="dias_extra" class="input input-sm" rows="3"
-            placeholder="Um sábado/domingo que será trabalhado.&#10;Ex: 2026-07-11, 2026-08-15">{{ cfg.dias_extra | join(', ') }}</textarea>
-          <div class="hint">Datas (AAAA-MM-DD) que normalmente seriam folga mas <strong>serão trabalhadas</strong>.</div>
+      <div id="excList">
+        {% for ex in cfg.excecoes %}
+        <div class="ex-row">
+          <div class="ex-grid">
+            <div><label class="label">Tipo</label>
+              <select name="ex_tipo" class="select input-sm">
+                <option value="TURNO EXTRA" {% if ex.tipo=='TURNO EXTRA' %}selected{% endif %}>TURNO EXTRA</option>
+                <option value="PARADA" {% if ex.tipo=='PARADA' %}selected{% endif %}>PARADA</option>
+              </select>
+            </div>
+            <div><label class="label">Data</label><input type="date" name="ex_data" value="{{ ex.data }}" class="input input-sm"></div>
+            <div><label class="label">Data fim</label><input type="date" name="ex_data_fim" value="{{ ex.data_fim }}" class="input input-sm"></div>
+            <div><label class="label">Início</label><input type="time" name="ex_ini" value="{{ ex.ini }}" class="input input-sm"></div>
+            <div><label class="label">Fim</label><input type="time" name="ex_fim" value="{{ ex.fim }}" class="input input-sm"></div>
+            <button type="button" class="btn btn-stop btn-sm btn-icon ex-del" onclick="delExcecao(this)"><i class="bi bi-trash-fill"></i></button>
+          </div>
+          <input type="text" name="ex_justificativa" value="{{ ex.justificativa }}" class="input input-sm" placeholder="Justificativa do expediente fora do padrão…" style="margin-top:8px;">
         </div>
-        <div class="field" style="margin:0;">
-          <label class="label"><i class="bi bi-calendar-x"></i> Feriados / folgas</label>
-          <textarea name="dias_folga" class="input input-sm" rows="3"
-            placeholder="Dias úteis que NÃO serão trabalhados.&#10;Ex: 2026-09-07, 2026-10-12">{{ cfg.dias_folga | join(', ') }}</textarea>
-          <div class="hint">Datas (AAAA-MM-DD) que seriam úteis mas <strong>não terão trabalho</strong>.</div>
-        </div>
+        {% endfor %}
       </div>
+      <p class="hint">Deixe <strong>Início/Fim</strong> vazios para o dia inteiro. <strong>TURNO EXTRA</strong> adiciona expediente; <strong>PARADA</strong> retira do expediente.</p>
 
-      <button class="btn btn-primary btn-block" style="margin-top:20px;"><i class="bi bi-save"></i>Salvar configurações</button>
+      <button class="btn btn-primary btn-block" style="margin-top:20px;"><i class="bi bi-save"></i>Salvar jornada</button>
     </form>
   </div>
 
   <div class="panel panel-pad">
     <div class="section-title" style="font-size:1rem;margin-bottom:10px;"><i class="bi bi-info-circle"></i>Como funciona</div>
     <ul class="cfg-lista small">
-      <li>Um cesto enviado para a fila às 17h de sexta, com expediente até 18h, conta <strong>1h</strong> de espera — e o cronômetro só volta a correr na segunda às 7h.</li>
-      <li>Marcou <strong>Sábado</strong>? Esse dia passa a contar normalmente no horário definido.</li>
-      <li>Precisa de um sábado pontual? Use <strong>Dias extras</strong> sem ligar todos os sábados.</li>
-      <li>A mudança vale na hora, inclusive para cestos que já estão na fila.</li>
+      <li>Padrão da fábrica: <strong>1º</strong> 06:01–15:30 e <strong>2º</strong> 15:31–00:00 de seg a sex; <strong>3º</strong> 00:01–06:00 de seg a sáb.</li>
+      <li>Hora extra no fim de semana/feriado: adicione um <strong>TURNO EXTRA</strong> com a data e o horário.</li>
+      <li>Parada de produção (manutenção, falta de energia): lance uma <strong>PARADA</strong> no período — o tempo de espera não conta nesse intervalo.</li>
+      <li>Toda mudança vale na hora, inclusive para cestos que já estão na fila.</li>
     </ul>
   </div>
 </div>
+
+<!-- modelo de linha de exceção (clonado ao adicionar) -->
+<template id="exTemplate">
+  <div class="ex-row">
+    <div class="ex-grid">
+      <div><label class="label">Tipo</label>
+        <select name="ex_tipo" class="select input-sm">
+          <option value="TURNO EXTRA">TURNO EXTRA</option>
+          <option value="PARADA">PARADA</option>
+        </select>
+      </div>
+      <div><label class="label">Data</label><input type="date" name="ex_data" class="input input-sm"></div>
+      <div><label class="label">Data fim</label><input type="date" name="ex_data_fim" class="input input-sm"></div>
+      <div><label class="label">Início</label><input type="time" name="ex_ini" class="input input-sm"></div>
+      <div><label class="label">Fim</label><input type="time" name="ex_fim" class="input input-sm"></div>
+      <button type="button" class="btn btn-stop btn-sm btn-icon ex-del" onclick="delExcecao(this)"><i class="bi bi-trash-fill"></i></button>
+    </div>
+    <input type="text" name="ex_justificativa" class="input input-sm" placeholder="Justificativa do expediente fora do padrão…" style="margin-top:8px;">
+  </div>
+</template>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function addExcecao(){
+  const tpl=document.getElementById('exTemplate');
+  const clone=tpl.content.cloneNode(true);
+  document.getElementById('excList').appendChild(clone);
+}
+function delExcecao(btn){
+  const row=btn.closest('.ex-row');
+  if(row)row.remove();
+}
+</script>
 {% endblock %}

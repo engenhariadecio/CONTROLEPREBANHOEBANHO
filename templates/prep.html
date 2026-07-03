@@ -5,10 +5,10 @@
 <div class="section-head">
   <div class="section-title"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos — toque para abrir</div>
   <div class="small muted">
-    <span class="pill pill-prep">Preparando</span>
+    <span class="pill pill-prep">Preparando cesto</span>
     <span class="pill" style="background:#fdeaea;color:#b91c3c;">Pausado</span>
-    <span class="pill" style="background:#e9ecef;color:#475569;">Preencher</span>
-    <span class="pill pill-fila">Na fila</span>
+    <span class="pill" style="background:#e9ecef;color:#475569;">Aguardando cadastro</span>
+    <span class="pill pill-fila">Aguardando banho</span>
     <span class="pill pill-banho">Em banho</span>
   </div>
 </div>
@@ -95,7 +95,16 @@
             <select id="fProc" class="select input-sm"><option value="">Selecione…</option>{% for p in processos %}<option>{{ p }}</option>{% endfor %}</select>
           </div>
           <div class="field" style="margin:0;"><label class="label">Tipo</label>
-            <select id="fTipo" class="select input-sm"><option>Normal</option><option>Retrabalho</option></select>
+            <select id="fTipo" class="select input-sm" onchange="onTipoChange()"><option>Normal</option><option>Retrabalho</option></select>
+          </div>
+          <div class="field col-full" id="motivoWrap" style="margin:0;display:none;"><label class="label">Motivo do retrabalho</label>
+            <select id="fMotivo" class="select input-sm">
+              <option value="">Selecione…</option>
+              <option>Pó de fosfato</option>
+              <option>Óleo nas peças</option>
+              <option>Sujeira</option>
+              <option>Outros</option>
+            </select>
           </div>
           <div class="field col-full" style="margin:0;"><label class="label">Observação</label><textarea id="fObs" class="input input-sm" rows="2"></textarea></div>
         </div>
@@ -178,7 +187,7 @@
 
 {% block extra_js %}
 <script>
-const ROTULO={PREPARANDO:'Preparando',PREENCHER:'Preencher',FILA_BANHO:'Na fila',EM_BANHO:'Em banho'};
+const ROTULO={PREPARANDO:'Preparando cesto',PREENCHER:'Aguardando cadastro',FILA_BANHO:'Aguardando banho',EM_BANHO:'Em banho'};
 let modalEstado='', cestoSel=0, cardAtual=null, nOper=1, itens=[];
 
 function fmtTempo(s){const m=Math.floor(s/60),x=s%60;return `${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`;}
@@ -317,7 +326,9 @@ function abrirOcupado(cd){
     document.getElementById('fId').value=cd.id;
     document.getElementById('fProc').value=cd.processo||'';
     document.getElementById('fTipo').value=cd.tipo||'Normal';
+    document.getElementById('fMotivo').value=cd.motivo_retrabalho||'';
     document.getElementById('fObs').value=cd.observacao||'';
+    onTipoChange();
     document.getElementById('msgOrdem').innerHTML='';
     document.getElementById('addOp').value='';
     renderItens();
@@ -330,7 +341,7 @@ function abrirOcupado(cd){
     }else{
       modalEstado='editar';
       document.getElementById('btnSalvar').innerHTML='<i class="bi bi-save"></i>Salvar correções';
-      ci.style.display='flex'; document.getElementById('cronTxt').textContent = cd.estado==='FILA_BANHO'?`Na fila do banho · prep ${cd.prep_minutos} min`:`Em banho · iniciado ${cd.banho_inicio}`;
+      ci.style.display='flex'; document.getElementById('cronTxt').textContent = cd.estado==='FILA_BANHO'?`Aguardando banho · prep ${cd.prep_minutos} min`:`Em banho · iniciado ${cd.banho_inicio}`;
     }
     // botão corrigir nº: disponível na fila e ao preencher; oculto se já em banho
     const bc=document.getElementById('btnCorrigirForm');
@@ -481,10 +492,19 @@ async function pararTempo(){
   if(j.sucesso){cardAtual.estado='PREENCHER';cardAtual.prep_minutos=j.prep_minutos;cardAtual.itens=cardAtual.itens||[];abrirOcupado(cardAtual);carregar();}else alert(j.erro);
 }
 
+function onTipoChange(){
+  const ret=document.getElementById('fTipo').value==='Retrabalho';
+  document.getElementById('motivoWrap').style.display=ret?'':'none';
+}
+
 async function salvar(){
   if(modalEstado==='preencher'&&itens.length===0){document.getElementById('msgOrdem').innerHTML='<span class="txt-err">Adicione pelo menos uma OP.</span>';return;}
+  const tipo=document.getElementById('fTipo').value;
+  const motivo=document.getElementById('fMotivo').value;
+  if(tipo==='Retrabalho'&&!motivo){document.getElementById('msgOrdem').innerHTML='<span class="txt-err">Selecione o motivo do retrabalho.</span>';return;}
   const payload={id:document.getElementById('fId').value,itens:itens,
-    processo:document.getElementById('fProc').value,tipo:document.getElementById('fTipo').value,
+    processo:document.getElementById('fProc').value,tipo:tipo,
+    motivo_retrabalho:(tipo==='Retrabalho'?motivo:''),
     observacao:document.getElementById('fObs').value.trim()};
   const url=modalEstado==='preencher'?'/api/prep/finalizar':'/api/card/editar';
   const j=await (await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json();

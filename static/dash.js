@@ -2,9 +2,9 @@
 // Define window.DASH_ENDPOINT antes de carregar este arquivo.
 let chartTipo, chartProc, chartDia, chartPeso, chartArea, chartTurno;
 const ESTADOS={
-  PREPARANDO:{t:'Preparando',c:'#F59E0B',i:'hourglass-split'},
-  PREENCHER:{t:'Preencher',c:'#64748b',i:'pencil-square'},
-  FILA_BANHO:{t:'Na fila',c:'#7C5CFC',i:'list-ol'},
+  PREPARANDO:{t:'Preparando cesto',c:'#F59E0B',i:'hourglass-split'},
+  PREENCHER:{t:'Aguardando cadastro',c:'#64748b',i:'pencil-square'},
+  FILA_BANHO:{t:'Aguardando banho',c:'#7C5CFC',i:'list-ol'},
   EM_BANHO:{t:'Em banho',c:'#2563EB',i:'droplet-fill'},
 };
 const BRAND_GREEN='#2BA45C', BRAND_BLUE='#1668C0';

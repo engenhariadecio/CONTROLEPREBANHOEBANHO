@@ -111,7 +111,21 @@ async function carregarDbStatus(){
         '<div><strong style="color:#A8322B;">ATENÇÃO: banco temporário (SQLite)!</strong><br>'+
         '<span class="small muted">Os dados se perdem no próximo deploy. No Railway, serviço <strong>web</strong>, adicione a variável <code>DATABASE_URL = </code><code>{% raw %}${{Postgres.DATABASE_URL}}{% endraw %}</code>.</span></div></div>';
     }
-  }catch(e){box.innerHTML='<span class="small muted">Não foi possível verificar o banco.</span>';}
+  }catch(e){box.innerHTML='<span class="small muted">Não foi possível verificar o banco.</span>';return;}
+  // aviso sobre estabilidade do LOGIN (chave de sessão) — evita "fica deslogando"
+  try{
+    const d=await (await fetch('/api/admin/db_status')).json();
+    let sb=document.getElementById('sessaoStatusBox');
+    if(!sb){sb=document.createElement('div');sb.id='sessaoStatusBox';sb.style.cssText='margin-top:12px;padding:12px 14px;border-radius:12px;border:1.5px solid;';box.parentNode.insertBefore(sb,box.nextSibling);}
+    const fonteTxt={ambiente:'variável SECRET_KEY do ambiente',banco:'chave fixa salva no banco',['padrão']:'chave padrão do código'}[d.secret_fonte]||d.secret_fonte;
+    if(d.sessao_estavel){
+      sb.style.background='rgba(43,164,92,.10)';sb.style.borderColor='#2BA45C';
+      sb.innerHTML='<div style="display:flex;align-items:center;gap:10px;"><i class="bi bi-person-fill-check" style="color:#2BA45C;font-size:1.4rem;"></i><div><strong style="color:#1E9E57;">Login estável — ninguém será deslogado nos deploys</strong><br><span class="small muted">Chave de sessão: '+fonteTxt+'. Sessão dura 30 dias e funciona em vários aparelhos.</span></div></div>';
+    }else{
+      sb.style.background='rgba(245,158,11,.12)';sb.style.borderColor='#F59E0B';
+      sb.innerHTML='<div style="display:flex;align-items:center;gap:10px;"><i class="bi bi-exclamation-triangle-fill" style="color:#B5730B;font-size:1.4rem;"></i><div><strong style="color:#B5730B;">Login pode cair nos reinícios</strong><br><span class="small muted">Chave de sessão atual: '+fonteTxt+'. Para o login NUNCA cair, no Railway (serviço <strong>web</strong> › Variables) crie <code>SECRET_KEY</code> com um texto fixo qualquer (ex.: 40 caracteres aleatórios) e confirme o PostgreSQL conectado.</span></div></div>';
+    }
+  }catch(e){}
 }
 async function restaurarBackup(input){
   if(!input.files||!input.files[0])return;

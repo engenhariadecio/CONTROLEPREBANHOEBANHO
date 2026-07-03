@@ -56,10 +56,10 @@
     <div class="gp-secao"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos ativos agora<span class="gp-secao-tag" id="ativosTag"></span></div>
     <div class="cat-menu" id="catMenu">
       <button class="cat-tab on" data-cat="" onclick="setCategoria('')"><i class="bi bi-grid-fill"></i>Todos <span class="cat-count" id="cnt-todos">0</span></button>
+      <button class="cat-tab" data-cat="PREPARANDO" onclick="setCategoria('PREPARANDO')"><i class="bi bi-hourglass-split"></i>Preparando cesto <span class="cat-count" id="cnt-PREPARANDO">0</span></button>
+      <button class="cat-tab" data-cat="PREENCHER" onclick="setCategoria('PREENCHER')"><i class="bi bi-pencil-square"></i>Aguardando cadastro <span class="cat-count" id="cnt-PREENCHER">0</span></button>
+      <button class="cat-tab" data-cat="FILA_BANHO" onclick="setCategoria('FILA_BANHO')"><i class="bi bi-list-ol"></i>Aguardando banho <span class="cat-count" id="cnt-FILA_BANHO">0</span></button>
       <button class="cat-tab" data-cat="EM_BANHO" onclick="setCategoria('EM_BANHO')"><i class="bi bi-droplet-fill"></i>Em banho <span class="cat-count" id="cnt-EM_BANHO">0</span></button>
-      <button class="cat-tab" data-cat="FILA_BANHO" onclick="setCategoria('FILA_BANHO')"><i class="bi bi-list-ol"></i>Fila do banho <span class="cat-count" id="cnt-FILA_BANHO">0</span></button>
-      <button class="cat-tab" data-cat="PREPARANDO" onclick="setCategoria('PREPARANDO')"><i class="bi bi-hourglass-split"></i>Preparando <span class="cat-count" id="cnt-PREPARANDO">0</span></button>
-      <button class="cat-tab" data-cat="PREENCHER" onclick="setCategoria('PREENCHER')"><i class="bi bi-pencil-square"></i>Preenchendo <span class="cat-count" id="cnt-PREENCHER">0</span></button>
     </div>
     <div id="ativosWrap" class="ativos-cats">
       <div class="gp-card muted small" style="padding:16px;">Carregando…</div>
@@ -221,12 +221,12 @@
 <script>
 // ── Cestos ativos agora — agrupados por etapa (categoria) ──────────────────
 const ESTADO_INFO={
-  PREPARANDO:{t:'Preparando',c:'#F59E0B',i:'hourglass-split'},
-  PREENCHER:{t:'Preenchendo',c:'#64748b',i:'pencil-square'},
-  FILA_BANHO:{t:'Fila do banho',c:'#7C5CFC',i:'list-ol'},
+  PREPARANDO:{t:'Preparando cesto',c:'#F59E0B',i:'hourglass-split'},
+  PREENCHER:{t:'Aguardando cadastro',c:'#64748b',i:'pencil-square'},
+  FILA_BANHO:{t:'Aguardando banho',c:'#7C5CFC',i:'list-ol'},
   EM_BANHO:{t:'Em banho',c:'#1668C0',i:'droplet-fill'},
 };
-const ORDEM_CAT=['EM_BANHO','FILA_BANHO','PREPARANDO','PREENCHER'];
+const ORDEM_CAT=['PREPARANDO','PREENCHER','FILA_BANHO','EM_BANHO'];
 let _offset=0;
 async function _sincronizar(){
   try{const t0=Date.now();const j=await (await fetch('/api/agora')).json();const t1=Date.now();
@@ -321,6 +321,7 @@ function verDetalhes(id){
       <span class="pill ${a.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${a.tipo}</span>
       <span class="pill pill-banho">${a.processo||'Sem processo'}</span>
     </div>
+    ${a.motivo_retrabalho?`<div class="db-obs" style="margin-bottom:12px;"><span class="small muted"><i class="bi bi-arrow-repeat"></i> Motivo do retrabalho:</span> <strong>${a.motivo_retrabalho}</strong></div>`:''}
     <div class="table-wrap"><table class="tbl">
       <thead><tr><th>OP</th><th>Código</th><th>Descrição</th><th>Qtd</th></tr></thead>
       <tbody>${linhas}</tbody>

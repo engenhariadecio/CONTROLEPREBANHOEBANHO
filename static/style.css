@@ -826,3 +826,25 @@ img,canvas{max-width:100%;}
 .op-chip-x{border:none;background:#fff;color:var(--red);width:22px;height:22px;border-radius:50%;
   cursor:pointer;font-size:1rem;line-height:1;display:grid;place-items:center;box-shadow:var(--shadow-sm);}
 .op-chip-x:hover{background:var(--red);color:#fff;}
+
+/* ── Histórico de alterações (auditoria — manutenção de cestos) ── */
+.log-entry{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px;background:#fbfdff;}
+.log-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;}
+.log-tbl td,.log-tbl th{padding:6px 10px;font-size:.85rem;}
+.log-de{background:#fbeae9;color:#A8322B;border:1px solid #f3d2cf;border-radius:7px;padding:2px 8px;display:inline-block;}
+.log-para{background:#e9f6ef;color:#1E9E57;border:1px solid #cfe9dc;border-radius:7px;padding:2px 8px;display:inline-block;font-weight:700;}
+
+/* ── Configuração de jornada (turnos + exceções) ── */
+.turno-cfg{border:1.5px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:12px;background:#fbfdff;}
+.turno-cfg-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.turno-cfg-head strong{font-size:1.02rem;color:var(--ink);}
+.dias-check{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px;}
+.dia-chip{display:inline-flex;align-items:center;gap:0;cursor:pointer;user-select:none;}
+.dia-chip input{position:absolute;opacity:0;width:0;height:0;}
+.dia-chip span{display:inline-block;padding:7px 13px;border:1.5px solid var(--line);border-radius:10px;
+  font-weight:700;font-size:.82rem;color:var(--slate);transition:.13s;background:#fff;}
+.dia-chip input:checked + span{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;border-color:transparent;box-shadow:0 3px 9px rgba(22,104,192,.22);}
+.ex-row{border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff;}
+.ex-grid{display:grid;grid-template-columns:1.2fr 1fr 1fr .9fr .9fr auto;gap:10px;align-items:end;}
+.ex-del{align-self:end;}
+@media(max-width:680px){ .ex-grid{grid-template-columns:1fr 1fr;} .ex-del{grid-column:span 2;} }

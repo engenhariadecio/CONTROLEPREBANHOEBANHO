@@ -1,5 +1,20 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v7
+- Textos padronizados no fluxo: Preparando cesto → Aguardando cadastro →
+  Aguardando banho → Em banho (pré-banho, banho, painel de gerência e admin).
+- Pré-banho: no cadastro de cesto de RETRABALHO há o campo "Motivo do retrabalho"
+  (Pó de fosfato / Óleo nas peças / Sujeira / Outros). Aparece nos detalhes e no Excel.
+- Painel de gerência (ao vivo): ordem por processo (Preparando cesto, Aguardando
+  cadastro, Aguardando banho, Em banho).
+- Banho: abas renomeadas (Todos / Em banho / Aguardando banho).
+- Admin › Dashboard: removido o botão "Painel de gerência" (já há o ícone dele).
+- Admin › Jornada: jornada padrão em 3 TURNOS (1º 06:01–15:30 e 2º 15:31–00:00
+  seg–sex; 3º 00:01–06:00 seg–sáb) e lançamento de EXPEDIENTES FORA DO PADRÃO
+  (TURNO EXTRA ou PARADA) com data, horário e justificativa.
+- Admin › Manutenção de cestos: relatório de AUDITORIA (antes/depois) de cada
+  edição/exclusão, por cesto ou geral; e correção do texto de aviso.
+
 ## Ajustes v6
 - Pré-banho: até 4 operadores. No "Sim, escolher nomes" há um campo para DIGITAR
   um nome fora da lista (operador manual) e chips mostrando os selecionados.

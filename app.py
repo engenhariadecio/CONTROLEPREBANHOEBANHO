@@ -248,6 +248,7 @@ def carregar_lista_mestre():
         print(f'[lista_mestra] ERRO ao carregar: {e}')
 
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
+_SECRET_FONTE = 'padrão'  # 'ambiente' | 'banco' | 'padrão' (diagnóstico de logout)
 if DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
@@ -305,6 +306,21 @@ class Config(Base):
     valor = Column(Text, default='')
 
 
+class CardLog(Base):
+    """Auditoria: registra cada alteração/exclusão de cesto feita pelo admin
+    (o que estava ANTES e como ficou DEPOIS)."""
+    __tablename__ = 'card_logs'
+    id = Column(Integer, primary_key=True)
+    card_id = Column(Integer, index=True)
+    numero_cesto = Column(Integer)
+    quando = Column(DateTime, default=datetime.utcnow)
+    usuario = Column(String(120), default='')
+    acao = Column(String(30), default='editar')   # editar | excluir
+    antes_json = Column(Text, default='')
+    depois_json = Column(Text, default='')
+    mudancas_json = Column(Text, default='')       # [{campo, de, para}]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Jornada de trabalho (para "travar" o tempo de espera fora do expediente)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -312,12 +328,20 @@ FUSO_LOCAL_HORAS = 3  # Brasil: UTC-3
 
 AGENDA_PADRAO = {
     'usar_jornada': True,       # se False, conta o tempo corrido (24/7)
-    'trabalha_sabado': False,
-    'trabalha_domingo': False,
-    'hora_inicio': '07:00',
-    'hora_fim': '18:00',
-    'dias_extra': [],           # ['2026-07-04', ...] dias normalmente de folga que SERÃO trabalhados
-    'dias_folga': [],           # ['2026-07-09', ...] feriados/dias que NÃO serão trabalhados
+    # Jornada padrão em 3 turnos (dias: 0=seg ... 6=dom)
+    'turnos': [
+        {'nome': '1º turno', 'ini': '06:01', 'fim': '15:30', 'dias': [0, 1, 2, 3, 4], 'ativo': True},
+        {'nome': '2º turno', 'ini': '15:31', 'fim': '00:00', 'dias': [0, 1, 2, 3, 4], 'ativo': True},
+        {'nome': '3º turno', 'ini': '00:01', 'fim': '06:00', 'dias': [0, 1, 2, 3, 4, 5], 'ativo': True},
+    ],
+    # Expedientes fora do padrão. Cada item:
+    # {'data':'2026-07-05','data_fim':'2026-07-05','tipo':'TURNO EXTRA'|'PARADA',
+    #  'ini':'08:00','fim':'17:00','justificativa':'...'}
+    'excecoes': [],
+    # ---- compatibilidade com a versão antiga (janela única) ----
+    'trabalha_sabado': False, 'trabalha_domingo': False,
+    'hora_inicio': '07:00', 'hora_fim': '18:00',
+    'dias_extra': [], 'dias_folga': [],
 }
 
 _agenda_cache = {'dados': None}
@@ -342,6 +366,9 @@ def get_agenda(forcar=False):
         pass
     finally:
         db.close()
+    if not cfg.get('turnos'):
+        cfg['turnos'] = [dict(t) for t in AGENDA_PADRAO['turnos']]
+    cfg['excecoes'] = list(cfg.get('excecoes') or [])
     cfg['dias_extra'] = list(cfg.get('dias_extra') or [])
     cfg['dias_folga'] = list(cfg.get('dias_folga') or [])
     _agenda_cache['dados'] = cfg
@@ -374,23 +401,92 @@ def _hhmm(s, padrao):
         return dtime(int(h), int(m))
 
 
-def _dia_trabalhado(dia, cfg):
+def _min_do_dia(hhmm, padrao):
+    try:
+        h, m = str(hhmm).split(':')
+        return int(h) * 60 + int(m)
+    except (ValueError, TypeError, AttributeError):
+        return padrao
+
+
+def _turno_janela(t):
+    ini = _min_do_dia(t.get('ini'), 0)
+    fim = _min_do_dia(t.get('fim'), 1440)
+    if fim == 0:            # '00:00' = fim do dia (24:00)
+        fim = 1440
+    if fim <= ini:
+        fim = 1440
+    return (ini, fim)
+
+
+def _merge_intervalos(ivs):
+    ivs = sorted(ivs)
+    out = []
+    for a, b in ivs:
+        if out and a <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
+def _subtrair_intervalo(base, corte):
+    ca, cb = corte
+    out = []
+    for a, b in base:
+        if cb <= a or ca >= b:
+            out.append((a, b))
+        else:
+            if a < ca:
+                out.append((a, ca))
+            if cb < b:
+                out.append((cb, b))
+    return out
+
+
+def _janelas_do_dia(dia, cfg):
+    """Intervalos (minutos do dia) em que se TRABALHA no dia informado, já
+    considerando os turnos e as exceções (TURNO EXTRA / PARADA)."""
+    wd = dia.weekday()
+    janelas = []
+    for t in cfg.get('turnos', []):
+        if not t.get('ativo', True):
+            continue
+        if wd in (t.get('dias') or []):
+            janelas.append(_turno_janela(t))
+    # compat: dias_extra/dias_folga antigos
     s = dia.isoformat()
-    if s in cfg.get('dias_folga', []):
-        return False
-    if s in cfg.get('dias_extra', []):
-        return True
-    wd = dia.weekday()  # 0=seg ... 6=dom
-    if wd <= 4:
-        return True
-    if wd == 5:
-        return bool(cfg.get('trabalha_sabado'))
-    return bool(cfg.get('trabalha_domingo'))
+    if s in (cfg.get('dias_folga') or []):
+        janelas = []
+    janelas = _merge_intervalos(janelas)
+    # exceções pontuais
+    for ex in cfg.get('excecoes', []):
+        d0 = (ex.get('data') or '').strip()
+        d1 = (ex.get('data_fim') or '').strip() or d0
+        if not d0 or not (d0 <= s <= d1):
+            continue
+        tem_hora = bool(ex.get('ini') or ex.get('fim'))
+        a = _min_do_dia(ex.get('ini'), 0)
+        b = _min_do_dia(ex.get('fim'), 1440)
+        if ex.get('fim') in (None, '', '00:00'):
+            b = 1440
+        if not tem_hora:
+            a, b = 0, 1440
+        if ex.get('tipo') == 'PARADA':
+            janelas = _subtrair_intervalo(janelas, (a, b))
+        else:  # TURNO EXTRA
+            janelas = _merge_intervalos(janelas + [(a, b)])
+    return _merge_intervalos(janelas)
+
+
+def _dia_trabalhado(dia, cfg):
+    """Mantido para compatibilidade — hoje derivado das janelas de turno."""
+    return len(_janelas_do_dia(dia, cfg)) > 0
 
 
 def tempo_util_segundos(inicio_utc, fim_utc, cfg=None):
     """Segundos ÚTEIS (dentro da jornada) entre dois instantes UTC.
-    Fora do expediente o relógio 'congela'."""
+    Fora do expediente o relógio 'congela'. Usa os 3 turnos + exceções."""
     if not inicio_utc or not fim_utc or fim_utc <= inicio_utc:
         return 0
     if cfg is None:
@@ -400,23 +496,22 @@ def tempo_util_segundos(inicio_utc, fim_utc, cfg=None):
     desloc = timedelta(hours=FUSO_LOCAL_HORAS)
     ini = inicio_utc - desloc   # horário local
     fim = fim_utc - desloc
-    h_ini = _hhmm(cfg.get('hora_inicio'), '07:00')
-    h_fim = _hhmm(cfg.get('hora_fim'), '18:00')
     total = 0.0
-    cur = ini
+    dia = ini.date()
     limite = 0
-    while cur < fim and limite < 4000:
+    while dia <= fim.date() and limite < 4000:
         limite += 1
-        dia = cur.date()
-        if _dia_trabalhado(dia, cfg):
-            win_ini = datetime.combine(dia, h_ini)
-            win_fim = datetime.combine(dia, h_fim)
-            seg_ini = max(cur, win_ini)
-            seg_fim = min(fim, win_fim)
-            if seg_fim > seg_ini:
-                total += (seg_fim - seg_ini).total_seconds()
-        prox = datetime.combine(dia + timedelta(days=1), dtime(0, 0))
-        cur = prox
+        meianoite = datetime.combine(dia, dtime(0, 0))
+        qs = max(ini, meianoite)
+        qe = min(fim, meianoite + timedelta(days=1))
+        if qe > qs:
+            qs_min = (qs - meianoite).total_seconds() / 60.0
+            qe_min = (qe - meianoite).total_seconds() / 60.0
+            for a, b in _janelas_do_dia(dia, cfg):
+                ov = min(qe_min, b) - max(qs_min, a)
+                if ov > 0:
+                    total += ov * 60.0
+        dia += timedelta(days=1)
     return int(max(0, total))
 
 
@@ -505,6 +600,7 @@ class Card(Base):
     numero_cesto = Column(Integer, nullable=False)
     processo = Column(String(60), default='')
     tipo = Column(String(20), default='Normal')
+    motivo_retrabalho = Column(String(60), default='')
 
     ordem = Column(String(60), default='')
     material = Column(String(60), default='')
@@ -586,6 +682,7 @@ class Card(Base):
             'itens': itens, 'qtd_total': qtd_total, 'n_itens': len(itens),
             'peso_total': round(peso_total, 2), 'area_total': round(area_total, 3),
             'observacao': self.observacao or '',
+            'motivo_retrabalho': self.motivo_retrabalho or '',
             'obs_banho': self.obs_banho or '',
             'operador_prep': self.operador_prep, 'operador_prep2': self.operador_prep2 or '',
             'operadores_prep': _op_lista_prep(self),
@@ -643,6 +740,7 @@ def _migrar_colunas():
         'operadores_prep_json': 'TEXT',
         'oper_banho_ini_mat': "VARCHAR(50) DEFAULT ''",
         'oper_banho_fim_mat': "VARCHAR(50) DEFAULT ''",
+        'motivo_retrabalho': "VARCHAR(60) DEFAULT ''",
     }
     with engine.begin() as conn:
         for col, tipo in novas.items():
@@ -990,7 +1088,9 @@ def api_db_status():
         db.close()
     return jsonify({'tipo': tipo, 'seguro': tipo == 'postgresql',
                     'cards': n_cards, 'usuarios': n_users,
-                    'mestre': _lista_status.get('total', 0)})
+                    'mestre': _lista_status.get('total', 0),
+                    'secret_fonte': _SECRET_FONTE,
+                    'sessao_estavel': (_SECRET_FONTE in ('ambiente', 'banco') and tipo == 'postgresql')})
 
 
 @app.route('/api/admin/backup')
@@ -1302,9 +1402,12 @@ def _salvar_itens(card, d):
 
 
 def _aplicar_meta(card, d):
-    for campo in ('processo', 'tipo', 'observacao'):
+    for campo in ('processo', 'tipo', 'observacao', 'motivo_retrabalho'):
         if campo in d:
             setattr(card, campo, (d.get(campo) or '').strip())
+    # limpa o motivo se não for retrabalho
+    if card.tipo != 'Retrabalho':
+        card.motivo_retrabalho = ''
 
 
 @app.route('/api/prep/finalizar', methods=['POST'])
@@ -1357,7 +1460,7 @@ def api_card_editar():
         if 'n_operadores' in d:
             try:
                 n = int(d.get('n_operadores'))
-                card.n_operadores = n if n in (1, 2, 3) else 1
+                card.n_operadores = n if n in (1, 2, 3, 4) else 1
             except (ValueError, TypeError):
                 pass
         db.commit()
@@ -1585,21 +1688,40 @@ def api_config_agenda():
 def admin_config():
     msg = None
     if request.method == 'POST':
-        extras = [d.strip() for d in (request.form.get('dias_extra', '') or '')
-                  .replace(';', ',').replace('\n', ',').split(',') if d.strip()]
-        folgas = [d.strip() for d in (request.form.get('dias_folga', '') or '')
-                  .replace(';', ',').replace('\n', ',').split(',') if d.strip()]
+        # ---- turnos ----
+        turnos = []
+        for i in (1, 2, 3):
+            nome = request.form.get(f't{i}_nome', f'{i}º turno').strip() or f'{i}º turno'
+            ini = request.form.get(f't{i}_ini', '') or '00:00'
+            fim = request.form.get(f't{i}_fim', '') or '00:00'
+            ativo = request.form.get(f't{i}_ativo') == 'on'
+            dias = [int(x) for x in request.form.getlist(f't{i}_dias') if x.isdigit()]
+            turnos.append({'nome': nome, 'ini': ini, 'fim': fim,
+                           'dias': dias, 'ativo': ativo})
+        # ---- exceções (expedientes fora do padrão) ----
+        excecoes = []
+        datas = request.form.getlist('ex_data')
+        for idx, d0 in enumerate(datas):
+            d0 = (d0 or '').strip()
+            if not d0:
+                continue
+
+            def g(campo):
+                v = request.form.getlist('ex_' + campo)
+                return v[idx].strip() if idx < len(v) else ''
+            excecoes.append({
+                'data': d0, 'data_fim': g('data_fim') or d0,
+                'tipo': g('tipo') if g('tipo') in ('TURNO EXTRA', 'PARADA') else 'TURNO EXTRA',
+                'ini': g('ini'), 'fim': g('fim'),
+                'justificativa': g('justificativa'),
+            })
         novo = {
             'usar_jornada': request.form.get('usar_jornada') == 'on',
-            'trabalha_sabado': request.form.get('trabalha_sabado') == 'on',
-            'trabalha_domingo': request.form.get('trabalha_domingo') == 'on',
-            'hora_inicio': request.form.get('hora_inicio', '07:00') or '07:00',
-            'hora_fim': request.form.get('hora_fim', '18:00') or '18:00',
-            'dias_extra': extras,
-            'dias_folga': folgas,
+            'turnos': turnos,
+            'excecoes': excecoes,
         }
         set_agenda(novo)
-        msg = 'Configuração de jornada salva. O cálculo dos tempos de espera já usa os novos valores.'
+        msg = 'Jornada salva. O cálculo dos tempos de espera já usa os novos turnos e exceções.'
     return render_template('config.html', nome=session.get('nome'),
                            cfg=get_agenda(forcar=True), msg=msg)
 
@@ -1638,6 +1760,82 @@ def _card_admin_dict(c):
     return d
 
 
+# ── Auditoria de alterações de cestos (antes/depois) ────────────────────────
+_CAMPOS_LOG = [
+    ('numero_cesto', 'Nº do cesto'), ('estado', 'Estado'),
+    ('processo', 'Processo'), ('tipo', 'Tipo'),
+    ('motivo_retrabalho', 'Motivo retrabalho'),
+    ('observacao', 'Observação prep'), ('obs_banho', 'Observação banho'),
+    ('operador_prep', 'Operador prep'), ('operador_prep2', 'Operador prep 2'),
+    ('operador_banho_inicio', 'Operador banho (início)'),
+    ('operador_banho_fim', 'Operador banho (fim)'),
+    ('n_operadores', 'Nº operadores'),
+    ('prep_minutos', 'Tempo prep (min)'), ('banho_minutos', 'Tempo banho (min)'),
+    ('ordem', 'OP'), ('material', 'Código'), ('texto_breve', 'Descrição'),
+    ('quantidade', 'Qtd'),
+    ('prep_inicio', 'Início prep'), ('prep_fim', 'Fim prep'),
+    ('banho_inicio', 'Início banho'), ('banho_fim', 'Fim banho'),
+]
+
+
+def _fmt_dt_log(v):
+    if not v:
+        return ''
+    if isinstance(v, datetime):
+        return (v - timedelta(hours=FUSO_LOCAL_HORAS)).strftime('%d/%m/%Y %H:%M')
+    return str(v)
+
+
+def _snapshot_card(card):
+    d = {}
+    for campo, _ in _CAMPOS_LOG:
+        v = getattr(card, campo, None)
+        if isinstance(v, datetime):
+            v = _fmt_dt_log(v)
+        d[campo] = '' if v is None else v
+    return d
+
+
+def _registrar_log(db, card_id, numero, antes, depois, acao, usuario):
+    labels = dict(_CAMPOS_LOG)
+    mud = []
+    for c, _ in _CAMPOS_LOG:
+        de = antes.get(c, '')
+        para = depois.get(c, '')
+        if str(de) != str(para):
+            mud.append({'campo': labels.get(c, c), 'de': de, 'para': para})
+    if acao == 'editar' and not mud:
+        return
+    db.add(CardLog(card_id=card_id, numero_cesto=numero, usuario=usuario, acao=acao,
+                   antes_json=json.dumps(antes, ensure_ascii=False, default=str),
+                   depois_json=json.dumps(depois, ensure_ascii=False, default=str),
+                   mudancas_json=json.dumps(mud, ensure_ascii=False, default=str)))
+
+
+@app.route('/api/admin/card_logs')
+@login_required('admin')
+def api_admin_card_logs():
+    """Histórico de alterações — de um cesto (card_id) ou geral (mais recentes)."""
+    card_id = request.args.get('card_id', type=int)
+    db = Session()
+    try:
+        q = db.query(CardLog)
+        if card_id:
+            q = q.filter(CardLog.card_id == card_id)
+        logs = q.order_by(CardLog.id.desc()).limit(300).all()
+
+        def fmt(l):
+            return {'id': l.id, 'card_id': l.card_id, 'numero_cesto': l.numero_cesto,
+                    'quando': _fmt_dt_log(l.quando), 'usuario': l.usuario or '—',
+                    'acao': l.acao,
+                    'mudancas': json.loads(l.mudancas_json or '[]'),
+                    'antes': json.loads(l.antes_json or '{}'),
+                    'depois': json.loads(l.depois_json or '{}')}
+        return jsonify({'logs': [fmt(l) for l in logs]})
+    finally:
+        db.close()
+
+
 @app.route('/admin/cestos')
 @login_required('admin')
 def admin_cestos():
@@ -1668,6 +1866,7 @@ def api_admin_card_salvar():
         card = db.query(Card).get(int(d.get('id', 0)))
         if not card:
             return jsonify({'sucesso': False, 'erro': 'Cesto não encontrado.'}), 404
+        _antes = _snapshot_card(card)   # auditoria: como estava ANTES
 
         # número do cesto
         if d.get('numero_cesto') not in (None, ''):
@@ -1698,7 +1897,7 @@ def api_admin_card_salvar():
         if d.get('n_operadores') not in (None, ''):
             try:
                 n = int(d.get('n_operadores'))
-                card.n_operadores = n if n in (1, 2, 3) else card.n_operadores
+                card.n_operadores = n if n in (1, 2, 3, 4) else card.n_operadores
             except (ValueError, TypeError):
                 pass
 
@@ -1719,6 +1918,10 @@ def api_admin_card_salvar():
         # itens (OPs)
         if 'itens' in d:
             _salvar_itens(card, d)
+
+        # auditoria: registra o que mudou (antes/depois)
+        _registrar_log(db, card.id, card.numero_cesto, _antes, _snapshot_card(card),
+                       'editar', session.get('nome', ''))
 
         try:
             db.commit()
@@ -1742,6 +1945,8 @@ def api_admin_card_excluir():
         card = db.query(Card).get(int(d.get('id', 0)))
         if not card:
             return jsonify({'sucesso': False, 'erro': 'Cesto não encontrado.'}), 404
+        _registrar_log(db, card.id, card.numero_cesto, _snapshot_card(card), {},
+                       'excluir', session.get('nome', ''))
         db.delete(card)
         db.commit()
         return jsonify({'sucesso': True})
@@ -1810,8 +2015,8 @@ def _gerar_excel(tipo, turnos=None):
                        'Início Prep - Data', 'Início Prep - Hora',
                        'Fim Prep - Data', 'Fim Prep - Hora',
                        'Tempo prep (min)', 'Tempo parada (min)',
-                       'Pausas (por motivo)', 'Observação', 'Turno']
-            larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 18, 9, 16, 14, 16, 14, 13, 14, 30, 28, 10]
+                       'Pausas (por motivo)', 'Observação', 'Turno', 'Motivo retrab.']
+            larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 18, 9, 16, 14, 16, 14, 13, 14, 30, 28, 10, 18]
 
         elif tipo == 'banho':
             ws.title = 'Banho'
@@ -1838,9 +2043,9 @@ def _gerar_excel(tipo, turnos=None):
                        'Início Banho - Data', 'Início Banho - Hora',
                        'Final Banho - Data', 'Final Banho - Hora',
                        'Tempo espera (min)', 'Tempo banho (min)', 'Total prep+banho (min)',
-                       'Observação Prep', 'Observação Banho', 'Turno']
+                       'Observação Prep', 'Observação Banho', 'Turno', 'Motivo retrab.']
             larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 18, 9, 16, 14, 16, 14, 13, 14,
-                    20, 20, 16, 14, 16, 14, 14, 14, 16, 28, 28, 10]
+                    20, 20, 16, 14, 16, 14, 14, 14, 16, 28, 28, 10, 18]
 
         _estilo_cabecalho(ws, headers)
 
@@ -1864,7 +2069,7 @@ def _gerar_excel(tipo, turnos=None):
                         dd['prep_inicio_data'], dd['prep_inicio_hora'],
                         dd['prep_fim_data'], dd['prep_fim_hora'],
                         dd['prep_minutos'], dd['total_pausa_min'],
-                        dd['pausas']['texto'], dd['observacao'], dd['turno_lbl']
+                        dd['pausas']['texto'], dd['observacao'], dd['turno_lbl'], dd['motivo_retrabalho']
                     ])
                 elif tipo == 'banho':
                     ws.append([
@@ -1890,7 +2095,7 @@ def _gerar_excel(tipo, turnos=None):
                         dd['banho_inicio_data'], dd['banho_inicio_hora'],
                         dd['banho_fim_data'], dd['banho_fim_hora'],
                         dd['espera_min'], dd['banho_minutos'], total_prep_banho,
-                        dd['observacao'], dd['obs_banho'], dd['turno_lbl']
+                        dd['observacao'], dd['obs_banho'], dd['turno_lbl'], dd['motivo_retrabalho']
                     ])
 
         for i, w in enumerate(larg, 1):
@@ -1937,32 +2142,63 @@ def remove_session(exc=None):
 
 
 def _garantir_secret_key():
-    """Mantém a MESMA chave de sessão entre reinícios/deploys, para os usuários
-    não serem deslogados. Usa SECRET_KEY do ambiente se existir; senão guarda uma
-    chave fixa no banco (compartilhada por todos os workers/deploys)."""
-    if os.environ.get('SECRET_KEY'):
+    """Mantém a MESMA chave de sessão entre reinícios/deploys e entre todos os
+    workers, para os usuários NÃO serem deslogados.
+
+    Prioridade:
+      1) variável de ambiente SECRET_KEY (recomendado no Railway);
+      2) chave fixa guardada no banco (Postgres) — compartilhada por todos.
+    Faz várias tentativas caso o banco ainda não esteja pronto no arranque, para
+    evitar que um worker use uma chave diferente do outro."""
+    env_key = os.environ.get('SECRET_KEY')
+    if env_key:
+        app.secret_key = env_key
+        globals()['_SECRET_FONTE'] = 'ambiente'
+        print('[secret_key] usando SECRET_KEY do ambiente (estável).')
         return
-    db = Session()
-    try:
-        row = db.query(Config).filter_by(chave='secret_key').first()
-        if not row or not row.valor:
-            import secrets as _secrets
+
+    import time as _time
+    import secrets as _secrets
+    ultima_exc = None
+    for tentativa in range(1, 8):                 # ~ até 7 tentativas
+        db = Session()
+        try:
+            row = db.query(Config).filter_by(chave='secret_key').first()
+            if row and row.valor:
+                app.secret_key = row.valor
+                globals()['_SECRET_FONTE'] = 'banco'
+                print('[secret_key] carregada do banco (estável entre deploys).')
+                return
+            # ainda não existe: cria de forma atômica (chave 'chave' é única)
             nova = _secrets.token_hex(32)
             try:
                 db.add(Config(chave='secret_key', valor=nova))
                 db.commit()
                 app.secret_key = nova
+                globals()['_SECRET_FONTE'] = 'banco'
+                print('[secret_key] gerada e salva no banco.')
+                return
             except IntegrityError:
                 db.rollback()
                 row = db.query(Config).filter_by(chave='secret_key').first()
                 if row and row.valor:
                     app.secret_key = row.valor
-        else:
-            app.secret_key = row.valor
-    except Exception as e:
-        print(f'[secret_key] aviso: {e}')
-    finally:
-        db.close()
+                    globals()['_SECRET_FONTE'] = 'banco'
+                    print('[secret_key] carregada do banco (após concorrência).')
+                    return
+        except Exception as e:                    # banco ainda não respondeu
+            ultima_exc = e
+            db.rollback()
+        finally:
+            db.close()
+        _time.sleep(0.7)
+
+    # Não conseguiu falar com o banco após as tentativas. Mantém a chave padrão
+    # (que é IGUAL em todos os workers), então ao menos ninguém fica deslogando
+    # por divergência de chave. Recomenda-se definir SECRET_KEY no ambiente.
+    print('[secret_key] AVISO: não foi possível ler a chave do banco '
+          f'({ultima_exc}). Usando chave padrão do código. '
+          'Defina SECRET_KEY nas variáveis do Railway para maior segurança.')
 
 
 init_db()

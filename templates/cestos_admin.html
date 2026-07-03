@@ -4,13 +4,19 @@
 <div style="max-width:1100px;margin:0 auto;">
   <div class="section-head">
     <div class="section-title"><i class="bi bi-tools"></i>Manutenção de cestos</div>
-    <button class="btn btn-ghost btn-sm" onclick="carregar()"><i class="bi bi-arrow-clockwise"></i>Atualizar</button>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="abrirLog(null,null)"><i class="bi bi-clock-history"></i>Ver alterações</button>
+      <button class="btn btn-ghost btn-sm" onclick="carregar()"><i class="bi bi-arrow-clockwise"></i>Atualizar</button>
+    </div>
   </div>
 
-  <div class="alert alert-info" style="margin-bottom:16px;">
-    <i class="bi bi-info-circle-fill"></i>
-    Use esta tela para <strong>ajustar manualmente</strong> ou <strong>excluir</strong> cestos durante os testes, e para
-    <strong>resetar o histórico</strong> antes de rodar na fábrica. Faça um backup antes (Lista mestra → Baixar backup).
+  <div class="alert alert-info" style="margin-bottom:16px;display:flex;align-items:flex-start;gap:12px;line-height:1.5;">
+    <i class="bi bi-info-circle-fill" style="font-size:1.3rem;flex:none;margin-top:1px;"></i>
+    <div>
+      Use esta tela para <strong>ajustar manualmente</strong> ou <strong>excluir</strong> cestos durante os testes,
+      e para <strong>resetar o histórico</strong> antes de rodar na fábrica.
+      Faça um backup antes (<strong>Lista mestra → Baixar backup</strong>).
+    </div>
   </div>
 
   <!-- Filtros -->
@@ -20,9 +26,9 @@
         <select id="fEstado" class="select input-sm" onchange="render()">
           <option value="">Todos</option>
           <option value="ATIVOS">Somente ativos</option>
-          <option value="PREPARANDO">Preparando</option>
-          <option value="PREENCHER">Preenchendo</option>
-          <option value="FILA_BANHO">Fila do banho</option>
+          <option value="PREPARANDO">Preparando cesto</option>
+          <option value="PREENCHER">Aguardando cadastro</option>
+          <option value="FILA_BANHO">Aguardando banho</option>
           <option value="EM_BANHO">Em banho</option>
           <option value="CONCLUIDO">Concluídos</option>
         </select>
@@ -158,13 +164,73 @@
     </div>
   </div>
 </div>
+
+<!-- Modal: histórico de alterações (auditoria) -->
+<div class="modal-overlay" id="modalLog">
+  <div class="modal" style="max-width:760px;">
+    <div class="modal-head">
+      <div class="modal-title"><i class="bi bi-clock-history"></i><span id="logTitulo">Histórico de alterações</span></div>
+      <button class="modal-x" onclick="fecharLog()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body" style="max-height:72vh;overflow:auto;" id="logCorpo">
+      <div class="muted small" style="padding:10px;">Carregando…</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="fecharLog()" style="flex:1;">Fechar</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 let CARDS=[];
 let edItens=[];
-const ESTADO_LBL={PREPARANDO:'Preparando',PREENCHER:'Preenchendo',FILA_BANHO:'Fila do banho',EM_BANHO:'Em banho',CONCLUIDO:'Concluído'};
+
+/* ── Histórico de alterações (auditoria) ── */
+const _ACAO_TXT={editar:'Edição',excluir:'Exclusão'};
+async function abrirLog(cardId,numero){
+  const m=document.getElementById('modalLog');
+  document.getElementById('logTitulo').textContent=cardId?('Alterações do cesto '+numero):'Todas as alterações';
+  document.getElementById('logCorpo').innerHTML='<div class="muted small" style="padding:10px;">Carregando…</div>';
+  m.classList.add('open');
+  try{
+    const url='/api/admin/card_logs'+(cardId?('?card_id='+cardId):'');
+    const d=await (await fetch(url)).json();
+    renderLogs(d.logs||[],!!cardId);
+  }catch(e){document.getElementById('logCorpo').innerHTML='<div class="muted small" style="padding:10px;">Não foi possível carregar o histórico.</div>';}
+}
+function fecharLog(){document.getElementById('modalLog').classList.remove('open');}
+function renderLogs(logs,doCesto){
+  const box=document.getElementById('logCorpo');
+  if(!logs.length){box.innerHTML='<div class="muted small" style="padding:10px;">Nenhuma alteração registrada ainda.</div>';return;}
+  box.innerHTML=logs.map(l=>{
+    const cor=l.acao==='excluir'?'#D6473F':'#1668C0';
+    const linhas=(l.mudancas||[]).map(m=>`<tr>
+        <td style="font-weight:700;white-space:nowrap;">${m.campo}</td>
+        <td><span class="log-de">${m.de===''||m.de==null?'—':m.de}</span></td>
+        <td style="text-align:center;color:#8B94A3;">→</td>
+        <td><span class="log-para">${m.para===''||m.para==null?'—':m.para}</span></td>
+      </tr>`).join('');
+    const corpo=l.acao==='excluir'
+      ? '<div class="small" style="color:#A8322B;padding:4px 0;">Cesto excluído. Valores no momento da exclusão registrados na auditoria.</div>'
+      : (linhas?`<div class="table-wrap"><table class="tbl log-tbl"><thead><tr><th>Campo</th><th>Antes</th><th></th><th>Depois</th></tr></thead><tbody>${linhas}</tbody></table></div>`
+              : '<div class="muted small" style="padding:4px 0;">Sem mudanças de campos.</div>');
+    return `<div class="log-entry">
+      <div class="log-head">
+        <span class="pill" style="background:${cor}1a;color:${cor};">${_ACAO_TXT[l.acao]||l.acao}</span>
+        ${doCesto?'':`<strong>Cesto ${l.numero_cesto}</strong>`}
+        <span class="small muted"><i class="bi bi-calendar3"></i> ${l.quando}</span>
+        <span class="small muted"><i class="bi bi-person"></i> ${l.usuario}</span>
+      </div>
+      ${corpo}
+    </div>`;
+  }).join('');
+}
+document.getElementById('modalLog').addEventListener('click',e=>{if(e.target.id==='modalLog')fecharLog();});
+</script>
+<script>
+const ESTADO_LBL={PREPARANDO:'Preparando cesto',PREENCHER:'Aguardando cadastro',FILA_BANHO:'Aguardando banho',EM_BANHO:'Em banho',CONCLUIDO:'Concluído'};
 const ESTADO_PILL={PREPARANDO:'pill-prep',PREENCHER:'pill-normal',FILA_BANHO:'pill-fila',EM_BANHO:'pill-banho',CONCLUIDO:'pill-normal'};
 const ATIVOS=['PREPARANDO','PREENCHER','FILA_BANHO','EM_BANHO'];
 
@@ -206,6 +272,7 @@ function render(){
       <td class="mono">${c.banho_minutos||0}</td>
       <td><span class="small">${c.banho_fim||'—'}</span></td>
       <td style="text-align:right;white-space:nowrap;">
+        <button class="btn btn-ghost btn-sm btn-icon" title="Histórico de alterações" onclick="abrirLog(${c.id},${c.numero_cesto})"><i class="bi bi-clock-history"></i></button>
         <button class="btn btn-ghost btn-sm btn-icon" title="Editar" onclick="abrirEditar(${c.id})"><i class="bi bi-pencil-fill"></i></button>
         <button class="btn btn-stop btn-sm btn-icon" title="Excluir" onclick="excluir(${c.id})"><i class="bi bi-trash-fill"></i></button>
       </td>
