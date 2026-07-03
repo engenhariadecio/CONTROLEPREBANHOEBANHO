@@ -312,7 +312,7 @@ function verDetalhes(id){
   const a=(window._ativosCache||[]).find(x=>x.id===id);
   if(!a)return;
   const itens=(a.itens&&a.itens.length)?a.itens:[{ordem:a.ordem,material:a.material,texto_breve:a.texto_breve,quantidade:a.quantidade}];
-  const linhas=itens.map(it=>`<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td><td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td></tr>`).join('');
+  const linhas=itens.map(it=>{const rt=(it.tipo||'Normal')==='Retrabalho';const pill=`<span class="pill ${rt?'pill-retrab':'pill-normal'}">${it.tipo||'Normal'}</span>${rt&&it.motivo?`<br><span class="small muted">${it.motivo}</span>`:''}`;return `<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td><td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td><td>${pill}</td></tr>`;}).join('');
   const e=ESTADO_INFO[a.estado]||{t:a.estado,c:'#888'};
   document.getElementById('detTitulo').textContent='Cesto '+a.numero_cesto;
   document.getElementById('detCorpo').innerHTML=`
@@ -323,7 +323,7 @@ function verDetalhes(id){
     </div>
     ${a.motivo_retrabalho?`<div class="db-obs" style="margin-bottom:12px;"><span class="small muted"><i class="bi bi-arrow-repeat"></i> Motivo do retrabalho:</span> <strong>${a.motivo_retrabalho}</strong></div>`:''}
     <div class="table-wrap"><table class="tbl">
-      <thead><tr><th>OP</th><th>Código</th><th>Descrição</th><th>Qtd</th></tr></thead>
+      <thead><tr><th>OP</th><th>Código</th><th>Descrição</th><th>Qtd</th><th>Tipo</th></tr></thead>
       <tbody>${linhas}</tbody>
     </table></div>
     <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;">

@@ -1,5 +1,13 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v9
+- Tipo (Normal/Retrabalho) agora é POR OP, não por cesto. No cadastro do pré-banho,
+  cada OP tem um seletor Normal/Retrabalho (padrão Normal); ao marcar Retrabalho,
+  aparece o motivo daquela OP (Pó de fosfato / Óleo nas peças / Sujeira / Outros).
+- O cesto é considerado Retrabalho se QUALQUER OP for de retrabalho; o motivo do
+  cesto reúne os motivos por OP. Detalhes (gerência/banho) e Excel mostram o tipo/
+  motivo de cada OP. Cestos antigos continuam válidos (a OP herda o tipo do cesto).
+
 ## Ajustes v8
 - Usuário com MÚLTIPLOS ACESSOS: no cadastro (Admin › Usuários) marque os painéis
   que a pessoa pode usar (Pré-banho, Banho, Gerência, Admin). Uma pessoa só, um login.

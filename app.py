@@ -671,6 +671,12 @@ class Card(Base):
         if not itens and self.ordem:
             itens = [{'ordem': self.ordem, 'material': self.material,
                       'texto_breve': self.texto_breve, 'quantidade': self.quantidade}]
+        # garante tipo/motivo por OP (compatível com cestos antigos)
+        for it in itens:
+            if 'tipo' not in it:
+                it['tipo'] = self.tipo or 'Normal'
+            if 'motivo' not in it:
+                it['motivo'] = (self.motivo_retrabalho or '') if it.get('tipo') == 'Retrabalho' else ''
         qtd_total = sum(int(i.get('quantidade') or 0) for i in itens) if itens else (self.quantidade or 0)
         # peso e área totais = soma de (unitário do código SAP × quantidade do item)
         peso_total = 0.0
@@ -1465,7 +1471,8 @@ def _salvar_itens(card, d):
     itens = d.get('itens')
     if itens is None:
         itens = [{'ordem': d.get('ordem', ''), 'material': d.get('material', ''),
-                  'texto_breve': d.get('texto_breve', ''), 'quantidade': d.get('quantidade', 0)}]
+                  'texto_breve': d.get('texto_breve', ''), 'quantidade': d.get('quantidade', 0),
+                  'tipo': d.get('tipo', 'Normal'), 'motivo': d.get('motivo_retrabalho', '')}]
     norm = []
     for it in itens:
         ordem = _norm_ordem(it.get('ordem', '')) if it.get('ordem') else ''
@@ -1475,23 +1482,33 @@ def _salvar_itens(card, d):
             q = int(it.get('quantidade') or 0)
         except (ValueError, TypeError):
             q = 0
+        tipo = 'Retrabalho' if (it.get('tipo') == 'Retrabalho') else 'Normal'
+        motivo = (it.get('motivo') or '').strip() if tipo == 'Retrabalho' else ''
         norm.append({'ordem': ordem, 'material': (it.get('material') or '').strip(),
-                     'texto_breve': (it.get('texto_breve') or '').strip(), 'quantidade': q})
+                     'texto_breve': (it.get('texto_breve') or '').strip(), 'quantidade': q,
+                     'tipo': tipo, 'motivo': motivo})
     card.itens_json = json.dumps(norm, ensure_ascii=False)
     if norm:
         card.ordem = norm[0]['ordem']
         card.material = norm[0]['material']
         card.texto_breve = norm[0]['texto_breve']
         card.quantidade = sum(i['quantidade'] for i in norm)
+        # tipo do cesto = Retrabalho se QUALQUER OP for de retrabalho
+        retrab = [i for i in norm if i['tipo'] == 'Retrabalho']
+        card.tipo = 'Retrabalho' if retrab else 'Normal'
+        # motivo do cesto = combinação dos motivos das OPs de retrabalho
+        partes = []
+        for i in retrab:
+            if i['motivo']:
+                rot = ('OP ' + i['ordem']) if i['ordem'] else 'OP'
+                partes.append(rot + ': ' + i['motivo'])
+        card.motivo_retrabalho = '; '.join(partes)
 
 
 def _aplicar_meta(card, d):
-    for campo in ('processo', 'tipo', 'observacao', 'motivo_retrabalho'):
+    for campo in ('processo', 'observacao'):
         if campo in d:
             setattr(card, campo, (d.get(campo) or '').strip())
-    # limpa o motivo se não for retrabalho
-    if card.tipo != 'Retrabalho':
-        card.motivo_retrabalho = ''
 
 
 @app.route('/api/prep/finalizar', methods=['POST'])
@@ -2144,22 +2161,24 @@ def _gerar_excel(tipo, turnos=None):
                 q_it = int(it.get('quantidade') or 0)
                 area_it = round(a_unit * q_it, 3)
                 peso_it = round(p_unit * q_it, 2)
+                it_tipo = it.get('tipo', dd['tipo'])
+                it_motivo = it.get('motivo', '')
                 if tipo == 'prebanho':
                     ws.append([
                         dd['id'], dd['numero_cesto'], it['ordem'], it['material'],
                         it['texto_breve'], it['quantidade'], area_it, peso_it,
-                        dd['processo'], dd['tipo'],
+                        dd['processo'], it_tipo,
                         (dd['operadores_prep_txt'] or dd['operador_prep']), dd['n_operadores'],
                         dd['prep_inicio_data'], dd['prep_inicio_hora'],
                         dd['prep_fim_data'], dd['prep_fim_hora'],
                         dd['prep_minutos'], dd['total_pausa_min'],
-                        dd['pausas']['texto'], dd['observacao'], dd['turno_lbl'], dd['motivo_retrabalho']
+                        dd['pausas']['texto'], dd['observacao'], dd['turno_lbl'], it_motivo
                     ])
                 elif tipo == 'banho':
                     ws.append([
                         dd['id'], dd['numero_cesto'], it['ordem'], it['material'],
                         it['texto_breve'], it['quantidade'], area_it, peso_it,
-                        dd['processo'], dd['tipo'],
+                        dd['processo'], it_tipo,
                         dd['operador_banho_inicio'], dd['operador_banho_fim'],
                         dd['prep_fim_data'], dd['prep_fim_hora'],
                         dd['banho_inicio_data'], dd['banho_inicio_hora'],
@@ -2170,7 +2189,7 @@ def _gerar_excel(tipo, turnos=None):
                     ws.append([
                         dd['id'], dd['numero_cesto'], it['ordem'], it['material'],
                         it['texto_breve'], it['quantidade'], area_it, peso_it,
-                        dd['processo'], dd['tipo'],
+                        dd['processo'], it_tipo,
                         (dd['operadores_prep_txt'] or dd['operador_prep']), dd['n_operadores'],
                         dd['prep_inicio_data'], dd['prep_inicio_hora'],
                         dd['prep_fim_data'], dd['prep_fim_hora'],
@@ -2179,7 +2198,7 @@ def _gerar_excel(tipo, turnos=None):
                         dd['banho_inicio_data'], dd['banho_inicio_hora'],
                         dd['banho_fim_data'], dd['banho_fim_hora'],
                         dd['espera_min'], dd['banho_minutos'], total_prep_banho,
-                        dd['observacao'], dd['obs_banho'], dd['turno_lbl'], dd['motivo_retrabalho']
+                        dd['observacao'], dd['obs_banho'], dd['turno_lbl'], it_motivo
                     ])
 
         for i, w in enumerate(larg, 1):

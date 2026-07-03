@@ -91,20 +91,8 @@
         </div>
 
         <div class="grid-2" style="margin-top:6px;">
-          <div class="field" style="margin:0;"><label class="label">Processo</label>
+          <div class="field col-full" style="margin:0;"><label class="label">Processo</label>
             <select id="fProc" class="select input-sm"><option value="">Selecione…</option>{% for p in processos %}<option>{{ p }}</option>{% endfor %}</select>
-          </div>
-          <div class="field" style="margin:0;"><label class="label">Tipo</label>
-            <select id="fTipo" class="select input-sm" onchange="onTipoChange()"><option>Normal</option><option>Retrabalho</option></select>
-          </div>
-          <div class="field col-full" id="motivoWrap" style="margin:0;display:none;"><label class="label">Motivo do retrabalho</label>
-            <select id="fMotivo" class="select input-sm">
-              <option value="">Selecione…</option>
-              <option>Pó de fosfato</option>
-              <option>Óleo nas peças</option>
-              <option>Sujeira</option>
-              <option>Outros</option>
-            </select>
           </div>
           <div class="field col-full" style="margin:0;"><label class="label">Observação</label><textarea id="fObs" class="input input-sm" rows="2"></textarea></div>
         </div>
@@ -325,10 +313,7 @@ function abrirOcupado(cd){
     itens=(cd.itens&&cd.itens.length)?JSON.parse(JSON.stringify(cd.itens)):[];
     document.getElementById('fId').value=cd.id;
     document.getElementById('fProc').value=cd.processo||'';
-    document.getElementById('fTipo').value=cd.tipo||'Normal';
-    document.getElementById('fMotivo').value=cd.motivo_retrabalho||'';
     document.getElementById('fObs').value=cd.observacao||'';
-    onTipoChange();
     document.getElementById('msgOrdem').innerHTML='';
     document.getElementById('addOp').value='';
     renderItens();
@@ -360,10 +345,20 @@ function mostrarView(v){
 function renderItens(){
   const el=document.getElementById('listaItens');
   if(!itens.length){el.innerHTML='<div class="muted small" style="padding:8px 0;">Nenhuma OP ainda. Bipe ou digite abaixo.</div>';return;}
-  el.innerHTML=itens.map((it,idx)=>`
-    <div class="item-op-edit">
+  const MOT=['Pó de fosfato','Óleo nas peças','Sujeira','Outros'];
+  el.innerHTML=itens.map((it,idx)=>{
+    const tipo=it.tipo||'Normal';
+    const retrab=tipo==='Retrabalho';
+    const motOpts=['<option value="">Selecione o motivo…</option>'].concat(
+      MOT.map(m=>`<option ${((it.motivo||'')===m)?'selected':''}>${m}</option>`)).join('');
+    return `
+    <div class="item-op-edit${retrab?' item-op-retrab':''}">
       <div class="item-op-head">
         <span class="item-op-n">${idx+1}</span>
+        <div class="item-op-tipo">
+          <button type="button" class="tipo-seg ${!retrab?'on':''}" onclick="setTipo(${idx},'Normal')">Normal</button>
+          <button type="button" class="tipo-seg retrab ${retrab?'on':''}" onclick="setTipo(${idx},'Retrabalho')">Retrabalho</button>
+        </div>
         <button class="item-op-del" onclick="delItem(${idx})"><i class="bi bi-trash"></i></button>
       </div>
       <div class="item-grid">
@@ -372,7 +367,14 @@ function renderItens(){
         <div class="item-grid-full"><label class="mini-label">Descrição</label><input class="input input-sm" value="${(it.texto_breve||'').replace(/"/g,'&quot;')}" oninput="setCampo(${idx},'texto_breve',this.value)"></div>
         <div><label class="mini-label">Quantidade</label><input type="text" class="input input-sm" value="${it.quantidade||0}" oninput="setCampo(${idx},'quantidade',this.value)" inputmode="numeric" pattern="[0-9]*"></div>
       </div>
-    </div>`).join('');
+      ${retrab?`<div class="item-motivo"><label class="mini-label">Motivo do retrabalho</label>
+        <select class="select input-sm" onchange="setCampo(${idx},'motivo',this.value)">${motOpts}</select></div>`:''}
+    </div>`;}).join('');
+}
+function setTipo(i,t){
+  itens[i].tipo=t;
+  if(t!=='Retrabalho') itens[i].motivo='';
+  renderItens();
 }
 function setCampo(i,campo,v){
   if(campo==='quantidade') itens[i].quantidade=parseInt(v)||0;
@@ -404,7 +406,7 @@ async function addOrdem(){
   let op=document.getElementById('addOp').value.trim();
   const msg=document.getElementById('msgOrdem');
   if(!op){ // adiciona item vazio para digitar tudo na mão
-    itens.push({ordem:'',material:'',texto_breve:'',quantidade:0});
+    itens.push({ordem:'',material:'',texto_breve:'',quantidade:0,tipo:'Normal',motivo:''});
     renderItens(); return;
   }
   // Limpa código de barras: remove 4 dígitos do início e 4 do fim se total > 8 dígitos
@@ -415,10 +417,10 @@ async function addOrdem(){
   }
   const j=await (await fetch('/api/buscar_ordem/'+encodeURIComponent(op))).json();
   if(j.encontrado){
-    itens.push({ordem:j.ordem,material:j.material,texto_breve:j.texto_breve,quantidade:j.quantidade});
+    itens.push({ordem:j.ordem,material:j.material,texto_breve:j.texto_breve,quantidade:j.quantidade,tipo:'Normal',motivo:''});
     msg.innerHTML='<span class="txt-ok"><i class="bi bi-check-circle-fill"></i> OP encontrada — preenchida automaticamente.</span>';
   }else{
-    itens.push({ordem:j.ordem,material:'',texto_breve:'',quantidade:0});
+    itens.push({ordem:j.ordem,material:'',texto_breve:'',quantidade:0,tipo:'Normal',motivo:''});
     msg.innerHTML='<span class="txt-warn"><i class="bi bi-exclamation-circle"></i> OP fora da lista mestra — preencha código, descrição e quantidade na mão.</span>';
   }
   document.getElementById('addOp').value='';
@@ -492,19 +494,17 @@ async function pararTempo(){
   if(j.sucesso){cardAtual.estado='PREENCHER';cardAtual.prep_minutos=j.prep_minutos;cardAtual.itens=cardAtual.itens||[];abrirOcupado(cardAtual);carregar();}else alert(j.erro);
 }
 
-function onTipoChange(){
-  const ret=document.getElementById('fTipo').value==='Retrabalho';
-  document.getElementById('motivoWrap').style.display=ret?'':'none';
-}
-
 async function salvar(){
   if(modalEstado==='preencher'&&itens.length===0){document.getElementById('msgOrdem').innerHTML='<span class="txt-err">Adicione pelo menos uma OP.</span>';return;}
-  const tipo=document.getElementById('fTipo').value;
-  const motivo=document.getElementById('fMotivo').value;
-  if(tipo==='Retrabalho'&&!motivo){document.getElementById('msgOrdem').innerHTML='<span class="txt-err">Selecione o motivo do retrabalho.</span>';return;}
+  // valida: toda OP de retrabalho precisa de motivo
+  for(let i=0;i<itens.length;i++){
+    if((itens[i].tipo||'Normal')==='Retrabalho' && !(itens[i].motivo||'').trim()){
+      document.getElementById('msgOrdem').innerHTML=`<span class="txt-err">Selecione o motivo do retrabalho da OP ${i+1}.</span>`;
+      return;
+    }
+  }
   const payload={id:document.getElementById('fId').value,itens:itens,
-    processo:document.getElementById('fProc').value,tipo:tipo,
-    motivo_retrabalho:(tipo==='Retrabalho'?motivo:''),
+    processo:document.getElementById('fProc').value,
     observacao:document.getElementById('fObs').value.trim()};
   const url=modalEstado==='preencher'?'/api/prep/finalizar':'/api/card/editar';
   const j=await (await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json();

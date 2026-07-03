@@ -884,3 +884,13 @@ img,canvas{max-width:100%;}
 .acesso-chip input:checked + span{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;border-color:transparent;box-shadow:0 3px 9px rgba(22,104,192,.22);}
 .acessos-check-sm .acesso-chip span{padding:5px 10px;font-size:.76rem;}
 .acessos-edit{border-top:1px dashed var(--line);padding-top:8px;}
+
+/* ── Tipo (Normal/Retrabalho) por OP no cadastro ── */
+.item-op-tipo{display:inline-flex;gap:0;border:1.5px solid var(--line);border-radius:9px;overflow:hidden;margin-left:auto;margin-right:8px;}
+.tipo-seg{border:none;background:#fff;padding:6px 12px;font-family:inherit;font-weight:800;font-size:.76rem;color:var(--slate);cursor:pointer;transition:.12s;}
+.tipo-seg + .tipo-seg{border-left:1.5px solid var(--line);}
+.tipo-seg.on{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;}
+.tipo-seg.retrab.on{background:linear-gradient(120deg,#e0574f,var(--red));color:#fff;}
+.item-op-retrab{border-color:#f0c9c6;background:#fdf3f2;}
+.item-motivo{margin-top:8px;}
+.item-motivo .mini-label{color:var(--red);font-weight:800;}

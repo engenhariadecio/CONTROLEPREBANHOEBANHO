@@ -100,7 +100,7 @@
         <div class="field" style="margin:0;"><label class="label">Processo</label>
           <select id="edProc" class="select input-sm"><option value="">—</option>{% for p in processos %}<option>{{ p }}</option>{% endfor %}</select></div>
         <div class="field" style="margin:0;"><label class="label">Tipo</label>
-          <select id="edTipo" class="select input-sm"><option>Normal</option><option>Retrabalho</option></select></div>
+          <input id="edTipo" class="input input-sm" readonly title="Definido pelo tipo de cada OP" style="background:#f2f5fa;"></div>
         <div class="field" style="margin:0;"><label class="label">Tempo preparo (min)</label>
           <input id="edPrepMin" type="text" inputmode="decimal" class="input input-sm"></div>
         <div class="field" style="margin:0;"><label class="label">Tempo banho (min)</label>
@@ -309,9 +309,18 @@ document.getElementById('modalEditar').addEventListener('click',e=>{if(e.target.
 function renderItens(){
   const el=document.getElementById('edItens');
   if(!edItens.length){el.innerHTML='<div class="muted small" style="padding:6px 0;">Sem OPs.</div>';return;}
-  el.innerHTML=edItens.map((it,i)=>`
-    <div class="item-op-edit">
+  const MOT=['Pó de fosfato','Óleo nas peças','Sujeira','Outros'];
+  el.innerHTML=edItens.map((it,i)=>{
+    const rt=(it.tipo||'Normal')==='Retrabalho';
+    const motOpts=['<option value="">Selecione o motivo…</option>'].concat(
+      MOT.map(m=>`<option ${((it.motivo||'')===m)?'selected':''}>${m}</option>`)).join('');
+    return `
+    <div class="item-op-edit${rt?' item-op-retrab':''}">
       <div class="item-op-head"><span class="item-op-n">${i+1}</span>
+        <div class="item-op-tipo">
+          <button type="button" class="tipo-seg ${!rt?'on':''}" onclick="setTipoAdm(${i},'Normal')">Normal</button>
+          <button type="button" class="tipo-seg retrab ${rt?'on':''}" onclick="setTipoAdm(${i},'Retrabalho')">Retrabalho</button>
+        </div>
         <button class="item-op-del" onclick="delItem(${i})"><i class="bi bi-trash"></i></button></div>
       <div class="item-grid">
         <div><label class="mini-label">OP</label><input class="input input-sm" value="${it.ordem||''}" oninput="setItem(${i},'ordem',this.value)"></div>
@@ -319,11 +328,14 @@ function renderItens(){
         <div class="item-grid-full"><label class="mini-label">Descrição</label><input class="input input-sm" value="${(it.texto_breve||'').replace(/"/g,'&quot;')}" oninput="setItem(${i},'texto_breve',this.value)"></div>
         <div><label class="mini-label">Qtd</label><input class="input input-sm" inputmode="numeric" value="${it.quantidade||0}" oninput="setItem(${i},'quantidade',this.value)"></div>
       </div>
-    </div>`).join('');
+      ${rt?`<div class="item-motivo"><label class="mini-label">Motivo do retrabalho</label>
+        <select class="select input-sm" onchange="setItem(${i},'motivo',this.value)">${motOpts}</select></div>`:''}
+    </div>`;}).join('');
 }
+function setTipoAdm(i,t){edItens[i].tipo=t;if(t!=='Retrabalho')edItens[i].motivo='';renderItens();}
 function setItem(i,k,v){edItens[i][k]=(k==='quantidade')?(parseInt(v)||0):v;}
 function delItem(i){edItens.splice(i,1);renderItens();}
-function addItem(){edItens.push({ordem:'',material:'',texto_breve:'',quantidade:0});renderItens();}
+function addItem(){edItens.push({ordem:'',material:'',texto_breve:'',quantidade:0,tipo:'Normal',motivo:''});renderItens();}
 
 async function salvarEditar(){
   const id=document.getElementById('edId').value;
@@ -331,7 +343,6 @@ async function salvarEditar(){
     id, numero_cesto:document.getElementById('edNumero').value,
     estado:document.getElementById('edEstado').value,
     processo:document.getElementById('edProc').value,
-    tipo:document.getElementById('edTipo').value,
     prep_minutos:document.getElementById('edPrepMin').value,
     banho_minutos:document.getElementById('edBanhoMin').value,
     n_operadores:document.getElementById('edNOper').value,
