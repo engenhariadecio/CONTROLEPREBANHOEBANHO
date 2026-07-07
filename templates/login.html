@@ -16,10 +16,25 @@
       </div>
       <div class="field">
         <label class="label">Senha</label>
-        <input type="password" name="senha" class="input" placeholder="Sua senha" required autocomplete="current-password">
+        <div class="senha-wrap">
+          <input type="password" id="campoSenha" name="senha" class="input" placeholder="Sua senha" required autocomplete="current-password">
+          <button type="button" class="senha-toggle" id="btnVerSenha" onclick="verSenha()" aria-label="Mostrar senha" title="Mostrar senha"><i class="bi bi-eye"></i></button>
+        </div>
       </div>
       <button type="submit" class="btn btn-primary btn-block"><i class="bi bi-box-arrow-in-right"></i>Entrar</button>
     </form>
   </div>
 </div>
+<script>
+function verSenha(){
+  var c=document.getElementById('campoSenha');
+  var b=document.getElementById('btnVerSenha');
+  var mostrar=c.type==='password';
+  c.type=mostrar?'text':'password';
+  b.innerHTML=mostrar?'<i class="bi bi-eye-slash"></i>':'<i class="bi bi-eye"></i>';
+  b.setAttribute('title',mostrar?'Ocultar senha':'Mostrar senha');
+  b.setAttribute('aria-label',mostrar?'Ocultar senha':'Mostrar senha');
+  c.focus();
+}
+</script>
 {% endblock %}

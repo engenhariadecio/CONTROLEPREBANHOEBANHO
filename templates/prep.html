@@ -387,15 +387,16 @@ async function buscarPorCodigo(i){
   const it=itens[i];
   if(!it) return;
   const cod=(it.material||'').trim();
-  // só busca se tiver código, não tiver OP e a descrição estiver vazia
-  if(!cod || (it.ordem||'').trim() || (it.texto_breve||'').trim()) return;
+  // busca pelo código sempre que houver código e a descrição ainda estiver vazia
+  // (funciona mesmo quando a OP foi bipada mas não está na lista mestra)
+  if(!cod || (it.texto_breve||'').trim()) return;
   try{
     const j=await (await fetch('/api/buscar_codigo/'+encodeURIComponent(cod))).json();
     if(j.encontrado){
       itens[i].texto_breve=j.texto_breve||'';
       if(!itens[i].quantidade) itens[i].quantidade=j.quantidade||0;
       renderItens();
-      document.getElementById('msgOrdem').innerHTML='<span class="txt-ok"><i class="bi bi-check-circle-fill"></i> Descrição encontrada pelo código.</span>';
+      document.getElementById('msgOrdem').innerHTML='<span class="txt-ok"><i class="bi bi-check-circle-fill"></i> Descrição e quantidade puxadas pelo código.</span>';
     }else{
       document.getElementById('msgOrdem').innerHTML='<span class="txt-warn"><i class="bi bi-exclamation-circle"></i> Código não encontrado na lista — digite a descrição na mão.</span>';
     }

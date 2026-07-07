@@ -114,6 +114,10 @@ def _parsear_linhas_mestre(linhas):
         por_ordem[ordem] = item
         if material and material not in por_material:
             por_material[material] = item
+            # chaves alternativas: sem zeros à esquerda e forma normalizada (tolerante a formatos)
+            for alt in {material.lstrip('0'), _norm_ordem(material)}:
+                if alt and alt not in por_material:
+                    por_material[alt] = item
     return por_ordem, por_material
 
 
@@ -1330,13 +1334,15 @@ def api_buscar_ordem(ordem):
 @app.route('/api/buscar_codigo/<path:codigo>')
 @login_required('prep', 'banho')
 def api_buscar_codigo(codigo):
-    cod = _norm_ordem(codigo)
+    bruto = str(codigo).strip()
     with _lista_lock:
-        item = _lista_por_material.get(cod)
+        item = (_lista_por_material.get(bruto)
+                or _lista_por_material.get(bruto.lstrip('0'))
+                or _lista_por_material.get(_norm_ordem(codigo)))
     if item:
         return jsonify({'encontrado': True, 'material': item['material'],
                         'texto_breve': item['texto_breve'], 'quantidade': item['quantidade']})
-    return jsonify({'encontrado': False, 'material': cod})
+    return jsonify({'encontrado': False, 'material': bruto})
 
 
 @app.route('/api/prep/iniciar', methods=['POST'])

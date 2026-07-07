@@ -1,5 +1,11 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v10
+- Busca por código no cadastro: quando a OP não está na lista mestra, agora dá para
+  digitar o código e ele PUXA a descrição e a quantidade automaticamente, mesmo com a
+  OP já preenchida (não precisa mais apagar a OP). Busca tolerante a zeros à esquerda.
+- Login: novo ícone de olho para mostrar/ocultar a senha antes de entrar.
+
 ## Ajustes v9
 - Tipo (Normal/Retrabalho) agora é POR OP, não por cesto. No cadastro do pré-banho,
   cada OP tem um seletor Normal/Retrabalho (padrão Normal); ao marcar Retrabalho,

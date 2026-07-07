@@ -894,3 +894,10 @@ img,canvas{max-width:100%;}
 .item-op-retrab{border-color:#f0c9c6;background:#fdf3f2;}
 .item-motivo{margin-top:8px;}
 .item-motivo .mini-label{color:var(--red);font-weight:800;}
+
+/* ── Ver/ocultar senha no login ── */
+.senha-wrap{position:relative;display:block;}
+.senha-wrap .input{padding-right:46px;width:100%;}
+.senha-toggle{position:absolute;top:50%;right:6px;transform:translateY(-50%);border:none;background:transparent;
+  color:var(--slate);width:38px;height:38px;border-radius:9px;cursor:pointer;font-size:1.15rem;display:grid;place-items:center;transition:.12s;}
+.senha-toggle:hover{background:var(--sky-soft);color:var(--brand-blue);}
