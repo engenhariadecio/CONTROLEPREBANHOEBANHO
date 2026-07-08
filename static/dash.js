@@ -61,22 +61,32 @@ async function atualizar(){
   set('kTaxaRetrab',(d.taxa_retrab!==undefined?d.taxa_retrab:0)+'%');
   renderAtivos(d.ativos);
   renderCharts(d);
-  if(document.getElementById('turnoBody')) renderTurnoTable(d.turnos);
+  if(document.getElementById('turnoBodyPrep')||document.getElementById('turnoBody')) renderTurnoTables(d);
   if(document.getElementById('operadoresBody')) renderOperadores(d.operadores);
   if(document.getElementById('tbody')) renderTabela(d.registros);
   if(document.getElementById('histBody')) renderHistorico(d.registros);
 }
-function renderTurnoTable(t){
-  const tb=document.getElementById('turnoBody'); if(!tb)return;
+function _renderTurnoTbl(id,t){
+  const tb=document.getElementById(id); if(!tb)return;
   if(!t||!t.labels){tb.innerHTML='<tr><td colspan="7" class="empty">Sem dados.</td></tr>';return;}
   const horas=['06:01–15:30','15:31–00:00','00:01–06:00'];
+  const sum=a=>a.reduce((x,y)=>x+(+y||0),0);
   let html='';
   for(let i=0;i<3;i++){
     html+=`<tr><td><span class="pill pill-turno">${t.labels[i]}</span></td><td><span class="small">${horas[i]}</span></td>
       <td class="mono"><strong>${t.cestos[i]}</strong></td><td class="mono">${t.pecas[i]}</td>
       <td class="mono">${t.peso[i]}</td><td class="mono">${t.area[i]}</td><td class="mono">${t.retrabalho[i]}</td></tr>`;
   }
+  html+=`<tr class="tbl-total"><td colspan="2"><strong>Total</strong></td>
+    <td class="mono"><strong>${sum(t.cestos)}</strong></td><td class="mono"><strong>${sum(t.pecas)}</strong></td>
+    <td class="mono"><strong>${sum(t.peso).toFixed(1)}</strong></td><td class="mono"><strong>${sum(t.area).toFixed(2)}</strong></td>
+    <td class="mono"><strong>${sum(t.retrabalho)}</strong></td></tr>`;
   tb.innerHTML=html;
+}
+function renderTurnoTables(d){
+  _renderTurnoTbl('turnoBodyPrep', d.turnos_prep||d.turnos);
+  _renderTurnoTbl('turnoBodyBanho', d.turnos_banho||d.turnos);
+  _renderTurnoTbl('turnoBody', d.turnos); // compat (se existir a tabela antiga)
 }
 function renderOperadores(ops){
   const tb=document.getElementById('operadoresBody'); if(!tb)return;
@@ -149,16 +159,23 @@ function renderCharts(d){
     chartProc.data.labels=labels;chartProc.data.datasets[0].data=data;chartProc.update();
     if(chartDia){chartDia.data.labels=diaL;chartDia.data.datasets[0].data=diaD;chartDia.update();}
   }
-  // Cestos por turno (barras)
+  // Cestos por turno — comparativo pré-banho × banho (barras agrupadas)
   const cvT=document.getElementById('chartTurno');
-  if(cvT && d.turnos){
+  const tPrep=d.turnos_prep||d.turnos, tBanho=d.turnos_banho||d.turnos;
+  if(cvT && tPrep){
     if(!chartTurno){
       chartTurno=new Chart(cvT,{type:'bar',
-        data:{labels:d.turnos.labels,datasets:[{data:d.turnos.cestos,borderRadius:8,maxBarThickness:60,
-          backgroundColor:[ '#2BA45C','#1E8FC4','#1668C0' ]}]},
-        options:{...baseOpts,plugins:{legend:{display:false}},
+        data:{labels:tPrep.labels,datasets:[
+          {label:'Pré-banho',data:tPrep.cestos,borderRadius:7,maxBarThickness:34,backgroundColor:'#7C5CFC'},
+          {label:'Banho',data:tBanho.cestos,borderRadius:7,maxBarThickness:34,backgroundColor:'#1668C0'}]},
+        options:{...baseOpts,plugins:{legend:{display:true,position:'bottom'}},
           scales:{y:{beginAtZero:true,ticks:{stepSize:1,precision:0},grid:_gridCfg},x:{grid:{display:false}}}}});
-    }else{chartTurno.data.labels=d.turnos.labels;chartTurno.data.datasets[0].data=d.turnos.cestos;chartTurno.update();}
+    }else{
+      chartTurno.data.labels=tPrep.labels;
+      chartTurno.data.datasets[0].data=tPrep.cestos;
+      chartTurno.data.datasets[1].data=tBanho.cestos;
+      chartTurno.update();
+    }
   }
   // peso e área por dia (linha)
   const pesoL=Object.keys(d.peso_por_dia||{}), pesoD=Object.values(d.peso_por_dia||{});

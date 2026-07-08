@@ -901,3 +901,6 @@ img,canvas{max-width:100%;}
 .senha-toggle{position:absolute;top:50%;right:6px;transform:translateY(-50%);border:none;background:transparent;
   color:var(--slate);width:38px;height:38px;border-radius:9px;cursor:pointer;font-size:1.15rem;display:grid;place-items:center;transition:.12s;}
 .senha-toggle:hover{background:var(--sky-soft);color:var(--brand-blue);}
+
+/* ── Linha de total nas tabelas de turno ── */
+.tbl-total td{background:linear-gradient(90deg,var(--aqua-soft),var(--sky-soft));border-top:2px solid var(--brand-blue);}

@@ -1,5 +1,16 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v11
+- Painel gerencial: o comparativo por turno foi DIVIDIDO em dois — "Produção por
+  turno (Pré-banho)" e "Produção por turno (Banho)". Antes a preparação (feita em
+  outro turno) era somada no turno do banho e a conta não fechava. Agora cada cesto
+  é contado no turno em que a etapa aconteceu; cada tabela tem linha de TOTAL e o
+  gráfico compara pré-banho × banho por turno.
+- Turno sempre pelo HORÁRIO (nunca pelo operador), com o horário atual como base
+  quando faltar data. Excel: pré-banho usa o turno da prep, banho usa o turno do
+  banho e o relatório geral traz as duas colunas (Turno pré-banho e Turno banho).
+- Mantida a lista_mestra.xlsx enviada por você.
+
 ## Ajustes v10
 - Busca por código no cadastro: quando a OP não está na lista mestra, agora dá para
   digitar o código e ele PUXA a descrição e a quantidade automaticamente, mesmo com a

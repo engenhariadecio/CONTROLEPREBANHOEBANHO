@@ -149,7 +149,7 @@
     <div class="gp-secao"><i class="bi bi-pie-chart-fill"></i>Análise gráfica</div>
     <div class="chart-grid-3">
       <div class="chart-box"><h6><i class="bi bi-pie-chart-fill"></i>Normal × Retrabalho</h6><canvas id="chartTipo" height="200"></canvas></div>
-      <div class="chart-box"><h6><i class="bi bi-clock-history"></i>Cestos por turno</h6><canvas id="chartTurno" height="200"></canvas></div>
+      <div class="chart-box"><h6><i class="bi bi-clock-history"></i>Cestos por turno — pré-banho × banho</h6><canvas id="chartTurno" height="200"></canvas></div>
       <div class="chart-box"><h6><i class="bi bi-bar-chart-fill"></i>Cestos por processo</h6><canvas id="chartProc" height="200"></canvas></div>
     </div>
     <div class="chart-grid">
@@ -160,13 +160,25 @@
       <div class="chart-box"><h6><i class="bi bi-rulers"></i>Área processada por dia (m²)</h6><canvas id="chartArea" height="170"></canvas></div>
     </div>
 
-    <!-- Produção por turno (tabela) -->
-    <div class="gp-secao"><i class="bi bi-clock-history"></i>Produção por turno</div>
+    <!-- Produção por turno — PRÉ-BANHO e BANHO separados -->
+    <div class="gp-secao"><i class="bi bi-clock-history"></i>Produção por turno — Pré-banho</div>
+    <p class="small muted" style="margin:-6px 0 8px;">Cada cesto é contado no turno em que a <strong>preparação</strong> foi feita.</p>
     <div class="gp-card" style="overflow:hidden;padding:0;">
       <div class="table-wrap">
         <table class="tbl">
           <thead><tr><th>Turno</th><th>Horário</th><th>Cestos</th><th>Peças</th><th>Peso (kg)</th><th>Área (m²)</th><th>Retrabalho</th></tr></thead>
-          <tbody id="turnoBody"><tr><td colspan="7" class="empty">Carregando…</td></tr></tbody>
+          <tbody id="turnoBodyPrep"><tr><td colspan="7" class="empty">Carregando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="gp-secao"><i class="bi bi-droplet-fill"></i>Produção por turno — Banho</div>
+    <p class="small muted" style="margin:-6px 0 8px;">Cada cesto é contado no turno em que o <strong>banho</strong> foi concluído.</p>
+    <div class="gp-card" style="overflow:hidden;padding:0;">
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>Turno</th><th>Horário</th><th>Cestos</th><th>Peças</th><th>Peso (kg)</th><th>Área (m²)</th><th>Retrabalho</th></tr></thead>
+          <tbody id="turnoBodyBanho"><tr><td colspan="7" class="empty">Carregando…</td></tr></tbody>
         </table>
       </div>
     </div>

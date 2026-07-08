@@ -558,10 +558,23 @@ def turno_label(n):
     return TURNOS.get(n, '—')
 
 
-def turno_de_card(c):
-    """Turno do cesto — baseado no fim do banho (evento que o conclui)."""
-    dt = c.banho_fim or c.banho_inicio or c.prep_fim or c.prep_inicio
+def turno_prep(c):
+    """Turno da PREPARAÇÃO — pelo horário em que a prep terminou (ou começou).
+    Se não houver horário, usa o horário atual como base."""
+    dt = c.prep_fim or c.prep_inicio or datetime.utcnow()
     return turno_num(dt)
+
+
+def turno_banho(c):
+    """Turno do BANHO — pelo horário em que o banho terminou (ou começou).
+    Se não houver horário, usa o horário atual como base."""
+    dt = c.banho_fim or c.banho_inicio or datetime.utcnow()
+    return turno_num(dt)
+
+
+def turno_de_card(c):
+    """Turno de conclusão do cesto (fim do banho). Sempre pelo horário."""
+    return turno_banho(c)
 
 
 def _op_lista_prep(card):
@@ -722,8 +735,12 @@ class Card(Base):
             'prep_minutos': round(self.prep_minutos or 0, 1),
             'total_pausa_min': total_pausa_min,
             'espera_min': espera_min,
-            'turno': turno_de_card(self),
-            'turno_lbl': turno_label(turno_de_card(self)),
+            'turno': turno_banho(self),
+            'turno_lbl': turno_label(turno_banho(self)),
+            'turno_prep': turno_prep(self),
+            'turno_prep_lbl': turno_label(turno_prep(self)),
+            'turno_banho': turno_banho(self),
+            'turno_banho_lbl': turno_label(turno_banho(self)),
             'espera_seg_atual': (tempo_util_segundos(self.prep_fim, datetime.utcnow())
                                  if self.estado == ST_FILA_BANHO and self.prep_fim else 0),
             'banho_inicio': fmt(self.banho_inicio), 'banho_fim': fmt(self.banho_fim),
@@ -1679,12 +1696,13 @@ def _coletar_dados(de=None, ate=None, turnos=None):
         area_total_geral = 0.0
         pecas_total_geral = 0
         total_ops = 0
-        # análises extras p/ a gerência
-        turno_cestos = {1: 0, 2: 0, 3: 0}
-        turno_pecas = {1: 0, 2: 0, 3: 0}
-        turno_peso = {1: 0.0, 2: 0.0, 3: 0.0}
-        turno_area = {1: 0.0, 2: 0.0, 3: 0.0}
-        turno_retrab = {1: 0, 2: 0, 3: 0}
+        # análises extras p/ a gerência — turno SEPARADO para prep e banho
+        def _tvazio():
+            return {1: {'cestos': 0, 'pecas': 0, 'peso': 0.0, 'area': 0.0, 'retrab': 0},
+                    2: {'cestos': 0, 'pecas': 0, 'peso': 0.0, 'area': 0.0, 'retrab': 0},
+                    3: {'cestos': 0, 'pecas': 0, 'peso': 0.0, 'area': 0.0, 'retrab': 0}}
+        tur_prep = _tvazio()
+        tur_banho = _tvazio()
         por_operador = {}   # operador prep -> {cestos, pecas}
         for c in cards:
             p = c.processo or 'Sem processo'
@@ -1698,14 +1716,15 @@ def _coletar_dados(de=None, ate=None, turnos=None):
             area_total_geral += dd['area_total']
             pecas_total_geral += dd['qtd_total']
             total_ops += dd['n_itens'] or 1
-            t = turno_de_card(c)
-            if t in turno_cestos:
-                turno_cestos[t] += 1
-                turno_pecas[t] += dd['qtd_total']
-                turno_peso[t] = round(turno_peso[t] + dd['peso_total'], 2)
-                turno_area[t] = round(turno_area[t] + dd['area_total'], 3)
-                if c.tipo == 'Retrabalho':
-                    turno_retrab[t] += 1
+            # credita a preparação no turno da prep e o banho no turno do banho
+            for tt, dic in ((turno_prep(c), tur_prep), (turno_banho(c), tur_banho)):
+                if tt in dic:
+                    dic[tt]['cestos'] += 1
+                    dic[tt]['pecas'] += dd['qtd_total']
+                    dic[tt]['peso'] = round(dic[tt]['peso'] + dd['peso_total'], 2)
+                    dic[tt]['area'] = round(dic[tt]['area'] + dd['area_total'], 3)
+                    if c.tipo == 'Retrabalho':
+                        dic[tt]['retrab'] += 1
             op = (c.operador_prep or '—').strip() or '—'
             reg = por_operador.setdefault(op, {'cestos': 0, 'pecas': 0})
             reg['cestos'] += 1
@@ -1730,13 +1749,29 @@ def _coletar_dados(de=None, ate=None, turnos=None):
             'total_ops': total_ops,
             'media_pecas_cesto': round(pecas_total_geral / total, 1) if total else 0,
             'taxa_retrab': round(100 * retrab / total, 1) if total else 0,
-            'turnos': {
+            'turnos_prep': {
                 'labels': ['1º turno', '2º turno', '3º turno'],
-                'cestos': [turno_cestos[1], turno_cestos[2], turno_cestos[3]],
-                'pecas': [turno_pecas[1], turno_pecas[2], turno_pecas[3]],
-                'peso': [round(turno_peso[1], 1), round(turno_peso[2], 1), round(turno_peso[3], 1)],
-                'area': [round(turno_area[1], 2), round(turno_area[2], 2), round(turno_area[3], 2)],
-                'retrabalho': [turno_retrab[1], turno_retrab[2], turno_retrab[3]],
+                'cestos': [tur_prep[1]['cestos'], tur_prep[2]['cestos'], tur_prep[3]['cestos']],
+                'pecas': [tur_prep[1]['pecas'], tur_prep[2]['pecas'], tur_prep[3]['pecas']],
+                'peso': [round(tur_prep[1]['peso'], 1), round(tur_prep[2]['peso'], 1), round(tur_prep[3]['peso'], 1)],
+                'area': [round(tur_prep[1]['area'], 2), round(tur_prep[2]['area'], 2), round(tur_prep[3]['area'], 2)],
+                'retrabalho': [tur_prep[1]['retrab'], tur_prep[2]['retrab'], tur_prep[3]['retrab']],
+            },
+            'turnos_banho': {
+                'labels': ['1º turno', '2º turno', '3º turno'],
+                'cestos': [tur_banho[1]['cestos'], tur_banho[2]['cestos'], tur_banho[3]['cestos']],
+                'pecas': [tur_banho[1]['pecas'], tur_banho[2]['pecas'], tur_banho[3]['pecas']],
+                'peso': [round(tur_banho[1]['peso'], 1), round(tur_banho[2]['peso'], 1), round(tur_banho[3]['peso'], 1)],
+                'area': [round(tur_banho[1]['area'], 2), round(tur_banho[2]['area'], 2), round(tur_banho[3]['area'], 2)],
+                'retrabalho': [tur_banho[1]['retrab'], tur_banho[2]['retrab'], tur_banho[3]['retrab']],
+            },
+            'turnos': {  # compat: igual ao banho (turno de conclusão)
+                'labels': ['1º turno', '2º turno', '3º turno'],
+                'cestos': [tur_banho[1]['cestos'], tur_banho[2]['cestos'], tur_banho[3]['cestos']],
+                'pecas': [tur_banho[1]['pecas'], tur_banho[2]['pecas'], tur_banho[3]['pecas']],
+                'peso': [round(tur_banho[1]['peso'], 1), round(tur_banho[2]['peso'], 1), round(tur_banho[3]['peso'], 1)],
+                'area': [round(tur_banho[1]['area'], 2), round(tur_banho[2]['area'], 2), round(tur_banho[3]['area'], 2)],
+                'retrabalho': [tur_banho[1]['retrab'], tur_banho[2]['retrab'], tur_banho[3]['retrab']],
             },
             'operadores': operadores,
             'ativos': [c.to_dict() for c in ativos],
@@ -2122,7 +2157,7 @@ def _gerar_excel(tipo, turnos=None):
                        'Início Prep - Data', 'Início Prep - Hora',
                        'Fim Prep - Data', 'Fim Prep - Hora',
                        'Tempo prep (min)', 'Tempo parada (min)',
-                       'Pausas (por motivo)', 'Observação', 'Turno', 'Motivo retrab.']
+                       'Pausas (por motivo)', 'Observação', 'Turno (prep)', 'Motivo retrab.']
             larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 18, 9, 16, 14, 16, 14, 13, 14, 30, 28, 10, 18]
 
         elif tipo == 'banho':
@@ -2134,7 +2169,7 @@ def _gerar_excel(tipo, turnos=None):
                        'Fim Prep - Data', 'Fim Prep - Hora',
                        'Início Banho - Data', 'Início Banho - Hora',
                        'Final Banho - Data', 'Final Banho - Hora',
-                       'Tempo espera (min)', 'Tempo banho (min)', 'Observação banho', 'Turno']
+                       'Tempo espera (min)', 'Tempo banho (min)', 'Observação banho', 'Turno (banho)']
             larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 20, 20, 16, 14, 16, 14, 16, 14, 14, 14, 28, 10]
 
         else:  # geral
@@ -2150,9 +2185,9 @@ def _gerar_excel(tipo, turnos=None):
                        'Início Banho - Data', 'Início Banho - Hora',
                        'Final Banho - Data', 'Final Banho - Hora',
                        'Tempo espera (min)', 'Tempo banho (min)', 'Total prep+banho (min)',
-                       'Observação Prep', 'Observação Banho', 'Turno', 'Motivo retrab.']
+                       'Observação Prep', 'Observação Banho', 'Turno pré-banho', 'Turno banho', 'Motivo retrab.']
             larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 18, 9, 16, 14, 16, 14, 13, 14,
-                    20, 20, 16, 14, 16, 14, 14, 14, 16, 28, 28, 10, 18]
+                    20, 20, 16, 14, 16, 14, 14, 14, 16, 28, 28, 12, 12, 18]
 
         _estilo_cabecalho(ws, headers)
 
@@ -2178,7 +2213,7 @@ def _gerar_excel(tipo, turnos=None):
                         dd['prep_inicio_data'], dd['prep_inicio_hora'],
                         dd['prep_fim_data'], dd['prep_fim_hora'],
                         dd['prep_minutos'], dd['total_pausa_min'],
-                        dd['pausas']['texto'], dd['observacao'], dd['turno_lbl'], it_motivo
+                        dd['pausas']['texto'], dd['observacao'], dd['turno_prep_lbl'], it_motivo
                     ])
                 elif tipo == 'banho':
                     ws.append([
@@ -2204,7 +2239,7 @@ def _gerar_excel(tipo, turnos=None):
                         dd['banho_inicio_data'], dd['banho_inicio_hora'],
                         dd['banho_fim_data'], dd['banho_fim_hora'],
                         dd['espera_min'], dd['banho_minutos'], total_prep_banho,
-                        dd['observacao'], dd['obs_banho'], dd['turno_lbl'], it_motivo
+                        dd['observacao'], dd['obs_banho'], dd['turno_prep_lbl'], dd['turno_banho_lbl'], it_motivo
                     ])
 
         for i, w in enumerate(larg, 1):
