@@ -89,6 +89,29 @@ function renderTurnoTables(d){
   _renderTurnoTbl('turnoBody', d.turnos); // compat (se existir a tabela antiga)
   _renderDiaTurno('diaTurnoPrep', d.dia_turno_prep);
   _renderDiaTurno('diaTurnoBanho', d.dia_turno_banho);
+  renderOee(d);
+}
+function _oeeCor(v){ return v>=85?'#2BA45C' : v>=60?'#F59E0B' : '#D6473F'; }
+function _oeeUm(pref, o){
+  const val=document.getElementById(pref+'Val'); if(!val) return;
+  if(!o){ val.textContent='—'; return; }
+  val.textContent=o.oee.toFixed(1)+'%';
+  val.style.color=_oeeCor(o.oee);
+  const fill=document.getElementById(pref+'Fill');
+  if(fill){ fill.style.width=Math.max(0,Math.min(100,o.oee))+'%'; fill.style.background=_oeeCor(o.oee); }
+  const set=(id,v)=>{const e=document.getElementById(id); if(e)e.textContent=v.toFixed(1)+'%';};
+  set(pref+'D',o.disponibilidade); set(pref+'P',o.performance); set(pref+'Q',o.qualidade);
+  const det=document.getElementById(pref+'Det');
+  if(det) det.innerHTML=`${o.cestos} cestos · rodou ${o.tempo_rodando_min} min de ${o.tempo_planejado_min} min planejados`
+    +` · padrão ${o.padrao_min} min/cesto`+(o.recursos>1?` × ${o.recursos} postos`:'')
+    +(o.retrabalhos?` · ${o.retrabalhos} retrabalho(s)`:'');
+}
+function renderOee(d){
+  const grid=document.getElementById('oeeGrid'); if(!grid) return;
+  if(!d.oee_prep && !d.oee_banho){ grid.style.display='none'; return; }
+  grid.style.display='';
+  _oeeUm('oeePrep', d.oee_prep);
+  _oeeUm('oeeBanho', d.oee_banho);
 }
 function _renderDiaTurno(id, linhas){
   const tb=document.getElementById(id); if(!tb)return;

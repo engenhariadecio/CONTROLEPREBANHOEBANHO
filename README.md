@@ -1,5 +1,16 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v15
+- Painel gerencial enxuto: removidas as tabelas "Produção diária por turno" (pré-banho
+  e banho) e "Produção por operador". Ficaram apenas "Produção por turno — Pré-banho"
+  e "Produção por turno — Banho".
+- NOVO: OEE do pré-banho e do banho (Disponibilidade × Performance × Qualidade).
+  • Disponibilidade = tempo rodando ÷ tempo planejado (jornada, já sem PARADAS).
+  • Performance = (tempo padrão × cestos) ÷ tempo rodando.
+  • Qualidade = cestos normais ÷ total (retrabalho = perda).
+  Parâmetros em Admin -> Jornada: tempo padrão por cesto (prep e banho), nº de postos
+  de preparação e nº de tanques de banho, e liga/desliga do OEE.
+
 ## Ajustes v14 (auditoria completa do painel gerencial)
 Corrigidos 3 erros que faziam o painel mostrar produção errada por turno:
 1. Cestos com a preparação concluída mas AGUARDANDO CADASTRO (estado PREENCHER) não

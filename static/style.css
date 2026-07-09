@@ -904,3 +904,20 @@ img,canvas{max-width:100%;}
 
 /* ── Linha de total nas tabelas de turno ── */
 .tbl-total td{background:linear-gradient(90deg,var(--aqua-soft),var(--sky-soft));border-top:2px solid var(--brand-blue);}
+
+/* ── OEE ── */
+.oee-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:6px;}
+@media(max-width:820px){.oee-grid{grid-template-columns:1fr;}}
+.oee-card{background:#fff;border:1.5px solid var(--line);border-radius:16px;padding:16px 18px;}
+.oee-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.oee-tag{font-size:.74rem;font-weight:800;padding:5px 12px;border-radius:12px;letter-spacing:.02em;}
+.oee-tag-prep{background:#efeaff;color:var(--violet,#7C5CFC);}
+.oee-tag-banho{background:var(--sky-soft);color:var(--brand-blue);}
+.oee-big{font-family:var(--mono,monospace);font-size:2rem;font-weight:800;line-height:1;}
+.oee-bar{height:10px;border-radius:6px;background:#eef1f6;overflow:hidden;margin-bottom:12px;}
+.oee-fill{height:100%;border-radius:6px;transition:width .4s ease;}
+.oee-fatores{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;}
+.oee-fatores div{background:#f7fafc;border-radius:10px;padding:8px 4px;}
+.oee-fatores span{display:block;font-size:.66rem;color:var(--slate);font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
+.oee-fatores strong{font-family:var(--mono,monospace);font-size:1rem;color:var(--ink,#16202E);}
+.oee-detalhe{margin-top:10px;font-size:.72rem;color:var(--slate);line-height:1.5;}
