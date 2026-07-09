@@ -162,7 +162,7 @@
 
     <!-- Produção por turno — PRÉ-BANHO e BANHO separados -->
     <div class="gp-secao"><i class="bi bi-clock-history"></i>Produção por turno — Pré-banho</div>
-    <p class="small muted" style="margin:-6px 0 8px;">Cada cesto é contado no turno em que a <strong>preparação</strong> foi feita.</p>
+    <p class="small muted" style="margin:-6px 0 8px;">Conta cada cesto no turno em que a <strong>preparação</strong> foi feita (pelo horário). Inclui cestos que já foram preparados mesmo que ainda estejam na fila ou em banho. Mostra os 3 turnos (não depende do filtro de turno).</p>
     <div class="gp-card" style="overflow:hidden;padding:0;">
       <div class="table-wrap">
         <table class="tbl">
@@ -173,7 +173,7 @@
     </div>
 
     <div class="gp-secao"><i class="bi bi-droplet-fill"></i>Produção por turno — Banho</div>
-    <p class="small muted" style="margin:-6px 0 8px;">Cada cesto é contado no turno em que o <strong>banho</strong> foi concluído.</p>
+    <p class="small muted" style="margin:-6px 0 8px;">Conta cada cesto no turno em que o <strong>banho</strong> foi concluído (pelo horário). Só cestos concluídos. Mostra os 3 turnos (não depende do filtro de turno).</p>
     <div class="gp-card" style="overflow:hidden;padding:0;">
       <div class="table-wrap">
         <table class="tbl">
@@ -183,8 +183,32 @@
       </div>
     </div>
 
+    <!-- Produção DIÁRIA por turno -->
+    <div class="gp-secao"><i class="bi bi-calendar-week"></i>Produção diária por turno — Pré-banho</div>
+    <p class="small muted" style="margin:-6px 0 8px;">Cestos preparados em cada dia, por turno (pelo horário da preparação).</p>
+    <div class="gp-card" style="overflow:hidden;padding:0;">
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>Dia</th><th>1º turno<br><span class="small">06:01–15:30</span></th><th>2º turno<br><span class="small">15:31–00:00</span></th><th>3º turno<br><span class="small">00:01–06:00</span></th><th>Total</th></tr></thead>
+          <tbody id="diaTurnoPrep"><tr><td colspan="5" class="empty">Carregando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="gp-secao"><i class="bi bi-calendar-week"></i>Produção diária por turno — Banho</div>
+    <p class="small muted" style="margin:-6px 0 8px;">Cestos banhados em cada dia, por turno (pelo horário do banho).</p>
+    <div class="gp-card" style="overflow:hidden;padding:0;">
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>Dia</th><th>1º turno<br><span class="small">06:01–15:30</span></th><th>2º turno<br><span class="small">15:31–00:00</span></th><th>3º turno<br><span class="small">00:01–06:00</span></th><th>Total</th></tr></thead>
+          <tbody id="diaTurnoBanho"><tr><td colspan="5" class="empty">Carregando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Produção por operador -->
     <div class="gp-secao"><i class="bi bi-people-fill"></i>Produção por operador (preparação)</div>
+    <p class="small muted" style="margin:-6px 0 8px;">Conta pelo turno da <strong>preparação</strong> e credita <strong>todos</strong> os operadores do cesto (até 4). Inclui cestos preparados que ainda não foram banhados.</p>
     <div class="gp-card" style="overflow:hidden;padding:0;">
       <div class="table-wrap">
         <table class="tbl">
@@ -267,7 +291,7 @@ function _cardAtivoHTML(c){
       <span class="ativo-cesto">Cesto ${c.numero_cesto}</span>
       <span class="ativo-estado" style="background:${e.c}1a;color:${e.c};"><i class="bi bi-${e.i}"></i>${e.t}${c.pausado?' (pausado)':''}</span>
     </div>
-    <div class="ativo-info">${c.n_itens>1?(c.n_itens+' OPs'):('OP '+(c.ordem||'—'))} · <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}" style="font-size:.6rem;">${c.tipo}</span> · ${c.qtd_total||0} pç</div>
+    <div class="ativo-info">${(function(){var ops=((c.itens&&c.itens.length)?c.itens.map(function(it){return it.ordem;}):[c.ordem]).filter(Boolean);return ops.length>1?('OPs: '+ops.join(', ')):('OP '+(ops[0]||'—'));})()} · <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}" style="font-size:.6rem;">${c.tipo}</span> · ${c.qtd_total||0} pç</div>
     ${cronHTML}
     <button class="btn-detalhes btn-detalhes-block" onclick="verDetalhes(${c.id})"><i class="bi bi-eye"></i>Ver detalhes</button>
   </div>`;

@@ -87,12 +87,33 @@ function renderTurnoTables(d){
   _renderTurnoTbl('turnoBodyPrep', d.turnos_prep||d.turnos);
   _renderTurnoTbl('turnoBodyBanho', d.turnos_banho||d.turnos);
   _renderTurnoTbl('turnoBody', d.turnos); // compat (se existir a tabela antiga)
+  _renderDiaTurno('diaTurnoPrep', d.dia_turno_prep);
+  _renderDiaTurno('diaTurnoBanho', d.dia_turno_banho);
+}
+function _renderDiaTurno(id, linhas){
+  const tb=document.getElementById(id); if(!tb)return;
+  if(!linhas||!linhas.length){tb.innerHTML='<tr><td colspan="5" class="empty">Sem dados no período.</td></tr>';return;}
+  const tot=[0,0,0];
+  let html=linhas.map(l=>{
+    tot[0]+=l.turnos[0]; tot[1]+=l.turnos[1]; tot[2]+=l.turnos[2];
+    return `<tr><td><strong>${l.dia}</strong></td>
+      <td class="mono">${l.turnos[0]}</td><td class="mono">${l.turnos[1]}</td><td class="mono">${l.turnos[2]}</td>
+      <td class="mono"><strong>${l.total}</strong></td></tr>`;
+  }).join('');
+  html+=`<tr class="tbl-total"><td><strong>Total</strong></td>
+    <td class="mono"><strong>${tot[0]}</strong></td><td class="mono"><strong>${tot[1]}</strong></td>
+    <td class="mono"><strong>${tot[2]}</strong></td><td class="mono"><strong>${tot[0]+tot[1]+tot[2]}</strong></td></tr>`;
+  tb.innerHTML=html;
 }
 function renderOperadores(ops){
   const tb=document.getElementById('operadoresBody'); if(!tb)return;
   if(!ops||!ops.length){tb.innerHTML='<tr><td colspan="4" class="empty">Sem dados no período.</td></tr>';return;}
   tb.innerHTML=ops.map((o,i)=>`<tr><td>${i+1}</td><td><strong>${o.nome||'—'}</strong></td>
     <td class="mono">${o.cestos}</td><td class="mono">${o.pecas}</td></tr>`).join('');
+}
+function _opsTxt(r){
+  const ops=(r.itens&&r.itens.length? r.itens.map(it=>it.ordem):[r.ordem]).filter(Boolean);
+  return ops.length? ops.join(', ') : '—';
 }
 function renderHistorico(regs){
   const tb=document.getElementById('histBody');
@@ -102,7 +123,7 @@ function renderHistorico(regs){
     const itens=(r.itens&&r.itens.length)?r.itens:[{ordem:r.ordem,material:r.material,texto_breve:r.texto_breve}];
     const busca=(r.numero_cesto+' '+itens.map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' ')+' '+(r.processo||'')+' '+(r.tipo||'')+' '+(r.turno_lbl||'')).toLowerCase();
     return `<tr class="${r.tipo==='Retrabalho'?'retrab':''}" data-busca="${busca.replace(/"/g,'')}">
-    <td>${r.id}</td><td><strong>${r.numero_cesto}</strong></td><td>${r.n_itens>1?(r.ordem+' +'+(r.n_itens-1)):(r.ordem||'—')}</td>
+    <td>${r.id}</td><td><strong>${r.numero_cesto}</strong></td><td>${_opsTxt(r)}</td>
     <td>${r.material||'—'}</td><td><span class="small">${r.texto_breve||'—'}</span></td><td>${r.qtd_total}</td>
     <td>${r.processo||'—'}</td><td><span class="pill ${r.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${r.tipo}</span></td>
     <td><span class="pill pill-turno">${r.turno_lbl||'—'}</span></td>
@@ -206,7 +227,7 @@ function renderTabela(regs){
   tb.innerHTML=regs.map(r=>`<tr class="${r.tipo==='Retrabalho'?'retrab':''}"
     data-txt="${(r.numero_cesto+' '+r.ordem+' '+r.material+' '+(r.texto_breve||'')+' '+r.operador_prep+' '+r.operador_banho).toLowerCase()}"
     data-tipo="${r.tipo}" data-proc="${r.processo}">
-    <td>${r.id}</td><td><strong>${r.numero_cesto}</strong></td><td>${r.n_itens>1?(r.ordem+' +'+(r.n_itens-1)):(r.ordem||'—')}</td>
+    <td>${r.id}</td><td><strong>${r.numero_cesto}</strong></td><td>${_opsTxt(r)}</td>
     <td>${r.material||'—'}</td><td><span class="small">${r.texto_breve||'—'}</span></td><td>${r.qtd_total}</td>
     <td>${r.processo||'—'}</td><td><span class="pill ${r.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${r.tipo}</span></td>
     <td><span class="pill pill-turno">${r.turno_lbl||'—'}</span></td>

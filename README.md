@@ -1,5 +1,37 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v14 (auditoria completa do painel gerencial)
+Corrigidos 3 erros que faziam o painel mostrar produção errada por turno:
+1. Cestos com a preparação concluída mas AGUARDANDO CADASTRO (estado PREENCHER) não
+   entravam na produção do pré-banho — subcontagem, principalmente no fim do turno.
+   Agora entram (contados pelo horário da preparação).
+2. O gráfico "Concluídos por dia" (e peso/área por dia) ordenava os dias como texto
+   ("01/07" antes de "30/06"). Agora ordena cronologicamente por data.
+3. "Produção por operador" creditava só o 1º operador do cesto e era filtrada pelo
+   turno do BANHO. Agora credita TODOS os operadores (até 4) e usa o turno da
+   PREPARAÇÃO, incluindo cestos ainda não banhados.
+
+## Ajustes v13 (correção da produção por turno)
+- CORRIGIDO o cálculo de "o que foi produzido em cada turno". Antes todas as tabelas
+  saíam de um único conjunto (cestos concluídos, filtrados pela DATA e TURNO do BANHO),
+  então a produção do PRÉ-BANHO ficava amarrada ao evento do banho — contava/datava
+  errado e ignorava cestos preparados que ainda não foram banhados.
+- Agora cada etapa tem seu próprio conjunto, pelo evento e data corretos:
+  • Pré-banho: conta pela PREPARAÇÃO (horário/dia da prep) e inclui cestos na fila e
+    em banho, não só os concluídos.
+  • Banho: conta pelo BANHO concluído (horário/dia do banho).
+  As tabelas de "Produção por turno" e "Produção diária por turno" mostram sempre os
+  3 turnos e NÃO dependem do filtro de turno (só do período), refletindo fielmente a
+  produção de cada turno. Cada tabela tem linha de Total (a conta fecha).
+
+## Ajustes v12
+- Painel gerencial: as OPs agora aparecem por completo. No histórico e na tabela do
+  admin, todas as OPs do cesto são listadas (antes só a 1ª + contagem); nos cards ao
+  vivo, aparecem os números das OPs (ex.: "OPs: 111, 222").
+- Nova seção "Produção diária por turno" — Pré-banho e Banho separados: mostra, por
+  dia, quantos cestos em cada turno (1º/2º/3º), pelos horários corretos dos turnos.
+  Cada tabela tem linha de Total e a conta fecha.
+
 ## Ajustes v11
 - Painel gerencial: o comparativo por turno foi DIVIDIDO em dois — "Produção por
   turno (Pré-banho)" e "Produção por turno (Banho)". Antes a preparação (feita em
