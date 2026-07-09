@@ -1,5 +1,19 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v16
+- OEE removido do sistema (painel e configuração).
+- CORRIGIDO o bug da "média exorbitante que depois volta". Causa raiz: no carregamento
+  do painel, a primeira busca de dados disparava ANTES de a linha do tempo aplicar o
+  filtro do dia — então a média saía de TODO o histórico (incluindo cestos deixados
+  ligados por dias) e, segundos depois, o filtro entrava e o número voltava ao normal.
+  Agora o filtro do dia já vem preenchido pelo servidor no 1º render.
+- Proteção contra respostas fora de ordem: uma busca lenta não sobrescreve mais o
+  resultado de uma busca mais recente (números "piscando").
+- O painel ao vivo passou a usar um endpoint leve (/api/painel/ativos) em vez de
+  recalcular todo o histórico a cada 5 segundos.
+- Médias robustas: registros com tempos negativos/inválidos ou com horários invertidos
+  (banho antes do fim da preparação) são ignorados no cálculo.
+
 ## Ajustes v15
 - Painel gerencial enxuto: removidas as tabelas "Produção diária por turno" (pré-banho
   e banho) e "Produção por operador". Ficaram apenas "Produção por turno — Pré-banho"

@@ -86,52 +86,6 @@
       </div>
       <p class="hint">Deixe <strong>Início/Fim</strong> vazios para o dia inteiro. <strong>TURNO EXTRA</strong> adiciona expediente; <strong>PARADA</strong> retira do expediente.</p>
 
-      <div class="cfg-divisor"></div>
-
-      <label class="label" style="margin-bottom:8px;display:block;font-size:1rem;"><i class="bi bi-speedometer2"></i> OEE — Eficiência global</label>
-      <p class="small muted" style="margin-bottom:12px;">
-        O OEE é <strong>Disponibilidade × Performance × Qualidade</strong>. A Performance depende do
-        <strong>tempo padrão por cesto</strong> (o tempo que a operação <em>deveria</em> levar).
-        Defina abaixo com base na sua realidade — se o padrão estiver errado, o OEE fica errado.
-      </p>
-      <div class="cfg-toggle-row">
-        <div>
-          <div class="cfg-toggle-title">Mostrar o OEE no painel gerencial</div>
-          <div class="small muted">Desligue se ainda não tiver o tempo padrão definido.</div>
-        </div>
-        <label class="switch">
-          <input type="checkbox" name="oee_ativo" {% if cfg.get('oee_ativo', True) %}checked{% endif %}>
-          <span class="switch-slider"></span>
-        </label>
-      </div>
-      <div class="grid-2" style="margin-top:12px;">
-        <div class="field">
-          <label class="label">Tempo padrão de preparo (min por cesto)</label>
-          <input type="text" inputmode="decimal" name="oee_prep_padrao_min" class="input"
-                 value="{{ cfg.get('oee_prep_padrao_min', 6.0) }}">
-        </div>
-        <div class="field">
-          <label class="label">Tempo padrão de banho (min por cesto)</label>
-          <input type="text" inputmode="decimal" name="oee_banho_padrao_min" class="input"
-                 value="{{ cfg.get('oee_banho_padrao_min', 15.0) }}">
-        </div>
-        <div class="field">
-          <label class="label">Postos de preparação (em paralelo)</label>
-          <input type="text" inputmode="numeric" name="oee_prep_postos" class="input"
-                 value="{{ cfg.get('oee_prep_postos', 1) }}">
-        </div>
-        <div class="field">
-          <label class="label">Tanques de banho (em paralelo)</label>
-          <input type="text" inputmode="numeric" name="oee_banho_tanques" class="input"
-                 value="{{ cfg.get('oee_banho_tanques', 1) }}">
-        </div>
-      </div>
-      <p class="hint">
-        <strong>Disponibilidade</strong> = tempo rodando ÷ tempo planejado (vem da jornada acima, já descontando PARADAS).
-        <strong>Performance</strong> = (tempo padrão × cestos) ÷ tempo rodando.
-        <strong>Qualidade</strong> = cestos normais ÷ total (retrabalho conta como perda).
-      </p>
-
       <button class="btn btn-primary btn-block" style="margin-top:20px;"><i class="bi bi-save"></i>Salvar jornada</button>
     </form>
   </div>

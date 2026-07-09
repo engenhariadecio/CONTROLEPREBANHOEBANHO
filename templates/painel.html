@@ -71,7 +71,7 @@
 
     <!-- Filtros -->
     <section class="gp-card gp-filtros">
-      <input type="hidden" id="fDe"><input type="hidden" id="fAte">
+      <input type="hidden" id="fDe" value="{{ hoje }}"><input type="hidden" id="fAte" value="{{ hoje }}">
       <div class="gp-card-head"><i class="bi bi-funnel-fill"></i>Filtros do histórico</div>
       <div class="filtros-row">
         <!-- Linha do tempo -->
@@ -180,32 +180,6 @@
           <thead><tr><th>Turno</th><th>Horário</th><th>Cestos</th><th>Peças</th><th>Peso (kg)</th><th>Área (m²)</th><th>Retrabalho</th></tr></thead>
           <tbody id="turnoBodyBanho"><tr><td colspan="7" class="empty">Carregando…</td></tr></tbody>
         </table>
-      </div>
-    </div>
-
-    <!-- OEE -->
-    <div class="gp-secao"><i class="bi bi-speedometer2"></i>OEE — Eficiência global</div>
-    <p class="small muted" style="margin:-6px 0 8px;">OEE = <strong>Disponibilidade × Performance × Qualidade</strong>. Depende do tempo padrão por cesto configurado em <em>Admin → Jornada</em>. Respeita o período filtrado.</p>
-    <div class="oee-grid" id="oeeGrid">
-      <div class="oee-card" id="oeeCardPrep">
-        <div class="oee-head"><span class="oee-tag oee-tag-prep">Pré-banho</span><span class="oee-big" id="oeePrepVal">—</span></div>
-        <div class="oee-bar"><div class="oee-fill" id="oeePrepFill" style="width:0%"></div></div>
-        <div class="oee-fatores">
-          <div><span>Disponibilidade</span><strong id="oeePrepD">—</strong></div>
-          <div><span>Performance</span><strong id="oeePrepP">—</strong></div>
-          <div><span>Qualidade</span><strong id="oeePrepQ">—</strong></div>
-        </div>
-        <div class="oee-detalhe" id="oeePrepDet"></div>
-      </div>
-      <div class="oee-card" id="oeeCardBanho">
-        <div class="oee-head"><span class="oee-tag oee-tag-banho">Banho</span><span class="oee-big" id="oeeBanhoVal">—</span></div>
-        <div class="oee-bar"><div class="oee-fill" id="oeeBanhoFill" style="width:0%"></div></div>
-        <div class="oee-fatores">
-          <div><span>Disponibilidade</span><strong id="oeeBanhoD">—</strong></div>
-          <div><span>Performance</span><strong id="oeeBanhoP">—</strong></div>
-          <div><span>Qualidade</span><strong id="oeeBanhoQ">—</strong></div>
-        </div>
-        <div class="oee-detalhe" id="oeeBanhoDet"></div>
       </div>
     </div>
 
@@ -330,7 +304,9 @@ function pintarAtivos(){
 
 async function carregarAtivos(){
   try{
-    const d=await (await fetch('/api/painel/dados')).json();
+    const r=await fetch('/api/painel/ativos');
+    if(!r.ok) return;
+    const d=await r.json();
     window._ativosCache=(d.ativos||[]);
     pintarAtivos();
   }catch(_){}
@@ -597,6 +573,10 @@ function aplicarBuscaHistorico(){
     tr.style.display=(!_termoBusca||tr.dataset.busca.includes(_termoBusca))?'':'none';
   });
 }
+
+// Marca "hoje" na linha do tempo IMEDIATAMENTE, para que a primeira busca de dados
+// já saia filtrada pelo dia (evita mostrar a média de todo o histórico por instantes).
+montarSlicer();
 
 _sincronizar().then(()=>carregarAgenda()).then(()=>{
   carregarAtivos();montarSlicer();

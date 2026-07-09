@@ -355,12 +355,6 @@ AGENDA_PADRAO = {
     # {'data':'2026-07-05','data_fim':'2026-07-05','tipo':'TURNO EXTRA'|'PARADA',
     #  'ini':'08:00','fim':'17:00','justificativa':'...'}
     'excecoes': [],
-    # ---- OEE (parâmetros que a fábrica precisa definir) ----
-    'oee_ativo': True,
-    'oee_prep_padrao_min': 6.0,    # tempo padrão (ciclo ideal) para preparar 1 cesto
-    'oee_banho_padrao_min': 15.0,  # tempo padrão (ciclo ideal) do banho de 1 cesto
-    'oee_prep_postos': 1,          # nº de postos de preparação em paralelo
-    'oee_banho_tanques': 1,        # nº de tanques de banho em paralelo
     # ---- compatibilidade com a versão antiga (janela única) ----
     'trabalha_sabado': False, 'trabalha_domingo': False,
     'hora_inicio': '07:00', 'hora_fim': '18:00',
@@ -1039,7 +1033,8 @@ def dashboard():
 @app.route('/gerencia')
 @login_required('painel')
 def painel_gerencia():
-    return render_template('painel.html', processos=PROCESSOS,
+    hoje = (datetime.utcnow() - timedelta(hours=FUSO_LOCAL_HORAS)).strftime('%Y-%m-%d')
+    return render_template('painel.html', processos=PROCESSOS, hoje=hoje,
                            nome=session.get('nome'), perfil=session.get('perfil'))
 
 
@@ -1689,12 +1684,25 @@ def _coletar_dados(de=None, ate=None, turnos=None):
         # banho normal/retrabalho = só cestos com banho FINALIZADO (concluídos)
         banho_normal = normais
         banho_retrab = retrab
-        tp = [c.prep_minutos for c in cards if c.prep_minutos]
-        tb = [c.banho_minutos for c in cards if c.banho_minutos]
+        # Médias: ignoram registros inconsistentes (valores negativos/inválidos).
+        # Um único registro ruim não pode distorcer o indicador.
+        def _validos(vals):
+            out = []
+            for v in vals:
+                try:
+                    f = float(v)
+                except (TypeError, ValueError):
+                    continue
+                if f >= 0:
+                    out.append(f)
+            return out
+        tp = _validos(c.prep_minutos for c in cards)
+        tb = _validos(c.banho_minutos for c in cards)
         # tempo de espera (fila) = tempo útil entre fim da prep e início do banho
         esperas = []
         for c in cards:
-            if c.banho_inicio and c.prep_fim:
+            # só conta quando os horários fazem sentido (banho começou depois da prep)
+            if c.banho_inicio and c.prep_fim and c.banho_inicio >= c.prep_fim:
                 esperas.append(tempo_util_segundos(c.prep_fim, c.banho_inicio) / 60)
         por_proc, por_dia = {}, {}
         peso_por_dia, area_por_dia = {}, {}
@@ -1759,56 +1767,6 @@ def _coletar_dados(de=None, ate=None, turnos=None):
         dia_turno_prep = _agg_dia_turno(prep_cards, turno_prep, lambda c: c.prep_fim)
         dia_turno_banho = _agg_dia_turno(banho_cards, turno_banho, lambda c: c.banho_fim)
 
-        # ── OEE (Disponibilidade × Performance × Qualidade) ─────────────────────
-        cfg_oee = get_agenda()
-
-        def _limites_utc(lista, campo):
-            """Início/fim do período (UTC) para o cálculo do tempo planejado."""
-            desloc = timedelta(hours=FUSO_LOCAL_HORAS)
-            agora = datetime.utcnow()
-            if de:
-                ini = datetime.combine(de, dtime(0, 0)) + desloc
-            else:
-                datas = [getattr(c, campo) for c in lista if getattr(c, campo)]
-                ini = min(datas) if datas else agora
-            if ate:
-                fim = datetime.combine(ate, dtime(23, 59, 59)) + desloc
-            else:
-                fim = agora
-            return ini, min(fim, agora)
-
-        def _oee(lista, campo_min, campo_data, padrao_min, recursos):
-            n = len(lista)
-            run_min = sum((getattr(c, campo_min) or 0) for c in lista)
-            bons = sum(1 for c in lista if c.tipo != 'Retrabalho')
-            ini, fim = _limites_utc(lista, campo_data)
-            planejado_min = tempo_util_segundos(ini, fim, cfg_oee) / 60.0
-            planejado_min *= max(1, int(recursos or 1))
-            disp = (run_min / planejado_min) if planejado_min > 0 else 0.0
-            perf = ((padrao_min * n) / run_min) if run_min > 0 else 0.0
-            qual = (bons / n) if n else 0.0
-            disp = max(0.0, min(disp, 1.0))
-            perf = max(0.0, min(perf, 1.0))
-            return {
-                'cestos': n,
-                'disponibilidade': round(disp * 100, 1),
-                'performance': round(perf * 100, 1),
-                'qualidade': round(qual * 100, 1),
-                'oee': round(disp * perf * qual * 100, 1),
-                'tempo_rodando_min': round(run_min, 1),
-                'tempo_planejado_min': round(planejado_min, 1),
-                'padrao_min': padrao_min,
-                'recursos': max(1, int(recursos or 1)),
-                'retrabalhos': n - bons,
-            }
-
-        if cfg_oee.get('oee_ativo', True):
-            oee_prep = _oee(prep_cards, 'prep_minutos', 'prep_fim',
-                            float(cfg_oee.get('oee_prep_padrao_min') or 0), cfg_oee.get('oee_prep_postos'))
-            oee_banho = _oee(banho_cards, 'banho_minutos', 'banho_fim',
-                             float(cfg_oee.get('oee_banho_padrao_min') or 0), cfg_oee.get('oee_banho_tanques'))
-        else:
-            oee_prep = oee_banho = None
         for c in cards:
             p = c.processo or 'Sem processo'
             por_proc[p] = por_proc.get(p, 0) + 1
@@ -1892,8 +1850,6 @@ def _coletar_dados(de=None, ate=None, turnos=None):
                 for d in sorted(dia_turno_banho.keys())
             ],
             'operadores': operadores,
-            'oee_prep': oee_prep,
-            'oee_banho': oee_banho,
             'ativos': [c.to_dict() for c in ativos],
             'registros': [c.to_dict() for c in sorted(cards, key=lambda x: x.id, reverse=True)[:200]],
         }
@@ -1937,6 +1893,25 @@ def api_painel_dados():
     return jsonify(_coletar_dados(de, ate, _parse_turno()))
 
 
+@app.route('/api/painel/ativos')
+@login_required()
+def api_painel_ativos():
+    """Só os cestos ativos — leve, para o polling do painel ao vivo (a cada 5s).
+    Evita recalcular todo o histórico e as médias a cada atualização."""
+    db = Session()
+    try:
+        brutos = db.query(Card).filter(Card.estado.in_(ESTADOS_ATIVOS)).order_by(Card.id.desc()).all()
+        vistos, ativos = set(), []
+        for c in brutos:
+            if c.numero_cesto in vistos:
+                continue
+            vistos.add(c.numero_cesto)
+            ativos.append(c.to_dict())
+        return jsonify({'ativos': ativos})
+    finally:
+        db.close()
+
+
 @app.route('/api/config/agenda')
 def api_config_agenda():
     """Agenda de trabalho — usada pelos cronômetros (somente leitura)."""
@@ -1977,21 +1952,10 @@ def admin_config():
                 'ini': g('ini'), 'fim': g('fim'),
                 'justificativa': g('justificativa'),
             })
-        def _num(campo, padrao):
-            try:
-                v = float((request.form.get(campo) or '').replace(',', '.'))
-                return v if v > 0 else padrao
-            except (ValueError, TypeError):
-                return padrao
         novo = {
             'usar_jornada': request.form.get('usar_jornada') == 'on',
             'turnos': turnos,
             'excecoes': excecoes,
-            'oee_ativo': request.form.get('oee_ativo') == 'on',
-            'oee_prep_padrao_min': _num('oee_prep_padrao_min', 6.0),
-            'oee_banho_padrao_min': _num('oee_banho_padrao_min', 15.0),
-            'oee_prep_postos': int(_num('oee_prep_postos', 1)),
-            'oee_banho_tanques': int(_num('oee_banho_tanques', 1)),
         }
         set_agenda(novo)
         msg = 'Jornada salva. O cálculo dos tempos de espera já usa os novos turnos e exceções.'

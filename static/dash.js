@@ -44,9 +44,17 @@ function getRange(){
   return p.toString()?('?'+p.toString()):'';
 }
 
+let _reqSeq=0;
 async function atualizar(){
-  const r=await fetch(window.DASH_ENDPOINT+getRange());
-  const d=await r.json();
+  const meu=++_reqSeq;                      // ignora respostas fora de ordem
+  let d;
+  try{
+    const r=await fetch(window.DASH_ENDPOINT+getRange());
+    if(!r.ok) return;
+    d=await r.json();
+  }catch(_){ return; }
+  if(meu!==_reqSeq) return;                 // chegou atrasada: descarta
+  if(!d||typeof d!=='object') return;
   set('kTotal',d.total); set('kAnd',d.em_andamento);
   set('kBanhoNormal',d.banho_normal!==undefined?d.banho_normal:d.normais);
   set('kBanhoRetrab',d.banho_retrabalho!==undefined?d.banho_retrabalho:d.retrabalhos);
@@ -89,29 +97,6 @@ function renderTurnoTables(d){
   _renderTurnoTbl('turnoBody', d.turnos); // compat (se existir a tabela antiga)
   _renderDiaTurno('diaTurnoPrep', d.dia_turno_prep);
   _renderDiaTurno('diaTurnoBanho', d.dia_turno_banho);
-  renderOee(d);
-}
-function _oeeCor(v){ return v>=85?'#2BA45C' : v>=60?'#F59E0B' : '#D6473F'; }
-function _oeeUm(pref, o){
-  const val=document.getElementById(pref+'Val'); if(!val) return;
-  if(!o){ val.textContent='—'; return; }
-  val.textContent=o.oee.toFixed(1)+'%';
-  val.style.color=_oeeCor(o.oee);
-  const fill=document.getElementById(pref+'Fill');
-  if(fill){ fill.style.width=Math.max(0,Math.min(100,o.oee))+'%'; fill.style.background=_oeeCor(o.oee); }
-  const set=(id,v)=>{const e=document.getElementById(id); if(e)e.textContent=v.toFixed(1)+'%';};
-  set(pref+'D',o.disponibilidade); set(pref+'P',o.performance); set(pref+'Q',o.qualidade);
-  const det=document.getElementById(pref+'Det');
-  if(det) det.innerHTML=`${o.cestos} cestos · rodou ${o.tempo_rodando_min} min de ${o.tempo_planejado_min} min planejados`
-    +` · padrão ${o.padrao_min} min/cesto`+(o.recursos>1?` × ${o.recursos} postos`:'')
-    +(o.retrabalhos?` · ${o.retrabalhos} retrabalho(s)`:'');
-}
-function renderOee(d){
-  const grid=document.getElementById('oeeGrid'); if(!grid) return;
-  if(!d.oee_prep && !d.oee_banho){ grid.style.display='none'; return; }
-  grid.style.display='';
-  _oeeUm('oeePrep', d.oee_prep);
-  _oeeUm('oeeBanho', d.oee_banho);
 }
 function _renderDiaTurno(id, linhas){
   const tb=document.getElementById(id); if(!tb)return;
