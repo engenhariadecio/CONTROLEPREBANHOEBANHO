@@ -1,6 +1,6 @@
 // Lógica compartilhada do dashboard admin e do painel público.
 // Define window.DASH_ENDPOINT antes de carregar este arquivo.
-let chartTipo, chartProc, chartDia, chartPeso, chartArea, chartTurno;
+let chartTipo, chartProc, chartDia, chartPeso, chartArea;
 const ESTADOS={
   PREPARANDO:{t:'Preparando cesto',c:'#F59E0B',i:'hourglass-split'},
   PREENCHER:{t:'Aguardando cadastro',c:'#64748b',i:'pencil-square'},
@@ -69,10 +69,8 @@ async function atualizar(){
   set('kTaxaRetrab',(d.taxa_retrab!==undefined?d.taxa_retrab:0)+'%');
   renderAtivos(d.ativos);
   renderCharts(d);
-  if(document.getElementById('turnoBodyPrep')||document.getElementById('turnoBody')) renderTurnoTables(d);
-  if(document.getElementById('operadoresBody')) renderOperadores(d.operadores);
   if(document.getElementById('tbody')) renderTabela(d.registros);
-  if(document.getElementById('histBody')) renderHistorico(d.registros);
+  if(document.getElementById('histBodyPrep')||document.getElementById('histBody')) renderHistorico(d);
 }
 function _renderTurnoTbl(id,t){
   const tb=document.getElementById(id); if(!tb)return;
@@ -123,21 +121,39 @@ function _opsTxt(r){
   const ops=(r.itens&&r.itens.length? r.itens.map(it=>it.ordem):[r.ordem]).filter(Boolean);
   return ops.length? ops.join(', ') : '—';
 }
-function renderHistorico(regs){
-  const tb=document.getElementById('histBody');
-  if(!regs||!regs.length){tb.innerHTML='<tr><td colspan="12" class="empty">Nenhum cesto concluído ainda.</td></tr>';return;}
-  tb.innerHTML=regs.map(r=>{
-    // texto pesquisável: todas as OPs, códigos e descrições do cesto
-    const itens=(r.itens&&r.itens.length)?r.itens:[{ordem:r.ordem,material:r.material,texto_breve:r.texto_breve}];
-    const busca=(r.numero_cesto+' '+itens.map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' ')+' '+(r.processo||'')+' '+(r.tipo||'')+' '+(r.turno_lbl||'')).toLowerCase();
-    return `<tr class="${r.tipo==='Retrabalho'?'retrab':''}" data-busca="${busca.replace(/"/g,'')}">
+function _linhaHistPrep(r){
+  const busca=(r.numero_cesto+' '+((r.itens||[]).map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' '))+' '+(r.processo||'')+' '+(r.tipo||'')+' '+(r.turno_prep_lbl||'')).toLowerCase();
+  const estados={PREENCHER:'Aguardando cadastro',FILA_BANHO:'Aguardando banho',EM_BANHO:'Em banho',CONCLUIDO:'Concluído'};
+  return `<tr class="${r.tipo==='Retrabalho'?'retrab':''}" data-busca="${busca.replace(/"/g,'')}">
+    <td>${r.id}</td><td><strong>${r.numero_cesto}</strong></td><td>${_opsTxt(r)}</td>
+    <td>${r.material||'—'}</td><td><span class="small">${r.texto_breve||'—'}</span></td><td>${r.qtd_total}</td>
+    <td>${r.processo||'—'}</td><td><span class="pill ${r.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${r.tipo}</span></td>
+    <td><span class="pill pill-turno">${r.turno_prep_lbl||'—'}</span></td>
+    <td class="mono">${r.prep_minutos}</td><td><span class="small">${r.prep_fim||'—'}</span></td>
+    <td><span class="small">${estados[r.estado]||r.estado||'—'}</span></td>
+    <td><button class="btn-ver-hist" onclick="verDetalhesHist(${r.id})"><i class="bi bi-eye"></i> Ver</button></td></tr>`;
+}
+function _linhaHistBanho(r){
+  const busca=(r.numero_cesto+' '+((r.itens||[]).map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' '))+' '+(r.processo||'')+' '+(r.tipo||'')+' '+(r.turno_lbl||'')).toLowerCase();
+  return `<tr class="${r.tipo==='Retrabalho'?'retrab':''}" data-busca="${busca.replace(/"/g,'')}">
     <td>${r.id}</td><td><strong>${r.numero_cesto}</strong></td><td>${_opsTxt(r)}</td>
     <td>${r.material||'—'}</td><td><span class="small">${r.texto_breve||'—'}</span></td><td>${r.qtd_total}</td>
     <td>${r.processo||'—'}</td><td><span class="pill ${r.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${r.tipo}</span></td>
     <td><span class="pill pill-turno">${r.turno_lbl||'—'}</span></td>
-    <td class="mono">${r.prep_minutos}</td><td class="mono">${r.banho_minutos}</td>
-    <td><span class="small">${r.banho_fim||''}</span></td>
-  </tr>`;}).join('');
+    <td class="mono">${r.banho_minutos}</td><td><span class="small">${r.banho_fim||'—'}</span></td>
+    <td><button class="btn-ver-hist" onclick="verDetalhesHist(${r.id})"><i class="bi bi-eye"></i> Ver</button></td></tr>`;
+}
+function renderHistorico(d){
+  const prep=(d&&d.registros_prep)||[], banho=(d&&d.registros_banho)||(d&&d.registros)||[];
+  // cache unificado para o botão "Ver"
+  const cache={}; [...prep,...banho].forEach(r=>{cache[r.id]=r;});
+  window._registrosCache=Object.values(cache);
+  const tbP=document.getElementById('histBodyPrep');
+  if(tbP) tbP.innerHTML=prep.length?prep.map(_linhaHistPrep).join(''):'<tr><td colspan="13" class="empty">Nenhum cesto preparado no período/turno.</td></tr>';
+  const tbB=document.getElementById('histBodyBanho');
+  if(tbB) tbB.innerHTML=banho.length?banho.map(_linhaHistBanho).join(''):'<tr><td colspan="12" class="empty">Nenhum cesto banhado no período/turno.</td></tr>';
+  const cP=document.getElementById('cntPrep'); if(cP)cP.textContent=prep.length;
+  const cB=document.getElementById('cntBanho'); if(cB)cB.textContent=banho.length;
   if(typeof aplicarBuscaHistorico==='function')aplicarBuscaHistorico();
 }
 function set(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
@@ -187,24 +203,6 @@ function renderCharts(d){
     chartTipo.data.datasets[0].data=[d.normais,d.retrabalhos];chartTipo.update();
     chartProc.data.labels=labels;chartProc.data.datasets[0].data=data;chartProc.update();
     if(chartDia){chartDia.data.labels=diaL;chartDia.data.datasets[0].data=diaD;chartDia.update();}
-  }
-  // Cestos por turno — comparativo pré-banho × banho (barras agrupadas)
-  const cvT=document.getElementById('chartTurno');
-  const tPrep=d.turnos_prep||d.turnos, tBanho=d.turnos_banho||d.turnos;
-  if(cvT && tPrep){
-    if(!chartTurno){
-      chartTurno=new Chart(cvT,{type:'bar',
-        data:{labels:tPrep.labels,datasets:[
-          {label:'Pré-banho',data:tPrep.cestos,borderRadius:7,maxBarThickness:34,backgroundColor:'#7C5CFC'},
-          {label:'Banho',data:tBanho.cestos,borderRadius:7,maxBarThickness:34,backgroundColor:'#1668C0'}]},
-        options:{...baseOpts,plugins:{legend:{display:true,position:'bottom'}},
-          scales:{y:{beginAtZero:true,ticks:{stepSize:1,precision:0},grid:_gridCfg},x:{grid:{display:false}}}}});
-    }else{
-      chartTurno.data.labels=tPrep.labels;
-      chartTurno.data.datasets[0].data=tPrep.cestos;
-      chartTurno.data.datasets[1].data=tBanho.cestos;
-      chartTurno.update();
-    }
   }
   // peso e área por dia (linha)
   const pesoL=Object.keys(d.peso_por_dia||{}), pesoD=Object.values(d.peso_por_dia||{});
@@ -263,6 +261,6 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 window.atualizar=atualizar;
 function resizeCharts(){
-  [chartTipo,chartProc,chartDia,chartPeso,chartArea,chartTurno].forEach(c=>{try{c&&c.resize();}catch(_){}});
+  [chartTipo,chartProc,chartDia,chartPeso,chartArea].forEach(c=>{try{c&&c.resize();}catch(_){}});
 }
 window.resizeCharts=resizeCharts;

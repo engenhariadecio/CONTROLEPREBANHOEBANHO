@@ -147,9 +147,8 @@
 
     <!-- Gráficos -->
     <div class="gp-secao"><i class="bi bi-pie-chart-fill"></i>Análise gráfica</div>
-    <div class="chart-grid-3">
+    <div class="chart-grid">
       <div class="chart-box"><h6><i class="bi bi-pie-chart-fill"></i>Normal × Retrabalho</h6><canvas id="chartTipo" height="200"></canvas></div>
-      <div class="chart-box"><h6><i class="bi bi-clock-history"></i>Cestos por turno — pré-banho × banho</h6><canvas id="chartTurno" height="200"></canvas></div>
       <div class="chart-box"><h6><i class="bi bi-bar-chart-fill"></i>Cestos por processo</h6><canvas id="chartProc" height="200"></canvas></div>
     </div>
     <div class="chart-grid">
@@ -160,39 +159,34 @@
       <div class="chart-box"><h6><i class="bi bi-rulers"></i>Área processada por dia (m²)</h6><canvas id="chartArea" height="170"></canvas></div>
     </div>
 
-    <!-- Produção por turno — PRÉ-BANHO e BANHO separados -->
-    <div class="gp-secao"><i class="bi bi-clock-history"></i>Produção por turno — Pré-banho</div>
-    <p class="small muted" style="margin:-6px 0 8px;">Conta cada cesto no turno em que a <strong>preparação</strong> foi feita (pelo horário). Inclui cestos que já foram preparados mesmo que ainda estejam na fila ou em banho. Mostra os 3 turnos (não depende do filtro de turno).</p>
-    <div class="gp-card" style="overflow:hidden;padding:0;">
-      <div class="table-wrap">
-        <table class="tbl">
-          <thead><tr><th>Turno</th><th>Horário</th><th>Cestos</th><th>Peças</th><th>Peso (kg)</th><th>Área (m²)</th><th>Retrabalho</th></tr></thead>
-          <tbody id="turnoBodyPrep"><tr><td colspan="7" class="empty">Carregando…</td></tr></tbody>
-        </table>
-      </div>
+    <!-- Histórico por setor: PRÉ-BANHO e BANHO -->
+    <div class="gp-secao"><i class="bi bi-clock-history"></i>Cestos por setor</div>
+    <p class="small muted" style="margin:-6px 0 10px;">Cada setor conta pelo seu próprio horário e turno. <strong>Pré-banho</strong>: cestos cuja <strong>preparação foi finalizada</strong> no período/turno. <strong>Banho</strong>: cestos cujo <strong>banho foi concluído</strong> no período/turno. Use o filtro de turno acima.</p>
+    <div class="hist-tabs">
+      <button class="hist-tab on" id="tabPrep" onclick="setHistTab('prep')"><i class="bi bi-hourglass-split"></i> Pré-banho <span class="hist-tab-cnt" id="cntPrep">0</span></button>
+      <button class="hist-tab" id="tabBanho" onclick="setHistTab('banho')"><i class="bi bi-droplet-fill"></i> Banho <span class="hist-tab-cnt" id="cntBanho">0</span></button>
     </div>
 
-    <div class="gp-secao"><i class="bi bi-droplet-fill"></i>Produção por turno — Banho</div>
-    <p class="small muted" style="margin:-6px 0 8px;">Conta cada cesto no turno em que o <strong>banho</strong> foi concluído (pelo horário). Só cestos concluídos. Mostra os 3 turnos (não depende do filtro de turno).</p>
-    <div class="gp-card" style="overflow:hidden;padding:0;">
-      <div class="table-wrap">
-        <table class="tbl">
-          <thead><tr><th>Turno</th><th>Horário</th><th>Cestos</th><th>Peças</th><th>Peso (kg)</th><th>Área (m²)</th><th>Retrabalho</th></tr></thead>
-          <tbody id="turnoBodyBanho"><tr><td colspan="7" class="empty">Carregando…</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Histórico -->
-    <div class="gp-secao"><i class="bi bi-clock-history"></i>Histórico dos cestos concluídos</div>
-    <div class="gp-card" style="overflow:hidden;padding:0;">
+    <div class="gp-card" id="wrapPrep" style="overflow:hidden;padding:0;">
       <div class="table-wrap">
         <table class="tbl">
           <thead><tr>
             <th>#</th><th>Cesto</th><th>OP</th><th>Código</th><th>Texto breve</th><th>Qtd</th>
-            <th>Processo</th><th>Tipo</th><th>Turno</th><th>Prep</th><th>Banho</th><th>Fim</th>
+            <th>Processo</th><th>Tipo</th><th>Turno prep</th><th>Prep (min)</th><th>Fim preparação</th><th>Estado</th><th>Ver</th>
           </tr></thead>
-          <tbody id="histBody"><tr><td colspan="12" class="empty">Carregando…</td></tr></tbody>
+          <tbody id="histBodyPrep"><tr><td colspan="13" class="empty">Carregando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="gp-card" id="wrapBanho" style="overflow:hidden;padding:0;display:none;">
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>#</th><th>Cesto</th><th>OP</th><th>Código</th><th>Texto breve</th><th>Qtd</th>
+            <th>Processo</th><th>Tipo</th><th>Turno banho</th><th>Banho (min)</th><th>Fim banho</th><th>Ver</th>
+          </tr></thead>
+          <tbody id="histBodyBanho"><tr><td colspan="12" class="empty">Carregando…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -355,6 +349,50 @@ function _operadoresHTML(a){
   return html;
 }
 function fecharDetalhes(){document.getElementById('modalDetalhes').classList.remove('open');}
+function setHistTab(qual){
+  const isPrep=qual==='prep';
+  document.getElementById('wrapPrep').style.display=isPrep?'':'none';
+  document.getElementById('wrapBanho').style.display=isPrep?'none':'';
+  document.getElementById('tabPrep').classList.toggle('on',isPrep);
+  document.getElementById('tabBanho').classList.toggle('on',!isPrep);
+  window._histTab=qual;
+}
+window._histTab='prep';
+function verDetalhesHist(id){
+  const a=(window._registrosCache||[]).find(x=>x.id===id);
+  if(!a)return;
+  const itens=(a.itens&&a.itens.length)?a.itens:[{ordem:a.ordem,material:a.material,texto_breve:a.texto_breve,quantidade:a.quantidade}];
+  const linhas=itens.map(it=>{const rt=(it.tipo||'Normal')==='Retrabalho';const pill=`<span class="pill ${rt?'pill-retrab':'pill-normal'}">${it.tipo||'Normal'}</span>${rt&&it.motivo?`<br><span class="small muted">${it.motivo}</span>`:''}`;return `<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td><td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td><td>${pill}</td></tr>`;}).join('');
+  document.getElementById('detTitulo').textContent='Cesto '+a.numero_cesto+' (concluído)';
+  document.getElementById('detCorpo').innerHTML=`
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <span class="pill ${a.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${a.tipo}</span>
+      <span class="pill pill-banho">${a.processo||'Sem processo'}</span>
+      <span class="pill pill-turno">Prep: ${a.turno_prep_lbl||'—'}</span>
+      <span class="pill pill-turno">Banho: ${a.turno_lbl||'—'}</span>
+    </div>
+    ${a.motivo_retrabalho?`<div class="db-obs" style="margin-bottom:12px;"><span class="small muted"><i class="bi bi-arrow-repeat"></i> Motivo do retrabalho:</span> <strong>${a.motivo_retrabalho}</strong></div>`:''}
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr><th>OP</th><th>Código</th><th>Descrição</th><th>Qtd</th><th>Tipo</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table></div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;">
+      <div><span class="small muted">Total de peças</span><br><strong style="font-size:1.2rem;">${a.qtd_total||0}</strong></div>
+      ${a.peso_total!==undefined?`<div><span class="small muted">Peso total</span><br><strong style="font-size:1.2rem;">${a.peso_total} kg</strong></div>`:''}
+      ${a.area_total!==undefined?`<div><span class="small muted">Área total</span><br><strong style="font-size:1.2rem;">${a.area_total} m²</strong></div>`:''}
+    </div>
+    <div class="table-wrap" style="margin-top:14px;"><table class="tbl">
+      <thead><tr><th>Etapa</th><th>Início</th><th>Fim</th><th>Tempo (min)</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Preparação</strong></td><td><span class="small">${a.prep_inicio||'—'}</span></td><td><span class="small">${a.prep_fim||'—'}</span></td><td class="mono">${a.prep_minutos}</td></tr>
+        <tr><td><strong>Banho</strong></td><td><span class="small">${a.banho_inicio||'—'}</span></td><td><span class="small">${a.banho_fim||'—'}</span></td><td class="mono">${a.banho_minutos}</td></tr>
+      </tbody>
+    </table></div>
+    ${a.observacao?`<div class="db-obs" style="margin-top:12px;"><span class="small muted">Observação prep:</span> ${a.observacao}</div>`:''}
+    ${a.obs_banho?`<div class="db-obs" style="margin-top:8px;"><span class="small muted">Observação banho:</span> ${a.obs_banho}</div>`:''}
+    ${_operadoresHTML(a)}`;
+  document.getElementById('modalDetalhes').classList.add('open');
+}
 function tickAtivos(){
   document.querySelectorAll('#ativosWrap .cron-el[data-ini]').forEach(e=>{
     if(e.dataset.tipo==='fila'){
@@ -569,7 +607,7 @@ function limparBusca(){
   aplicarBuscaHistorico();
 }
 function aplicarBuscaHistorico(){
-  document.querySelectorAll('#histBody tr[data-busca]').forEach(tr=>{
+  document.querySelectorAll('#histBodyPrep tr[data-busca], #histBodyBanho tr[data-busca]').forEach(tr=>{
     tr.style.display=(!_termoBusca||tr.dataset.busca.includes(_termoBusca))?'':'none';
   });
 }

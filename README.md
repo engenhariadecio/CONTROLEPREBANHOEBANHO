@@ -1,5 +1,29 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v18
+- Histórico do painel agora tem DUAS ABAS no final: "Pré-banho" e "Banho", cada uma
+  com contador de cestos.
+- O filtro de turno passou a valer para CADA SETOR pelo seu próprio horário:
+  • Aba Pré-banho: cestos cuja PREPARAÇÃO foi finalizada no turno/período (turno da prep).
+  • Aba Banho: cestos cujo BANHO foi concluído no turno/período (turno do banho).
+  Ex.: ao filtrar o 2º turno, a aba Pré-banho mostra o que foi preparado no 2º turno e a
+  aba Banho mostra o que foi banhado no 2º turno — são setores diferentes e contam
+  diferente. Cada aba tem botão "Ver" com os detalhes do cesto.
+
+## Ajustes v17
+- Turno agora é calculado pelos HORÁRIOS CONFIGURADOS na jornada (não mais fixos no
+  código). Corrige o caso do 2º turno até 00:40: os minutos após a meia-noite passam a
+  contar no turno certo. Vale para painel e Excel.
+- Removida a comparação por turno do painel (tabelas "Produção por turno" e o gráfico).
+  O turno agora é apenas FILTRO. O histórico mostra o turno de prep e o de banho de cada
+  cesto.
+- Excel agora FILTRA POR DATA (antes baixava o histórico inteiro) e pelo turno certo de
+  cada relatório: pré-banho pela finalização da preparação (prep_fim) e turno da prep;
+  banho/geral pela finalização do banho e turno do banho. Assim a contagem bate com o
+  painel. Cada planilha traz TOTAL DE CESTOS e TOTAL DE PEÇAS para conferência.
+- Histórico do painel: novo botão "Ver" em cada cesto (detalhes completos: OPs, tempos,
+  horários, turnos e operadores). Colunas separadas de Turno prep e Turno banho.
+
 ## Ajustes v16
 - OEE removido do sistema (painel e configuração).
 - CORRIGIDO o bug da "média exorbitante que depois volta". Causa raiz: no carregamento

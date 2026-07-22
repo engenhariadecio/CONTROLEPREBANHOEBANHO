@@ -539,19 +539,45 @@ def tempo_util_segundos(inicio_utc, fim_utc, cfg=None):
 TURNOS = {1: '1º turno', 2: '2º turno', 3: '3º turno'}
 
 
-def turno_num(dt_utc):
-    """Retorna 1, 2 ou 3 conforme o horário local (UTC-3). 0 se sem data."""
+def _hhmm_to_min(s, padrao=0):
+    try:
+        h, m = str(s).split(':')
+        return int(h) * 60 + int(m)
+    except (ValueError, AttributeError):
+        return padrao
+
+
+def turno_num(dt_utc, cfg=None):
+    """Retorna 1, 2 ou 3 conforme os HORÁRIOS CONFIGURADOS na jornada (não fixos).
+    Respeita turnos que viram a meia-noite (ex.: 2º das 15:30 às 00:40). 0 se sem data."""
     if not dt_utc:
         return 0
+    if cfg is None:
+        cfg = get_agenda()
     local = dt_utc - timedelta(hours=FUSO_LOCAL_HORAS)
     M = local.hour * 60 + local.minute
-    if M == 0:               # 00:00 pertence ao 2º turno (que vai até 00:00)
+    turnos = (cfg or {}).get('turnos') or []
+    for i, t in enumerate(turnos[:3]):
+        if not t.get('ativo', True):
+            continue
+        ini = _hhmm_to_min(t.get('ini', '00:00'))
+        fim = _hhmm_to_min(t.get('fim', '00:00'))
+        if fim == 0:                 # 00:00 = meia-noite (fim do dia)
+            fim = 1440
+        if ini <= fim:               # turno normal (não cruza a meia-noite)
+            dentro = ini <= M <= fim
+        else:                        # turno que vira a madrugada
+            dentro = (M >= ini) or (M <= fim)
+        if dentro:
+            return i + 1
+    # Fallback (jornada sem turnos válidos): divisão padrão por horário
+    if M == 0:
         return 2
-    if 1 <= M <= 360:        # 00:01 – 06:00
+    if 1 <= M <= 360:
         return 3
-    if 361 <= M <= 930:      # 06:01 – 15:30
+    if 361 <= M <= 930:
         return 1
-    return 2                 # 15:31 – 23:59
+    return 2
 
 
 def turno_label(n):
@@ -1656,20 +1682,37 @@ def api_banho_finalizar():
 def _coletar_dados(de=None, ate=None, turnos=None):
     db = Session()
     try:
+        def _no_periodo(dt):
+            if not dt:
+                return False
+            d = (dt - timedelta(hours=FUSO_LOCAL_HORAS)).date()
+            if de and d < de:
+                return False
+            if ate and d > ate:
+                return False
+            return True
+
+        # ── Dataset do BANHO: cestos concluídos, pela finalização do banho e turno do banho
         cards = db.query(Card).filter_by(estado=ST_CONCLUIDO).all()
 
         def dentro(c):
-            if not c.banho_fim:
+            if not _no_periodo(c.banho_fim):
                 return False
-            dia = (c.banho_fim - timedelta(hours=3)).date()
-            if de and dia < de:
-                return False
-            if ate and dia > ate:
-                return False
-            if turnos and turno_de_card(c) not in turnos:
+            if turnos and turno_banho(c) not in turnos:
                 return False
             return True
         cards = [c for c in cards if dentro(c)]
+
+        # ── Dataset do PRÉ-BANHO: cestos com a preparação finalizada (na fila, em banho
+        #    ou concluídos), pela finalização da PREPARAÇÃO e turno da PREP. É um SETOR
+        #    diferente — conta separado do banho.
+        prep_todos = db.query(Card).filter(
+            Card.estado.in_([ST_FILA_BANHO, ST_EM_BANHO, ST_CONCLUIDO])).all()
+        prep_lista = [c for c in prep_todos
+                      if _no_periodo(c.prep_fim) and (not turnos or turno_prep(c) in turnos)]
+        registros_prep = [c.to_dict() for c in sorted(prep_lista, key=lambda x: x.prep_fim or x.id, reverse=True)[:300]]
+        registros_banho = [c.to_dict() for c in sorted(cards, key=lambda x: x.banho_fim or x.id, reverse=True)[:300]]
+
         ativos_raw = db.query(Card).filter(Card.estado.in_(ESTADOS_ATIVOS)).order_by(Card.id.desc()).all()
         # Dedup defensivo: nunca exibir dois cestos ativos com o mesmo número
         ativos = []
@@ -1851,7 +1894,11 @@ def _coletar_dados(de=None, ate=None, turnos=None):
             ],
             'operadores': operadores,
             'ativos': [c.to_dict() for c in ativos],
-            'registros': [c.to_dict() for c in sorted(cards, key=lambda x: x.id, reverse=True)[:200]],
+            'registros': registros_banho,
+            'registros_prep': registros_prep,
+            'registros_banho': registros_banho,
+            'total_prep': len(registros_prep),
+            'total_banho': len(registros_banho),
         }
     finally:
         db.close()
@@ -2235,12 +2282,28 @@ def _estilo_cabecalho(ws, headers):
     ws.row_dimensions[1].height = 28
 
 
-def _gerar_excel(tipo, turnos=None):
+def _gerar_excel(tipo, turnos=None, de=None, ate=None):
     db = Session()
     try:
+        def _no_periodo(dt):
+            if not dt:
+                return False
+            d = (dt - timedelta(hours=FUSO_LOCAL_HORAS)).date()
+            if de and d < de:
+                return False
+            if ate and d > ate:
+                return False
+            return True
         cards = db.query(Card).filter_by(estado=ST_CONCLUIDO).order_by(Card.id).all()
-        if turnos:
-            cards = [c for c in cards if turno_de_card(c) in turnos]
+        # Cada relatório é filtrado pela DATA e pelo TURNO do SEU evento:
+        #  • pré-banho → finalização da preparação (prep_fim) e turno da prep
+        #  • banho / geral → finalização do banho (banho_fim) e turno do banho
+        if tipo == 'prebanho':
+            cards = [c for c in cards if _no_periodo(c.prep_fim)
+                     and (not turnos or turno_prep(c) in turnos)]
+        else:
+            cards = [c for c in cards if _no_periodo(c.banho_fim)
+                     and (not turnos or turno_banho(c) in turnos)]
         wb = Workbook()
         ws = wb.active
 
@@ -2337,6 +2400,19 @@ def _gerar_excel(tipo, turnos=None):
                         dd['observacao'], dd['obs_banho'], dd['turno_prep_lbl'], dd['turno_banho_lbl'], it_motivo
                     ])
 
+        # ── Resumo (para conferência): contagem EXATA de cestos e peças ──
+        n_cestos = len(cards)
+        n_pecas = sum(c.to_dict()['qtd_total'] for c in cards)
+        ws.append([])
+        lin_resumo = ws.max_row + 1
+        ws.append(['TOTAL DE CESTOS', n_cestos])
+        ws.append(['TOTAL DE PEÇAS', n_pecas])
+        ws.append(['Obs.: cada linha acima é uma OP; um cesto pode ter várias OPs. Use TOTAL DE CESTOS para conferir com o painel.'])
+        from openpyxl.styles import Font as _Font
+        for r in (lin_resumo, lin_resumo + 1):
+            ws.cell(row=r, column=1).font = _Font(bold=True)
+            ws.cell(row=r, column=2).font = _Font(bold=True)
+
         for i, w in enumerate(larg, 1):
             ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
         ws.freeze_panes = 'A2'
@@ -2351,7 +2427,8 @@ def _gerar_excel(tipo, turnos=None):
 @app.route('/api/download/prebanho')
 @login_required('admin')
 def download_prebanho():
-    buf = _gerar_excel('prebanho', _parse_turno())
+    de, ate = _parse_datas()
+    buf = _gerar_excel('prebanho', _parse_turno(), de, ate)
     stamp = datetime.now().strftime('%Y%m%d_%H%M')
     return send_file(buf, as_attachment=True, download_name=f'prebanho_{stamp}.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -2360,7 +2437,8 @@ def download_prebanho():
 @app.route('/api/download/banho')
 @login_required('admin')
 def download_banho():
-    buf = _gerar_excel('banho', _parse_turno())
+    de, ate = _parse_datas()
+    buf = _gerar_excel('banho', _parse_turno(), de, ate)
     stamp = datetime.now().strftime('%Y%m%d_%H%M')
     return send_file(buf, as_attachment=True, download_name=f'banho_{stamp}.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -2369,7 +2447,8 @@ def download_banho():
 @app.route('/api/download/geral')
 @login_required('admin')
 def download_geral():
-    buf = _gerar_excel('geral', _parse_turno())
+    de, ate = _parse_datas()
+    buf = _gerar_excel('geral', _parse_turno(), de, ate)
     stamp = datetime.now().strftime('%Y%m%d_%H%M')
     return send_file(buf, as_attachment=True, download_name=f'relatorio_geral_{stamp}.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

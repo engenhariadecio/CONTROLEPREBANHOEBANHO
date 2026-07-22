@@ -905,3 +905,17 @@ img,canvas{max-width:100%;}
 /* ── Linha de total nas tabelas de turno ── */
 .tbl-total td{background:linear-gradient(90deg,var(--aqua-soft),var(--sky-soft));border-top:2px solid var(--brand-blue);}
 
+
+/* ── Botão "Ver" no histórico ── */
+.btn-ver-hist{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;border:none;
+  padding:5px 12px;border-radius:9px;font-family:inherit;font-weight:700;font-size:.78rem;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;}
+.btn-ver-hist:hover{filter:brightness(1.06);}
+
+/* ── Abas do histórico por setor (pré-banho / banho) ── */
+.hist-tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.hist-tab{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1.5px solid var(--line);
+  color:var(--slate);padding:9px 16px;border-radius:12px;font-family:inherit;font-weight:800;font-size:.9rem;cursor:pointer;transition:.14s;}
+.hist-tab:hover{border-color:var(--brand-blue);}
+.hist-tab.on{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;border-color:transparent;}
+.hist-tab-cnt{background:#eef1f6;color:var(--slate);border-radius:10px;padding:1px 9px;font-size:.8rem;font-weight:800;min-width:22px;text-align:center;}
+.hist-tab.on .hist-tab-cnt{background:#ffffff33;color:#fff;}
