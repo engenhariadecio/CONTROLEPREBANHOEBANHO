@@ -55,6 +55,12 @@ async function atualizar(){
   }catch(_){ return; }
   if(meu!==_reqSeq) return;                 // chegou atrasada: descarta
   if(!d||typeof d!=='object') return;
+  window._ultimoDados=d;
+  // Se a tela tem seletor de setor (painel gerencial), ela controla KPIs/gráficos/tabela.
+  if(typeof window.renderSetorAtivo==='function'){
+    window.renderSetorAtivo();
+    return;
+  }
   set('kTotal',d.total); set('kAnd',d.em_andamento);
   set('kBanhoNormal',d.banho_normal!==undefined?d.banho_normal:d.normais);
   set('kBanhoRetrab',d.banho_retrabalho!==undefined?d.banho_retrabalho:d.retrabalhos);

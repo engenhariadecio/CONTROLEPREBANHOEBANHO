@@ -919,3 +919,12 @@ img,canvas{max-width:100%;}
 .hist-tab.on{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;border-color:transparent;}
 .hist-tab-cnt{background:#eef1f6;color:var(--slate);border-radius:10px;padding:1px 9px;font-size:.8rem;font-weight:800;min-width:22px;text-align:center;}
 .hist-tab.on .hist-tab-cnt{background:#ffffff33;color:#fff;}
+
+/* ── Seletor de setor (Pré-banho / Banho) no topo do histórico ── */
+.setor-bar{display:flex;gap:10px;margin:4px 0 10px;flex-wrap:wrap;}
+.setor-btn{display:inline-flex;align-items:center;gap:8px;background:#fff;border:2px solid var(--line);
+  color:var(--slate);padding:11px 20px;border-radius:14px;font-family:inherit;font-weight:800;font-size:1rem;cursor:pointer;transition:.14s;flex:1;justify-content:center;min-width:150px;}
+.setor-btn:hover{border-color:var(--brand-blue);}
+.setor-btn.on{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;border-color:transparent;box-shadow:0 6px 16px rgba(22,104,192,.22);}
+.setor-cnt{background:#eef1f6;color:var(--slate);border-radius:11px;padding:2px 11px;font-size:.85rem;font-weight:800;min-width:26px;text-align:center;}
+.setor-btn.on .setor-cnt{background:#ffffff33;color:#fff;}

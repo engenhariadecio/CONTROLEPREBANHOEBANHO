@@ -1,5 +1,16 @@
 # Controle de Produtividade — Pré-Banho e Banho
 
+## Ajustes v19
+- Painel "Histórico & análises" totalmente DIVIDIDO por setor: seletor Pré-banho / Banho
+  no topo controla TODOS os indicadores, gráficos e a tabela ao mesmo tempo.
+  • Pré-banho: cestos cadastrados (na fila, em banho ou concluídos), contados pela
+    finalização da PREPARAÇÃO e turno da prep -> IGUAL ao Excel pré-banho.
+  • Banho: cestos concluídos, contados pela finalização do BANHO e turno do banho ->
+    IGUAL ao Excel banho.
+- Horários dos turnos agora vêm da jornada (foto): 1º 06:01–15:29, 2º 15:30–00:40,
+  3º 00:41–06:00. O que acontece após a meia-noite (até 00:40) conta no 2º turno.
+- Filtros (período + turno) valem para cada setor pelo seu próprio horário. Botão "Ver"
+  em cada cesto. _coletar_dados reescrito e limpo (um bloco de métricas por setor).
 ## Ajustes v18
 - Histórico do painel agora tem DUAS ABAS no final: "Pré-banho" e "Banho", cada uma
   com contador de cestos.

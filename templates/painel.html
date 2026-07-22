@@ -109,30 +109,37 @@
           <label class="filtro-label" style="margin-top:14px;">Turno <span class="filtro-hint">— pode marcar 1, 2 ou os 3</span></label>
           <div class="turno-seg" id="turnoSeg">
             <button class="on" data-turno="" onclick="setTodosTurnos()"><i class="bi bi-clock-history"></i>Todos</button>
-            <button data-turno="1" onclick="toggleTurno('1')">1º <span>06:01–15:30</span></button>
-            <button data-turno="2" onclick="toggleTurno('2')">2º <span>15:31–00:00</span></button>
-            <button data-turno="3" onclick="toggleTurno('3')">3º <span>00:01–06:00</span></button>
+            <button data-turno="1" onclick="toggleTurno('1')">1º <span>{{ cfg.turnos[0].ini if cfg.turnos else '06:01' }}–{{ cfg.turnos[0].fim if cfg.turnos else '15:29' }}</span></button>
+            <button data-turno="2" onclick="toggleTurno('2')">2º <span>{{ cfg.turnos[1].ini if cfg.turnos else '15:30' }}–{{ cfg.turnos[1].fim if cfg.turnos else '00:40' }}</span></button>
+            <button data-turno="3" onclick="toggleTurno('3')">3º <span>{{ cfg.turnos[2].ini if cfg.turnos else '00:41' }}–{{ cfg.turnos[2].fim if cfg.turnos else '06:00' }}</span></button>
           </div>
           <input type="hidden" id="fTurno" value="">
-          <p class="filtro-desc">Filtra <strong>indicadores, gráficos e histórico</strong> pelo turno em que o banho foi concluído.</p>
+          <p class="filtro-desc">O turno vale para <strong>cada setor pelo seu horário</strong>: no Pré-banho conta pela finalização da preparação; no Banho, pela finalização do banho.</p>
         </div>
       </div>
     </section>
 
+    <!-- Seletor de SETOR: Pré-banho / Banho (controla indicadores, gráficos e tabela) -->
+    <div class="setor-bar">
+      <button class="setor-btn on" id="setorPrep" onclick="setSetor('prep')"><i class="bi bi-hourglass-split"></i> Pré-banho <span class="setor-cnt" id="cntPrep">0</span></button>
+      <button class="setor-btn" id="setorBanho" onclick="setSetor('banho')"><i class="bi bi-droplet-fill"></i> Banho <span class="setor-cnt" id="cntBanho">0</span></button>
+    </div>
+    <p class="small muted" id="setorHint" style="margin:0 0 6px;"></p>
+
     <!-- Indicadores principais -->
     <div class="gp-secao"><i class="bi bi-clipboard2-data-fill"></i>Quantidade de cestos</div>
     <div class="gp-kpis">
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-check2-all"></i></div><div><div class="gp-kpi-val" id="kTotal">0</div><div class="gp-kpi-lbl">Concluídos</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-check2-all"></i></div><div><div class="gp-kpi-val" id="kTotal">0</div><div class="gp-kpi-lbl" id="lblTotal">Concluídos</div></div></div>
       <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kAnd">0</div><div class="gp-kpi-lbl">Em andamento</div></div></div>
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-droplet-fill"></i></div><div><div class="gp-kpi-val" id="kBanhoNormal">0</div><div class="gp-kpi-lbl">Banho normal</div></div></div>
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kBanhoRetrab">0</div><div class="gp-kpi-lbl">Banho retrabalho</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-check-circle-fill"></i></div><div><div class="gp-kpi-val" id="kBanhoNormal">0</div><div class="gp-kpi-lbl">Normais</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kBanhoRetrab">0</div><div class="gp-kpi-lbl">Retrabalho</div></div></div>
     </div>
 
     <div class="gp-secao"><i class="bi bi-clock-fill"></i>Tempo médio (min)</div>
     <div class="gp-kpis gp-kpis-3">
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-violet"><i class="bi bi-stopwatch-fill"></i></div><div><div class="gp-kpi-val" id="kPrep">0</div><div class="gp-kpi-lbl">Preparo</div></div></div>
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kEspera">0</div><div class="gp-kpi-lbl">Espera (fila)</div></div></div>
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-sky"><i class="bi bi-droplet-half"></i></div><div><div class="gp-kpi-val" id="kBanho">0</div><div class="gp-kpi-lbl">Banho</div></div></div>
+      <div class="gp-kpi" id="kpiPreparo"><div class="gp-kpi-ic ic-violet"><i class="bi bi-stopwatch-fill"></i></div><div><div class="gp-kpi-val" id="kPrep">0</div><div class="gp-kpi-lbl">Preparo</div></div></div>
+      <div class="gp-kpi" id="kpiEspera"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kEspera">0</div><div class="gp-kpi-lbl">Espera (fila)</div></div></div>
+      <div class="gp-kpi" id="kpiBanho"><div class="gp-kpi-ic ic-sky"><i class="bi bi-droplet-half"></i></div><div><div class="gp-kpi-val" id="kBanho">0</div><div class="gp-kpi-lbl">Banho</div></div></div>
     </div>
 
     <div class="gp-secao"><i class="bi bi-bar-chart-line-fill"></i>Totais e qualidade</div>
@@ -159,13 +166,8 @@
       <div class="chart-box"><h6><i class="bi bi-rulers"></i>Área processada por dia (m²)</h6><canvas id="chartArea" height="170"></canvas></div>
     </div>
 
-    <!-- Histórico por setor: PRÉ-BANHO e BANHO -->
-    <div class="gp-secao"><i class="bi bi-clock-history"></i>Cestos por setor</div>
-    <p class="small muted" style="margin:-6px 0 10px;">Cada setor conta pelo seu próprio horário e turno. <strong>Pré-banho</strong>: cestos cuja <strong>preparação foi finalizada</strong> no período/turno. <strong>Banho</strong>: cestos cujo <strong>banho foi concluído</strong> no período/turno. Use o filtro de turno acima.</p>
-    <div class="hist-tabs">
-      <button class="hist-tab on" id="tabPrep" onclick="setHistTab('prep')"><i class="bi bi-hourglass-split"></i> Pré-banho <span class="hist-tab-cnt" id="cntPrep">0</span></button>
-      <button class="hist-tab" id="tabBanho" onclick="setHistTab('banho')"><i class="bi bi-droplet-fill"></i> Banho <span class="hist-tab-cnt" id="cntBanho">0</span></button>
-    </div>
+    <!-- Tabela do setor selecionado -->
+    <div class="gp-secao"><i class="bi bi-list-ul"></i>Cestos do setor <span id="setorTabTitulo"></span></div>
 
     <div class="gp-card" id="wrapPrep" style="overflow:hidden;padding:0;">
       <div class="table-wrap">
@@ -349,15 +351,53 @@ function _operadoresHTML(a){
   return html;
 }
 function fecharDetalhes(){document.getElementById('modalDetalhes').classList.remove('open');}
+// ── Setor ativo (Pré-banho / Banho) — controla KPIs, gráficos e tabela ──────
+window._setor='prep';
 function setHistTab(qual){
   const isPrep=qual==='prep';
-  document.getElementById('wrapPrep').style.display=isPrep?'':'none';
-  document.getElementById('wrapBanho').style.display=isPrep?'none':'';
-  document.getElementById('tabPrep').classList.toggle('on',isPrep);
-  document.getElementById('tabBanho').classList.toggle('on',!isPrep);
-  window._histTab=qual;
+  const wp=document.getElementById('wrapPrep'), wb=document.getElementById('wrapBanho');
+  if(wp)wp.style.display=isPrep?'':'none';
+  if(wb)wb.style.display=isPrep?'none':'';
 }
-window._histTab='prep';
+function setSetor(s){
+  window._setor=s;
+  document.getElementById('setorPrep').classList.toggle('on',s==='prep');
+  document.getElementById('setorBanho').classList.toggle('on',s==='banho');
+  renderSetorAtivo();
+}
+window.renderSetorAtivo=function(){
+  const d=window._ultimoDados; if(!d)return;
+  const s=window._setor||'prep';
+  const b=d[s]||d;
+  // contadores das abas
+  const cp=document.getElementById('cntPrep'), cb=document.getElementById('cntBanho');
+  if(cp&&d.prep)cp.textContent=d.prep.total;
+  if(cb&&d.banho)cb.textContent=d.banho.total;
+  // KPIs (quantidade)
+  set('kTotal',b.total); set('kAnd',d.em_andamento);
+  set('kBanhoNormal',b.normais); set('kBanhoRetrab',b.retrabalhos);
+  document.getElementById('lblTotal').textContent=(s==='prep'?'Preparados':'Concluídos');
+  // tempo médio — adapta ao setor
+  const prep=s==='prep';
+  document.getElementById('kpiPreparo').style.display=prep?'':'none';
+  document.getElementById('kpiEspera').style.display=prep?'none':'';
+  document.getElementById('kpiBanho').style.display=prep?'none':'';
+  if(prep){ set('kPrep',b.media_tempo); }
+  else{ set('kEspera',b.media_espera); set('kBanho',b.media_tempo); }
+  // totais e qualidade
+  set('kPecas',b.pecas); set('kPeso',b.peso); set('kArea',b.area);
+  set('kTotalOps',b.ops); set('kMediaPecas',b.media_pecas); set('kTaxaRetrab',(b.taxa_retrab||0)+'%');
+  // gráficos e tabela do setor
+  if(typeof renderCharts==='function') renderCharts(b);
+  if(typeof renderHistorico==='function') renderHistorico(d);
+  setHistTab(s);
+  // hint
+  const hint=document.getElementById('setorHint');
+  if(hint) hint.innerHTML=prep
+    ? 'Mostrando o <strong>Pré-banho</strong>: cestos cuja preparação foi finalizada no período/turno (igual ao Excel pré-banho).'
+    : 'Mostrando o <strong>Banho</strong>: cestos cujo banho foi concluído no período/turno (igual ao Excel banho).';
+  const tt=document.getElementById('setorTabTitulo'); if(tt)tt.textContent=prep?'— Pré-banho':'— Banho';
+};
 function verDetalhesHist(id){
   const a=(window._registrosCache||[]).find(x=>x.id===id);
   if(!a)return;

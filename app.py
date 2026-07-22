@@ -347,9 +347,9 @@ AGENDA_PADRAO = {
     'usar_jornada': True,       # se False, conta o tempo corrido (24/7)
     # Jornada padrão em 3 turnos (dias: 0=seg ... 6=dom)
     'turnos': [
-        {'nome': '1º turno', 'ini': '06:01', 'fim': '15:30', 'dias': [0, 1, 2, 3, 4], 'ativo': True},
-        {'nome': '2º turno', 'ini': '15:31', 'fim': '00:00', 'dias': [0, 1, 2, 3, 4], 'ativo': True},
-        {'nome': '3º turno', 'ini': '00:01', 'fim': '06:00', 'dias': [0, 1, 2, 3, 4, 5], 'ativo': True},
+        {'nome': '1º turno', 'ini': '06:01', 'fim': '15:29', 'dias': [0, 1, 2, 3, 4], 'ativo': True},
+        {'nome': '2º turno', 'ini': '15:30', 'fim': '00:40', 'dias': [0, 1, 2, 3, 4], 'ativo': True},
+        {'nome': '3º turno', 'ini': '00:41', 'fim': '06:00', 'dias': [0, 1, 2, 3, 4, 5], 'ativo': True},
     ],
     # Expedientes fora do padrão. Cada item:
     # {'data':'2026-07-05','data_fim':'2026-07-05','tipo':'TURNO EXTRA'|'PARADA',
@@ -1060,7 +1060,7 @@ def dashboard():
 @login_required('painel')
 def painel_gerencia():
     hoje = (datetime.utcnow() - timedelta(hours=FUSO_LOCAL_HORAS)).strftime('%Y-%m-%d')
-    return render_template('painel.html', processos=PROCESSOS, hoje=hoje,
+    return render_template('painel.html', processos=PROCESSOS, hoje=hoje, cfg=get_agenda(),
                            nome=session.get('nome'), perfil=session.get('perfil'))
 
 
@@ -1680,8 +1680,15 @@ def api_banho_finalizar():
 # Dados dos dashboards
 # ─────────────────────────────────────────────────────────────────────────────
 def _coletar_dados(de=None, ate=None, turnos=None):
+    """Coleta os dados do painel, SEPARADOS por setor (pré-banho e banho).
+    Cada setor conta pelo SEU evento, SUA data e SEU turno (horários da jornada):
+      • pré-banho → finalização da preparação (prep_fim) + turno da prep
+      • banho     → finalização do banho (banho_fim) + turno do banho
+    O bloco 'banho' também é exposto em chaves planas (compat. com o dashboard admin)."""
     db = Session()
     try:
+        cfg = get_agenda()
+
         def _no_periodo(dt):
             if not dt:
                 return False
@@ -1692,43 +1699,6 @@ def _coletar_dados(de=None, ate=None, turnos=None):
                 return False
             return True
 
-        # ── Dataset do BANHO: cestos concluídos, pela finalização do banho e turno do banho
-        cards = db.query(Card).filter_by(estado=ST_CONCLUIDO).all()
-
-        def dentro(c):
-            if not _no_periodo(c.banho_fim):
-                return False
-            if turnos and turno_banho(c) not in turnos:
-                return False
-            return True
-        cards = [c for c in cards if dentro(c)]
-
-        # ── Dataset do PRÉ-BANHO: cestos com a preparação finalizada (na fila, em banho
-        #    ou concluídos), pela finalização da PREPARAÇÃO e turno da PREP. É um SETOR
-        #    diferente — conta separado do banho.
-        prep_todos = db.query(Card).filter(
-            Card.estado.in_([ST_FILA_BANHO, ST_EM_BANHO, ST_CONCLUIDO])).all()
-        prep_lista = [c for c in prep_todos
-                      if _no_periodo(c.prep_fim) and (not turnos or turno_prep(c) in turnos)]
-        registros_prep = [c.to_dict() for c in sorted(prep_lista, key=lambda x: x.prep_fim or x.id, reverse=True)[:300]]
-        registros_banho = [c.to_dict() for c in sorted(cards, key=lambda x: x.banho_fim or x.id, reverse=True)[:300]]
-
-        ativos_raw = db.query(Card).filter(Card.estado.in_(ESTADOS_ATIVOS)).order_by(Card.id.desc()).all()
-        # Dedup defensivo: nunca exibir dois cestos ativos com o mesmo número
-        ativos = []
-        _vistos = set()
-        for c in ativos_raw:
-            if c.numero_cesto in _vistos:
-                continue
-            _vistos.add(c.numero_cesto)
-            ativos.append(c)
-        normais = sum(1 for c in cards if c.tipo == 'Normal')
-        retrab = sum(1 for c in cards if c.tipo == 'Retrabalho')
-        # banho normal/retrabalho = só cestos com banho FINALIZADO (concluídos)
-        banho_normal = normais
-        banho_retrab = retrab
-        # Médias: ignoram registros inconsistentes (valores negativos/inválidos).
-        # Um único registro ruim não pode distorcer o indicador.
         def _validos(vals):
             out = []
             for v in vals:
@@ -1739,166 +1709,101 @@ def _coletar_dados(de=None, ate=None, turnos=None):
                 if f >= 0:
                     out.append(f)
             return out
-        tp = _validos(c.prep_minutos for c in cards)
-        tb = _validos(c.banho_minutos for c in cards)
-        # tempo de espera (fila) = tempo útil entre fim da prep e início do banho
-        esperas = []
-        for c in cards:
-            # só conta quando os horários fazem sentido (banho começou depois da prep)
-            if c.banho_inicio and c.prep_fim and c.banho_inicio >= c.prep_fim:
-                esperas.append(tempo_util_segundos(c.prep_fim, c.banho_inicio) / 60)
-        por_proc, por_dia = {}, {}
-        peso_por_dia, area_por_dia = {}, {}
-        peso_total_geral = 0.0
-        area_total_geral = 0.0
-        pecas_total_geral = 0
-        total_ops = 0
-        # ── Produção por turno/dia — datasets DEDICADOS e corretos ──────────────
-        # Cada etapa é contada no SEU evento e pela SUA data (sempre pelo horário):
-        #  • Pré-banho: cestos cuja PREPARAÇÃO já terminou (aguardando cadastro, na fila,
-        #    em banho ou concluídos), creditados pelo horário/dia da PREPARAÇÃO — mesmo
-        #    que ainda não tenham sido banhados.
-        #  • Banho: cestos concluídos, creditados pelo horário/dia do BANHO.
-        # Essas tabelas mostram SEMPRE os 3 turnos (não sofrem o filtro de turno), só o
-        # filtro de período — para refletir fielmente o que foi produzido em cada turno.
-        def _tvazio():
-            return {1: {'cestos': 0, 'pecas': 0, 'peso': 0.0, 'area': 0.0, 'retrab': 0},
-                    2: {'cestos': 0, 'pecas': 0, 'peso': 0.0, 'area': 0.0, 'retrab': 0},
-                    3: {'cestos': 0, 'pecas': 0, 'peso': 0.0, 'area': 0.0, 'retrab': 0}}
 
-        def _no_periodo(dt):
-            if not dt:
-                return False
-            dloc = (dt - timedelta(hours=FUSO_LOCAL_HORAS)).date()
-            if de and dloc < de:
-                return False
-            if ate and dloc > ate:
-                return False
-            return True
+        # ── Datasets por setor ──────────────────────────────────────────────
+        # Pré-banho: preparação finalizada E cadastrada (na fila, em banho ou concluído)
+        prep_todos = db.query(Card).filter(
+            Card.estado.in_([ST_FILA_BANHO, ST_EM_BANHO, ST_CONCLUIDO])).all()
+        prep_lista = [c for c in prep_todos
+                      if c.prep_fim and _no_periodo(c.prep_fim)
+                      and (not turnos or turno_prep(c) in turnos)]
+        # Banho: cestos concluídos
+        banho_todos = db.query(Card).filter_by(estado=ST_CONCLUIDO).all()
+        banho_lista = [c for c in banho_todos
+                       if c.banho_fim and _no_periodo(c.banho_fim)
+                       and (not turnos or turno_banho(c) in turnos)]
 
-        def _agg_turno(lista, turno_fn):
-            agg = _tvazio()
-            for c in lista:
-                t = turno_fn(c)
-                if t in agg:
-                    dc = c.to_dict()
-                    agg[t]['cestos'] += 1
-                    agg[t]['pecas'] += dc['qtd_total']
-                    agg[t]['peso'] = round(agg[t]['peso'] + dc['peso_total'], 2)
-                    agg[t]['area'] = round(agg[t]['area'] + dc['area_total'], 3)
-                    if c.tipo == 'Retrabalho':
-                        agg[t]['retrab'] += 1
-            return agg
+        def _metricas(lista, setor):
+            n = len(lista)
+            dds = [c.to_dict() for c in lista]
+            normais = sum(1 for c in lista if c.tipo != 'Retrabalho')
+            retrab = n - normais
+            pecas = sum(d['qtd_total'] for d in dds)
+            peso = round(sum(d['peso_total'] for d in dds), 1)
+            area = round(sum(d['area_total'] for d in dds), 2)
+            ops = sum((d['n_itens'] or 1) for d in dds)
+            if setor == 'prep':
+                tempos = _validos(c.prep_minutos for c in lista)
+                data_fn = lambda c: c.prep_fim
+            else:
+                tempos = _validos(c.banho_minutos for c in lista)
+                data_fn = lambda c: c.banho_fim
+            media = round(sum(tempos) / len(tempos), 1) if tempos else 0
+            esperas = []
+            if setor == 'banho':
+                for c in lista:
+                    if c.banho_inicio and c.prep_fim and c.banho_inicio >= c.prep_fim:
+                        esperas.append(tempo_util_segundos(c.prep_fim, c.banho_inicio) / 60)
+            media_espera = round(sum(esperas) / len(esperas), 1) if esperas else 0
+            por_proc, por_dia, peso_dia, area_dia = {}, {}, {}, {}
+            for c, d in zip(lista, dds):
+                p = c.processo or 'Sem processo'
+                por_proc[p] = por_proc.get(p, 0) + 1
+                dt = data_fn(c)
+                if dt:
+                    dia = (dt - timedelta(hours=FUSO_LOCAL_HORAS)).date()
+                    por_dia[dia] = por_dia.get(dia, 0) + 1
+                    peso_dia[dia] = round(peso_dia.get(dia, 0) + d['peso_total'], 2)
+                    area_dia[dia] = round(area_dia.get(dia, 0) + d['area_total'], 3)
+            dias_ord = sorted(por_dia.keys())
 
-        def _agg_dia_turno(lista, turno_fn, data_fn):
-            dic = {}
-            for c in lista:
-                t = turno_fn(c)
-                if 1 <= t <= 3:
-                    d = (data_fn(c) - timedelta(hours=FUSO_LOCAL_HORAS)).date()
-                    dic.setdefault(d, [0, 0, 0])[t - 1] += 1
-            return dic
+            def _fmt(dic):
+                return {d.strftime('%d/%m'): dic[d] for d in dias_ord if d in dic}
+            registros = [c.to_dict() for c in
+                         sorted(lista, key=lambda x: (data_fn(x) or datetime.min), reverse=True)[:300]]
+            return {
+                'total': n, 'normais': normais, 'retrabalhos': retrab,
+                'media_tempo': media, 'media_espera': media_espera,
+                'pecas': pecas, 'peso': peso, 'area': area, 'ops': ops,
+                'media_pecas': round(pecas / n, 1) if n else 0,
+                'taxa_retrab': round(100 * retrab / n, 1) if n else 0,
+                'por_processo': por_proc, 'por_dia': _fmt(por_dia),
+                'peso_por_dia': _fmt(peso_dia), 'area_por_dia': _fmt(area_dia),
+                'registros': registros,
+            }
 
-        prep_cards = db.query(Card).filter(
-            Card.estado.in_([ST_PREENCHER, ST_FILA_BANHO, ST_EM_BANHO, ST_CONCLUIDO])).all()
-        prep_cards = [c for c in prep_cards if _no_periodo(c.prep_fim)]
-        banho_cards = db.query(Card).filter_by(estado=ST_CONCLUIDO).all()
-        banho_cards = [c for c in banho_cards if _no_periodo(c.banho_fim)]
+        prep_b = _metricas(prep_lista, 'prep')
+        banho_b = _metricas(banho_lista, 'banho')
 
-        tur_prep = _agg_turno(prep_cards, turno_prep)
-        tur_banho = _agg_turno(banho_cards, turno_banho)
-        dia_turno_prep = _agg_dia_turno(prep_cards, turno_prep, lambda c: c.prep_fim)
-        dia_turno_banho = _agg_dia_turno(banho_cards, turno_banho, lambda c: c.banho_fim)
-
-        for c in cards:
-            p = c.processo or 'Sem processo'
-            por_proc[p] = por_proc.get(p, 0) + 1
-            dia = (c.banho_fim - timedelta(hours=FUSO_LOCAL_HORAS)).date()
-            por_dia[dia] = por_dia.get(dia, 0) + 1
-            dd = c.to_dict()
-            peso_por_dia[dia] = round(peso_por_dia.get(dia, 0) + dd['peso_total'], 2)
-            area_por_dia[dia] = round(area_por_dia.get(dia, 0) + dd['area_total'], 3)
-            peso_total_geral += dd['peso_total']
-            area_total_geral += dd['area_total']
-            pecas_total_geral += dd['qtd_total']
-            total_ops += dd['n_itens'] or 1
-        # ── Produção por operador: baseada na PREPARAÇÃO ────────────────────────
-        # Credita TODOS os operadores do cesto (até 4) e respeita o filtro de turno
-        # pelo turno da PREPARAÇÃO (não pelo banho).
-        por_operador = {}
-        for c in prep_cards:
-            if turnos and turno_prep(c) not in turnos:
+        # cestos ativos (dedup por número)
+        ativos_raw = db.query(Card).filter(Card.estado.in_(ESTADOS_ATIVOS)).order_by(Card.id.desc()).all()
+        ativos, _vistos = [], set()
+        for c in ativos_raw:
+            if c.numero_cesto in _vistos:
                 continue
-            dc = c.to_dict()
-            nomes = [o.get('nome', '').strip() for o in _op_lista_prep(c)]
-            nomes = [n for n in nomes if n] or ['—']
-            for nome in nomes:
-                reg = por_operador.setdefault(nome, {'cestos': 0, 'pecas': 0})
-                reg['cestos'] += 1
-                reg['pecas'] += dc['qtd_total']
-        # ordena operadores por produção (top primeiro)
-        operadores = sorted(
-            ({'nome': k, 'cestos': v['cestos'], 'pecas': v['pecas']} for k, v in por_operador.items()),
-            key=lambda x: x['cestos'], reverse=True)
-        total = len(cards)
-        _dias_ord = sorted(por_dia.keys())
+            _vistos.add(c.numero_cesto)
+            ativos.append(c)
 
-        def _fmt_dias(dic):
-            return {d.strftime('%d/%m'): dic[d] for d in _dias_ord if d in dic}
         return {
-            'total': len(cards), 'normais': normais, 'retrabalhos': retrab,
-            'em_andamento': len(ativos),
-            'banho_normal': banho_normal, 'banho_retrabalho': banho_retrab,
-            'media_prep': round(sum(tp) / len(tp), 1) if tp else 0,
-            'media_banho': round(sum(tb) / len(tb), 1) if tb else 0,
-            'media_espera': round(sum(esperas) / len(esperas), 1) if esperas else 0,
-            'por_processo': por_proc, 'por_dia': _fmt_dias(por_dia),
-            'peso_por_dia': _fmt_dias(peso_por_dia), 'area_por_dia': _fmt_dias(area_por_dia),
-            'peso_total_geral': round(peso_total_geral, 1),
-            'area_total_geral': round(area_total_geral, 2),
-            'pecas_total_geral': pecas_total_geral,
-            'total_ops': total_ops,
-            'media_pecas_cesto': round(pecas_total_geral / total, 1) if total else 0,
-            'taxa_retrab': round(100 * retrab / total, 1) if total else 0,
-            'turnos_prep': {
-                'labels': ['1º turno', '2º turno', '3º turno'],
-                'cestos': [tur_prep[1]['cestos'], tur_prep[2]['cestos'], tur_prep[3]['cestos']],
-                'pecas': [tur_prep[1]['pecas'], tur_prep[2]['pecas'], tur_prep[3]['pecas']],
-                'peso': [round(tur_prep[1]['peso'], 1), round(tur_prep[2]['peso'], 1), round(tur_prep[3]['peso'], 1)],
-                'area': [round(tur_prep[1]['area'], 2), round(tur_prep[2]['area'], 2), round(tur_prep[3]['area'], 2)],
-                'retrabalho': [tur_prep[1]['retrab'], tur_prep[2]['retrab'], tur_prep[3]['retrab']],
-            },
-            'turnos_banho': {
-                'labels': ['1º turno', '2º turno', '3º turno'],
-                'cestos': [tur_banho[1]['cestos'], tur_banho[2]['cestos'], tur_banho[3]['cestos']],
-                'pecas': [tur_banho[1]['pecas'], tur_banho[2]['pecas'], tur_banho[3]['pecas']],
-                'peso': [round(tur_banho[1]['peso'], 1), round(tur_banho[2]['peso'], 1), round(tur_banho[3]['peso'], 1)],
-                'area': [round(tur_banho[1]['area'], 2), round(tur_banho[2]['area'], 2), round(tur_banho[3]['area'], 2)],
-                'retrabalho': [tur_banho[1]['retrab'], tur_banho[2]['retrab'], tur_banho[3]['retrab']],
-            },
-            'turnos': {  # compat: igual ao banho (turno de conclusão)
-                'labels': ['1º turno', '2º turno', '3º turno'],
-                'cestos': [tur_banho[1]['cestos'], tur_banho[2]['cestos'], tur_banho[3]['cestos']],
-                'pecas': [tur_banho[1]['pecas'], tur_banho[2]['pecas'], tur_banho[3]['pecas']],
-                'peso': [round(tur_banho[1]['peso'], 1), round(tur_banho[2]['peso'], 1), round(tur_banho[3]['peso'], 1)],
-                'area': [round(tur_banho[1]['area'], 2), round(tur_banho[2]['area'], 2), round(tur_banho[3]['area'], 2)],
-                'retrabalho': [tur_banho[1]['retrab'], tur_banho[2]['retrab'], tur_banho[3]['retrab']],
-            },
-            'dia_turno_prep': [
-                {'dia': d.strftime('%d/%m'), 'turnos': dia_turno_prep[d], 'total': sum(dia_turno_prep[d])}
-                for d in sorted(dia_turno_prep.keys())
-            ],
-            'dia_turno_banho': [
-                {'dia': d.strftime('%d/%m'), 'turnos': dia_turno_banho[d], 'total': sum(dia_turno_banho[d])}
-                for d in sorted(dia_turno_banho.keys())
-            ],
-            'operadores': operadores,
             'ativos': [c.to_dict() for c in ativos],
-            'registros': registros_banho,
-            'registros_prep': registros_prep,
-            'registros_banho': registros_banho,
-            'total_prep': len(registros_prep),
-            'total_banho': len(registros_banho),
+            'em_andamento': len(ativos),
+            'prep': prep_b,
+            'banho': banho_b,
+            'registros_prep': prep_b['registros'],
+            'registros_banho': banho_b['registros'],
+            'total_prep': prep_b['total'],
+            'total_banho': banho_b['total'],
+            # ── chaves planas (compat. com o dashboard admin) = setor BANHO ──
+            'total': banho_b['total'], 'normais': banho_b['normais'], 'retrabalhos': banho_b['retrabalhos'],
+            'banho_normal': banho_b['normais'], 'banho_retrabalho': banho_b['retrabalhos'],
+            'media_prep': prep_b['media_tempo'], 'media_banho': banho_b['media_tempo'],
+            'media_espera': banho_b['media_espera'],
+            'por_processo': banho_b['por_processo'], 'por_dia': banho_b['por_dia'],
+            'peso_por_dia': banho_b['peso_por_dia'], 'area_por_dia': banho_b['area_por_dia'],
+            'peso_total_geral': banho_b['peso'], 'area_total_geral': banho_b['area'],
+            'pecas_total_geral': banho_b['pecas'], 'total_ops': banho_b['ops'],
+            'media_pecas_cesto': banho_b['media_pecas'], 'taxa_retrab': banho_b['taxa_retrab'],
+            'registros': banho_b['registros'],
         }
     finally:
         db.close()
@@ -2294,15 +2199,18 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
             if ate and d > ate:
                 return False
             return True
-        cards = db.query(Card).filter_by(estado=ST_CONCLUIDO).order_by(Card.id).all()
         # Cada relatório é filtrado pela DATA e pelo TURNO do SEU evento:
-        #  • pré-banho → finalização da preparação (prep_fim) e turno da prep
-        #  • banho / geral → finalização do banho (banho_fim) e turno do banho
+        #  • pré-banho → preparação finalizada e cadastrada (fila, em banho ou concluído),
+        #                pela finalização da preparação (prep_fim) e turno da prep
+        #  • banho / geral → cestos concluídos, pela finalização do banho e turno do banho
         if tipo == 'prebanho':
-            cards = [c for c in cards if _no_periodo(c.prep_fim)
+            base = db.query(Card).filter(
+                Card.estado.in_([ST_FILA_BANHO, ST_EM_BANHO, ST_CONCLUIDO])).order_by(Card.id).all()
+            cards = [c for c in base if _no_periodo(c.prep_fim)
                      and (not turnos or turno_prep(c) in turnos)]
         else:
-            cards = [c for c in cards if _no_periodo(c.banho_fim)
+            base = db.query(Card).filter_by(estado=ST_CONCLUIDO).order_by(Card.id).all()
+            cards = [c for c in base if _no_periodo(c.banho_fim)
                      and (not turnos or turno_banho(c) in turnos)]
         wb = Workbook()
         ws = wb.active
