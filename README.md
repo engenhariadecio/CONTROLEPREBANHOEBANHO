@@ -1,3 +1,11 @@
+## Ajustes v20
+- Painel gerencial: REMOVIDO o filtro por turnos e as tags de turno (colunas/pills).
+  O filtro agora é só por período (linha do tempo Dia/Mês/Ano ou intervalo). Os turnos
+  continuam disponíveis no ADMIN (dashboard e Excel).
+- Novo: cada cesto mostra o USUÁRIO LOGADO que o cadastrou (cadastrado_por), além dos
+  operadores da preparação — no histórico (colunas Operadores e Cadastrado por) e nos
+  detalhes (botão Ver), tanto na view ao vivo quanto no histórico.
+- Filtro: clicar em "Mês" seleciona automaticamente o mês atual e "Ano" o ano atual.
 # Controle de Produtividade — Pré-Banho e Banho
 
 ## Ajustes v19

@@ -127,25 +127,29 @@ function _opsTxt(r){
   const ops=(r.itens&&r.itens.length? r.itens.map(it=>it.ordem):[r.ordem]).filter(Boolean);
   return ops.length? ops.join(', ') : '—';
 }
+function _opsPrepTxt(r){
+  const ops=(r.operadores_prep||[]).map(o=>o.nome).filter(Boolean);
+  return ops.length? ops.join(', ') : '—';
+}
 function _linhaHistPrep(r){
-  const busca=(r.numero_cesto+' '+((r.itens||[]).map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' '))+' '+(r.processo||'')+' '+(r.tipo||'')+' '+(r.turno_prep_lbl||'')).toLowerCase();
+  const busca=(r.numero_cesto+' '+((r.itens||[]).map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' '))+' '+(r.processo||'')+' '+(r.tipo||'')+' '+_opsPrepTxt(r)+' '+(r.cadastrado_por||'')).toLowerCase();
   const estados={PREENCHER:'Aguardando cadastro',FILA_BANHO:'Aguardando banho',EM_BANHO:'Em banho',CONCLUIDO:'Concluído'};
   return `<tr class="${r.tipo==='Retrabalho'?'retrab':''}" data-busca="${busca.replace(/"/g,'')}">
     <td>${r.id}</td><td><strong>${r.numero_cesto}</strong></td><td>${_opsTxt(r)}</td>
     <td>${r.material||'—'}</td><td><span class="small">${r.texto_breve||'—'}</span></td><td>${r.qtd_total}</td>
     <td>${r.processo||'—'}</td><td><span class="pill ${r.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${r.tipo}</span></td>
-    <td><span class="pill pill-turno">${r.turno_prep_lbl||'—'}</span></td>
+    <td><span class="small">${_opsPrepTxt(r)}</span></td><td><span class="small">${r.cadastrado_por||'—'}</span></td>
     <td class="mono">${r.prep_minutos}</td><td><span class="small">${r.prep_fim||'—'}</span></td>
     <td><span class="small">${estados[r.estado]||r.estado||'—'}</span></td>
     <td><button class="btn-ver-hist" onclick="verDetalhesHist(${r.id})"><i class="bi bi-eye"></i> Ver</button></td></tr>`;
 }
 function _linhaHistBanho(r){
-  const busca=(r.numero_cesto+' '+((r.itens||[]).map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' '))+' '+(r.processo||'')+' '+(r.tipo||'')+' '+(r.turno_lbl||'')).toLowerCase();
+  const busca=(r.numero_cesto+' '+((r.itens||[]).map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' '))+' '+(r.processo||'')+' '+(r.tipo||'')+' '+_opsPrepTxt(r)+' '+(r.cadastrado_por||'')).toLowerCase();
   return `<tr class="${r.tipo==='Retrabalho'?'retrab':''}" data-busca="${busca.replace(/"/g,'')}">
     <td>${r.id}</td><td><strong>${r.numero_cesto}</strong></td><td>${_opsTxt(r)}</td>
     <td>${r.material||'—'}</td><td><span class="small">${r.texto_breve||'—'}</span></td><td>${r.qtd_total}</td>
     <td>${r.processo||'—'}</td><td><span class="pill ${r.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${r.tipo}</span></td>
-    <td><span class="pill pill-turno">${r.turno_lbl||'—'}</span></td>
+    <td><span class="small">${_opsPrepTxt(r)}</span></td><td><span class="small">${r.cadastrado_por||'—'}</span></td>
     <td class="mono">${r.banho_minutos}</td><td><span class="small">${r.banho_fim||'—'}</span></td>
     <td><button class="btn-ver-hist" onclick="verDetalhesHist(${r.id})"><i class="bi bi-eye"></i> Ver</button></td></tr>`;
 }
@@ -155,9 +159,9 @@ function renderHistorico(d){
   const cache={}; [...prep,...banho].forEach(r=>{cache[r.id]=r;});
   window._registrosCache=Object.values(cache);
   const tbP=document.getElementById('histBodyPrep');
-  if(tbP) tbP.innerHTML=prep.length?prep.map(_linhaHistPrep).join(''):'<tr><td colspan="13" class="empty">Nenhum cesto preparado no período/turno.</td></tr>';
+  if(tbP) tbP.innerHTML=prep.length?prep.map(_linhaHistPrep).join(''):'<tr><td colspan="14" class="empty">Nenhum cesto preparado no período.</td></tr>';
   const tbB=document.getElementById('histBodyBanho');
-  if(tbB) tbB.innerHTML=banho.length?banho.map(_linhaHistBanho).join(''):'<tr><td colspan="12" class="empty">Nenhum cesto banhado no período/turno.</td></tr>';
+  if(tbB) tbB.innerHTML=banho.length?banho.map(_linhaHistBanho).join(''):'<tr><td colspan="13" class="empty">Nenhum cesto banhado no período.</td></tr>';
   const cP=document.getElementById('cntPrep'); if(cP)cP.textContent=prep.length;
   const cB=document.getElementById('cntBanho'); if(cB)cB.textContent=banho.length;
   if(typeof aplicarBuscaHistorico==='function')aplicarBuscaHistorico();

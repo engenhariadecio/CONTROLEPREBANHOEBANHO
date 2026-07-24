@@ -928,3 +928,6 @@ img,canvas{max-width:100%;}
 .setor-btn.on{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;border-color:transparent;box-shadow:0 6px 16px rgba(22,104,192,.22);}
 .setor-cnt{background:#eef1f6;color:var(--slate);border-radius:11px;padding:2px 11px;font-size:.85rem;font-weight:800;min-width:26px;text-align:center;}
 .setor-btn.on .setor-cnt{background:#ffffff33;color:#fff;}
+
+/* chip do usuário que cadastrou o cesto */
+.det-oper-chip.det-oper-user{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;font-weight:800;}

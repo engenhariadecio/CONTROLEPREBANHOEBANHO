@@ -669,6 +669,8 @@ class Card(Base):
     operador_prep2 = Column(String(120), default='')
     operadores_prep_json = Column(Text, default='')   # [{nome, matricula}, ...]
     n_operadores = Column(Integer, default=1)
+    # usuário LOGADO que cadastrou/finalizou o cesto no pré-banho
+    cadastrado_por = Column(String(120), default='')
     # operador que INICIOU o banho
     operador_banho_inicio = Column(String(120), default='')
     oper_banho_ini_mat = Column(String(50), default='')
@@ -749,6 +751,7 @@ class Card(Base):
             'operador_prep': self.operador_prep, 'operador_prep2': self.operador_prep2 or '',
             'operadores_prep': _op_lista_prep(self),
             'operadores_prep_txt': _op_txt(_op_lista_prep(self)),
+            'cadastrado_por': self.cadastrado_por or '',
             'n_operadores': self.n_operadores or 1,
             'operador_banho': self.operador_banho or '',
             'operador_banho_inicio': self.operador_banho_inicio or self.operador_banho or '',
@@ -807,6 +810,7 @@ def _migrar_colunas():
         'oper_banho_ini_mat': "VARCHAR(50) DEFAULT ''",
         'oper_banho_fim_mat': "VARCHAR(50) DEFAULT ''",
         'motivo_retrabalho': "VARCHAR(60) DEFAULT ''",
+        'cadastrado_por': "VARCHAR(120) DEFAULT ''",
     }
     with engine.begin() as conn:
         for col, tipo in novas.items():
@@ -1582,6 +1586,9 @@ def api_prep_finalizar():
             card.prep_minutos = round(max(0, bruto - (card.pausa_acumulada_seg or 0)) / 60, 1)
         # registra quem FINALIZOU a preparação deste cesto
         card.operador_prep = session.get('nome', '') or card.operador_prep
+        # usuário LOGADO que cadastrou o cesto (mantém o primeiro, se já houver)
+        if not (card.cadastrado_por or '').strip():
+            card.cadastrado_por = session.get('nome', '') or session.get('usuario', '')
         _aplicar_meta(card, d)
         _salvar_itens(card, d)
         card.estado = ST_FILA_BANHO

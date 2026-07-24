@@ -98,7 +98,7 @@
             </div>
           </div>
         </div>
-        <!-- Busca + Turno -->
+        <!-- Busca -->
         <div class="busca-wrap">
           <label class="filtro-label">OP / Código / Item <span class="filtro-hint">— digite a OP, o código ou a descrição</span></label>
           <div class="busca-combo">
@@ -106,15 +106,8 @@
             <input id="buscaItem" type="text" autocomplete="off" placeholder="Todas as OPs e itens" class="busca-input" oninput="filtrarBusca()">
             <button id="buscaClear" class="busca-clear" onclick="limparBusca()" style="display:none;">&times;</button>
           </div>
-          <label class="filtro-label" style="margin-top:14px;">Turno <span class="filtro-hint">— pode marcar 1, 2 ou os 3</span></label>
-          <div class="turno-seg" id="turnoSeg">
-            <button class="on" data-turno="" onclick="setTodosTurnos()"><i class="bi bi-clock-history"></i>Todos</button>
-            <button data-turno="1" onclick="toggleTurno('1')">1º <span>{{ cfg.turnos[0].ini if cfg.turnos else '06:01' }}–{{ cfg.turnos[0].fim if cfg.turnos else '15:29' }}</span></button>
-            <button data-turno="2" onclick="toggleTurno('2')">2º <span>{{ cfg.turnos[1].ini if cfg.turnos else '15:30' }}–{{ cfg.turnos[1].fim if cfg.turnos else '00:40' }}</span></button>
-            <button data-turno="3" onclick="toggleTurno('3')">3º <span>{{ cfg.turnos[2].ini if cfg.turnos else '00:41' }}–{{ cfg.turnos[2].fim if cfg.turnos else '06:00' }}</span></button>
-          </div>
           <input type="hidden" id="fTurno" value="">
-          <p class="filtro-desc">O turno vale para <strong>cada setor pelo seu horário</strong>: no Pré-banho conta pela finalização da preparação; no Banho, pela finalização do banho.</p>
+          <p class="filtro-desc">Selecione o período na linha do tempo (Dia, Mês ou Ano) ou navegue para escolher um intervalo. Cada setor conta pelo seu próprio horário: o Pré-banho pela finalização da preparação e o Banho pela finalização do banho.</p>
         </div>
       </div>
     </section>
@@ -174,9 +167,9 @@
         <table class="tbl">
           <thead><tr>
             <th>#</th><th>Cesto</th><th>OP</th><th>Código</th><th>Texto breve</th><th>Qtd</th>
-            <th>Processo</th><th>Tipo</th><th>Turno prep</th><th>Prep (min)</th><th>Fim preparação</th><th>Estado</th><th>Ver</th>
+            <th>Processo</th><th>Tipo</th><th>Operadores</th><th>Cadastrado por</th><th>Prep (min)</th><th>Fim preparação</th><th>Estado</th><th>Ver</th>
           </tr></thead>
-          <tbody id="histBodyPrep"><tr><td colspan="13" class="empty">Carregando…</td></tr></tbody>
+          <tbody id="histBodyPrep"><tr><td colspan="14" class="empty">Carregando…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -186,9 +179,9 @@
         <table class="tbl">
           <thead><tr>
             <th>#</th><th>Cesto</th><th>OP</th><th>Código</th><th>Texto breve</th><th>Qtd</th>
-            <th>Processo</th><th>Tipo</th><th>Turno banho</th><th>Banho (min)</th><th>Fim banho</th><th>Ver</th>
+            <th>Processo</th><th>Tipo</th><th>Operadores</th><th>Cadastrado por</th><th>Banho (min)</th><th>Fim banho</th><th>Ver</th>
           </tr></thead>
-          <tbody id="histBodyBanho"><tr><td colspan="12" class="empty">Carregando…</td></tr></tbody>
+          <tbody id="histBodyBanho"><tr><td colspan="13" class="empty">Carregando…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -335,6 +328,10 @@ function verDetalhes(id){
 }
 function _operadoresHTML(a){
   let html='';
+  if(a.cadastrado_por){
+    html+=`<div style="margin-top:14px;"><span class="small muted"><i class="bi bi-person-badge-fill"></i> Cadastrado por (usuário logado)</span>
+      <div class="det-oper"><span class="det-oper-chip det-oper-user">${a.cadastrado_por}</span></div></div>`;
+  }
   const ops=a.operadores_prep||[];
   if(ops.length){
     html+=`<div style="margin-top:14px;"><span class="small muted"><i class="bi bi-people-fill"></i> Operadores da preparação</span>
@@ -408,8 +405,6 @@ function verDetalhesHist(id){
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
       <span class="pill ${a.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${a.tipo}</span>
       <span class="pill pill-banho">${a.processo||'Sem processo'}</span>
-      <span class="pill pill-turno">Prep: ${a.turno_prep_lbl||'—'}</span>
-      <span class="pill pill-turno">Banho: ${a.turno_lbl||'—'}</span>
     </div>
     ${a.motivo_retrabalho?`<div class="db-obs" style="margin-bottom:12px;"><span class="small muted"><i class="bi bi-arrow-repeat"></i> Motivo do retrabalho:</span> <strong>${a.motivo_retrabalho}</strong></div>`:''}
     <div class="table-wrap"><table class="tbl">
@@ -562,10 +557,22 @@ function aplicarSlicer(){
   if(window.atualizar)window.atualizar();
 }
 function setNivel(n){
-  if(_niv===n)return;
-  _niv=n;_selA=_selB=null;_selEstado='vazio';
+  _niv=n; _selA=_selB=null; _selEstado='vazio';
   document.querySelectorAll('.tl-levels button').forEach(b=>b.classList.toggle('on',b.dataset.niv===n));
+  // ao trocar de nível, já seleciona o período ATUAL (dia de hoje, mês atual ou ano atual)
+  const h=new Date();
+  _anoCtx=h.getFullYear(); _mesCtx=h.getMonth()+1;
   renderSlicer();
+  let idx=null;
+  if(n==='dia') idx=h.getDate()-1;         // hoje
+  else if(n==='mes') idx=h.getMonth();      // mês atual (0-11)
+  else if(n==='ano') idx=2;                 // ano atual (lista é anoAtual-2..anoAtual)
+  if(idx!==null){
+    _selA=_selB=idx; _selEstado='completo';
+    pintarSel(); aplicarSlicer();
+    const seg=document.querySelector('.tl-seg[data-idx="'+idx+'"]');
+    if(seg&&seg.scrollIntoView)seg.scrollIntoView({inline:'center',block:'nearest'});
+  }
 }
 function navCtx(dir){
   if(_niv==='mes'){_anoCtx+=dir;}
@@ -615,23 +622,7 @@ function setView(v){
 }
 
 // ── Filtro por turno (múltipla seleção: 1, 2 ou os 3) ───────────────────────
-let _turnos=new Set();
-function _syncTurno(){
-  const el=document.getElementById('fTurno');
-  const arr=[...  _turnos].sort();
-  if(el)el.value=arr.join(',');
-  document.querySelectorAll('#turnoSeg button').forEach(b=>{
-    const t=b.dataset.turno||'';
-    if(t==='')b.classList.toggle('on',_turnos.size===0);
-    else b.classList.toggle('on',_turnos.has(t));
-  });
-  if(window.atualizar)window.atualizar();
-}
-function toggleTurno(t){
-  if(_turnos.has(t))_turnos.delete(t); else _turnos.add(t);
-  _syncTurno();
-}
-function setTodosTurnos(){ _turnos.clear(); _syncTurno(); }
+
 
 // ── Busca por OP / código / descrição (filtra a tabela de histórico) ───────
 let _termoBusca='';
