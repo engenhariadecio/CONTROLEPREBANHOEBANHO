@@ -2,7 +2,7 @@
 {% block title %}Configurações — Controle Produtividade{% endblock %}
 {% block content %}
 <div style="max-width:820px;margin:0 auto;">
-  <div class="section-head"><div class="section-title"><i class="bi bi-gear-fill"></i>Configurações de jornada</div></div>
+  <div class="section-head"><div class="section-title"><i class="bi bi-gear-fill"></i>Configurações</div></div>
   {% if msg %}<div class="alert alert-ok"><i class="bi bi-check-circle-fill"></i>{{ msg }}</div>{% endif %}
 
   <div class="panel panel-pad" style="margin-bottom:18px;">
@@ -14,6 +14,21 @@
     </p>
 
     <form method="POST">
+      <!-- Número de cestos -->
+      <label class="label" style="margin-bottom:8px;display:block;font-size:1rem;"><i class="bi bi-box-seam"></i> Número de cestos</label>
+      <div class="grid-2" style="align-items:end;">
+        <div class="field" style="margin:0;">
+          <label class="label">Total de cestos físicos</label>
+          <input type="number" name="total_cestos" class="input" min="1" max="999" step="1"
+                 value="{{ total_cestos or 20 }}" required>
+        </div>
+        <div class="field" style="margin:0;">
+          <p class="small muted" style="margin:0;">É a quantidade de cestos que aparece na tela de preparação (numerados de 1 até esse total). Ajuste conforme os cestos disponíveis na fábrica.</p>
+        </div>
+      </div>
+
+      <div class="cfg-divisor"></div>
+
       <!-- Liga/desliga a jornada -->
       <div class="cfg-toggle-row">
         <div>

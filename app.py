@@ -272,7 +272,49 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=280)
 Session = scoped_session(sessionmaker(bind=engine))
 Base = declarative_base()
 
-TOTAL_CESTOS = 20
+TOTAL_CESTOS_PADRAO = 20
+_total_cestos_cache = {'valor': None}
+
+
+def get_total_cestos(forcar=False):
+    """Total de cestos físicos (configurável no admin). Padrão 20."""
+    if _total_cestos_cache['valor'] is not None and not forcar:
+        return _total_cestos_cache['valor']
+    n = TOTAL_CESTOS_PADRAO
+    try:
+        db = Session()
+        try:
+            row = db.query(Config).filter_by(chave='total_cestos').first()
+            if row and str(row.valor).strip().isdigit():
+                n = int(row.valor)
+        finally:
+            db.close()
+    except Exception:
+        n = TOTAL_CESTOS_PADRAO
+    n = max(1, min(n, 999))
+    _total_cestos_cache['valor'] = n
+    return n
+
+
+def set_total_cestos(n):
+    try:
+        n = int(n)
+    except (ValueError, TypeError):
+        n = TOTAL_CESTOS_PADRAO
+    n = max(1, min(n, 999))
+    db = Session()
+    try:
+        row = db.query(Config).filter_by(chave='total_cestos').first()
+        if not row:
+            row = Config(chave='total_cestos')
+            db.add(row)
+        row.valor = str(n)
+        db.commit()
+    finally:
+        db.close()
+    _total_cestos_cache['valor'] = n
+    return n
+
 
 PROCESSOS = [
     "AÇO SEM OXIDAÇÃO", "AÇO COM OXIDAÇÃO", "ALUMÍNIO",
@@ -850,7 +892,7 @@ def _resolver_duplicados_ativos():
             lista_ordenada = sorted(lista, key=lambda x: x.id)
             antigos = lista_ordenada[:-1]
             for c in antigos:
-                livre = next((n for n in range(1, TOTAL_CESTOS + 1) if n not in ocupados), None)
+                livre = next((n for n in range(1, get_total_cestos() + 1) if n not in ocupados), None)
                 if livre is not None:
                     c.numero_cesto = livre
                     ocupados.add(livre)
@@ -1197,7 +1239,7 @@ def api_cestos():
         mapa = {c.numero_cesto: c for c in ativos}  # se houver duplicado, o mais novo prevalece
         grade = [{'numero': n, 'ocupado': n in mapa,
                   'card': mapa[n].to_dict() if n in mapa else None}
-                 for n in range(1, TOTAL_CESTOS + 1)]
+                 for n in range(1, get_total_cestos() + 1)]
         return jsonify(grade)
     finally:
         db.close()
@@ -1323,8 +1365,9 @@ def api_cesto_mudar_numero():
             novo = int(d.get('numero_cesto'))
         except (ValueError, TypeError):
             return jsonify({'sucesso': False, 'erro': 'Número inválido.'}), 400
-        if not (1 <= novo <= TOTAL_CESTOS):
-            return jsonify({'sucesso': False, 'erro': f'O número deve ser entre 1 e {TOTAL_CESTOS}.'}), 400
+        _tot = get_total_cestos()
+        if not (1 <= novo <= _tot):
+            return jsonify({'sucesso': False, 'erro': f'O número deve ser entre 1 e {_tot}.'}), 400
         ocupado = db.query(Card).filter(Card.numero_cesto == novo,
                                         Card.estado.in_(ESTADOS_ATIVOS),
                                         Card.id != card.id).first()
@@ -1401,7 +1444,7 @@ def api_prep_iniciar():
         numero = int(d.get('numero_cesto'))
     except (ValueError, TypeError):
         return jsonify({'sucesso': False, 'erro': 'Cesto inválido.'}), 400
-    if not (1 <= numero <= TOTAL_CESTOS):
+    if not (1 <= numero <= get_total_cestos()):
         return jsonify({'sucesso': False, 'erro': 'Cesto fora do intervalo.'}), 400
     db = Session()
     try:
@@ -1917,9 +1960,33 @@ def admin_config():
             'excecoes': excecoes,
         }
         set_agenda(novo)
-        msg = 'Jornada salva. O cálculo dos tempos de espera já usa os novos turnos e exceções.'
+        # ---- total de cestos ----
+        if request.form.get('total_cestos') not in (None, ''):
+            try:
+                novo_total = int(request.form.get('total_cestos'))
+            except (ValueError, TypeError):
+                novo_total = get_total_cestos()
+            # não deixa reduzir abaixo de cestos ATIVOS já existentes (evita "sumir" cesto em uso)
+            db = Session()
+            try:
+                ativos_nums = [c.numero_cesto for c in
+                               db.query(Card).filter(Card.estado.in_(ESTADOS_ATIVOS)).all()
+                               if c.numero_cesto]
+            finally:
+                db.close()
+            max_ativo = max(ativos_nums) if ativos_nums else 0
+            if novo_total < max_ativo:
+                novo_total = max_ativo
+                set_total_cestos(novo_total)
+                msg = (f'Configurações salvas. O total de cestos foi mantido em {max_ativo} '
+                       f'porque há cesto(s) ativo(s) com número até {max_ativo} — conclua-os antes de reduzir.')
+            else:
+                set_total_cestos(novo_total)
+                msg = 'Configurações salvas. A jornada e o número de cestos já estão valendo.'
+        else:
+            msg = 'Configurações salvas. A jornada e o número de cestos já estão valendo.'
     return render_template('config.html', nome=session.get('nome'),
-                           cfg=get_agenda(forcar=True), msg=msg)
+                           cfg=get_agenda(forcar=True), total_cestos=get_total_cestos(forcar=True), msg=msg)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
