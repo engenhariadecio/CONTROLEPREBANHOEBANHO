@@ -656,5 +656,6 @@ _sincronizar().then(()=>carregarAgenda()).then(()=>{
 setInterval(_sincronizar,60000);
 setInterval(carregarAgenda,300000);
 </script>
+<script src="{{ url_for('static', filename='wakelock.js') }}"></script>
 </body>
 </html>
