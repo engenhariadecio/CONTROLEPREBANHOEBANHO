@@ -183,24 +183,30 @@ function renderAtivos(ativos){
 
 function renderCharts(d){
   _setupChartDefaults();
-  // se a área de gráficos ainda está oculta (visão Histórico não aberta), aguarda
-  const _anchor=document.getElementById('chartTipo');
-  if(_anchor && _anchor.offsetParent===null && !chartTipo) return;
+  // Se a área de gráficos ainda está oculta (visão Histórico não aberta), aguarda.
+  // O ancoramento usa o primeiro canvas QUE EXISTIR nesta página: o painel de
+  // gerência não tem mais o gráfico Normal × Retrabalho nem o de peso, mas o
+  // dashboard do admin continua com eles.
+  const _anchor=document.getElementById('chartTipo')||document.getElementById('chartProc')
+              ||document.getElementById('chartDia');
+  if(_anchor && _anchor.offsetParent===null && !chartProc && !chartTipo) return;
   const labels=Object.keys(d.por_processo), data=Object.values(d.por_processo);
   const diaL=Object.keys(d.por_dia), diaD=Object.values(d.por_dia);
   const baseOpts={responsive:true,maintainAspectRatio:true,aspectRatio:1.7,animation:{duration:600}};
   const doughOpts={responsive:true,maintainAspectRatio:true,aspectRatio:1.5,animation:{duration:600}};
-  if(!chartTipo){
-    chartTipo=new Chart(document.getElementById('chartTipo'),{type:'doughnut',
-      data:{labels:['Normal','Retrabalho'],datasets:[{data:[d.normais,d.retrabalhos],
-        backgroundColor:[BRAND_GREEN,BRAND_BLUE],borderWidth:3,borderColor:'#fff',hoverOffset:6}]},
-      options:{...doughOpts,cutout:'68%',plugins:{legend:{position:'bottom'}}}});
+  if(!chartTipo && !chartProc){
+    if(document.getElementById('chartTipo'))
+      chartTipo=new Chart(document.getElementById('chartTipo'),{type:'doughnut',
+        data:{labels:['Normal','Retrabalho'],datasets:[{data:[d.normais,d.retrabalhos],
+          backgroundColor:[BRAND_GREEN,BRAND_BLUE],borderWidth:3,borderColor:'#fff',hoverOffset:6}]},
+        options:{...doughOpts,cutout:'68%',plugins:{legend:{position:'bottom'}}}});
 
-    chartProc=new Chart(document.getElementById('chartProc'),{type:'bar',
+    if(document.getElementById('chartProc'))
+      chartProc=new Chart(document.getElementById('chartProc'),{type:'bar',
       data:{labels,datasets:[{data,borderRadius:8,maxBarThickness:46,
         backgroundColor:c=>_grad(c.chart.ctx,c.chart.chartArea,'#2E8FD6',BRAND_BLUE)}]},
-      options:{...baseOpts,plugins:{legend:{display:false}},
-        scales:{y:{beginAtZero:true,ticks:{stepSize:1,precision:0},grid:_gridCfg},x:{grid:{display:false}}}}});
+        options:{...baseOpts,plugins:{legend:{display:false}},
+          scales:{y:{beginAtZero:true,ticks:{stepSize:1,precision:0},grid:_gridCfg},x:{grid:{display:false}}}}});
 
     if(document.getElementById('chartDia'))
       chartDia=new Chart(document.getElementById('chartDia'),{type:'line',
@@ -210,8 +216,8 @@ function renderCharts(d){
         options:{...baseOpts,plugins:{legend:{display:false}},
           scales:{y:{beginAtZero:true,ticks:{stepSize:1,precision:0},grid:_gridCfg},x:{grid:{display:false}}}}});
   }else{
-    chartTipo.data.datasets[0].data=[d.normais,d.retrabalhos];chartTipo.update();
-    chartProc.data.labels=labels;chartProc.data.datasets[0].data=data;chartProc.update();
+    if(chartTipo){chartTipo.data.datasets[0].data=[d.normais,d.retrabalhos];chartTipo.update();}
+    if(chartProc){chartProc.data.labels=labels;chartProc.data.datasets[0].data=data;chartProc.update();}
     if(chartDia){chartDia.data.labels=diaL;chartDia.data.datasets[0].data=diaD;chartDia.update();}
   }
   // peso e área por dia (linha)

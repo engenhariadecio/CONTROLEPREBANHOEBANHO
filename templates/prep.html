@@ -26,6 +26,7 @@
 
       <!-- VIEW 1: iniciar (escolhe nº de operadores e, se quiser, os nomes) -->
       <div id="viewIniciar" style="display:none;">
+        <div class="alert alert-info" id="mMontagemInfo" style="display:none;"><i class="bi bi-arrow-repeat"></i><span></span></div>
         <label class="label">Quantos operadores neste cesto?</label>
         <div class="opbtns">
           <button class="opbtn active" id="op1btn" onclick="setNOper(1)">1</button>
@@ -175,7 +176,9 @@
 
 {% block extra_js %}
 <script>
-const ROTULO={PREPARANDO:'Preparando cesto',PREENCHER:'Aguardando cadastro',FILA_BANHO:'Aguardando banho',EM_BANHO:'Em banho'};
+const ROTULO={PREPARANDO:'Preparando cesto',PREENCHER:'Aguardando cadastro',FILA_BANHO:'Aguardando banho',
+  EM_BANHO:'Em banho',FILA_PINTURA:'Aguardando pintura',EM_PINTURA:'Em pintura',
+  CARREGANDO:'Em pintura',AGUARDANDO_MONTAGEM:'Aguardando montagem'};
 let modalEstado='', cestoSel=0, cardAtual=null, nOper=1, itens=[];
 
 function fmtTempo(s){const m=Math.floor(s/60),x=s%60;return `${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`;}
@@ -305,7 +308,25 @@ function abrirLivre(num){
 function abrirOcupado(cd){
   cestoSel=cd.numero_cesto; cardAtual=cd;
   document.getElementById('mCesto').textContent=cd.numero_cesto;
+  // cestos que estão na pintura não são operados aqui
+  if(cd.estado==='FILA_PINTURA'||cd.estado==='EM_PINTURA'||cd.estado==='CARREGANDO'){
+    alert('Cesto '+cd.numero_cesto+' está na pintura ('+(ROTULO[cd.estado]||cd.estado)+').\n'
+      +'Ele volta a ficar livre quando o operador de pintura encerrar o lançamento.');
+    return;
+  }
   document.getElementById('modal').classList.add('open');
+  if(cd.estado==='AGUARDANDO_MONTAGEM'){
+    modalEstado='montagem'; nOper=1; _selOper=[];
+    [1,2,3,4].forEach(k=>document.getElementById('op'+k+'btn').classList.toggle('active',k===1));
+    document.getElementById('opAsk').style.display='block';
+    document.getElementById('opSel').style.display='none';
+    document.getElementById('mMontagemInfo').style.display='';
+    document.getElementById('mMontagemInfo').querySelector('span').textContent=
+      'Retrabalho vindo da pintura: '+(cd.qtd_total||0)+' peça(s). Inicie o tempo de montagem.';
+    mostrarView('iniciar');
+    return;
+  }
+  document.getElementById('mMontagemInfo').style.display='none';
   if(cd.estado==='PREPARANDO'){
     modalEstado='cron'; mostrarView('cron'); atualizarBotaoPausa(cd.pausado);
     document.getElementById('cronBig').textContent=fmtTempo(segPrep(cd));
@@ -439,7 +460,11 @@ function fecharModal(){document.getElementById('modal').classList.remove('open')
 
 async function iniciarPrep(){
   const ops=_selOper.map(o=>({nome:o.nome,matricula:o.matricula||''}));
-  const j=await (await fetch('/api/prep/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({numero_cesto:cestoSel,n_operadores:nOper,operadores:ops})})).json();
+  const rota = (modalEstado==='montagem') ? '/api/prep/montagem/iniciar' : '/api/prep/iniciar';
+  const corpo = (modalEstado==='montagem')
+    ? {id:cardAtual.id, n_operadores:nOper, operadores:ops}
+    : {numero_cesto:cestoSel, n_operadores:nOper, operadores:ops};
+  const j=await (await fetch(rota,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corpo)})).json();
   if(j.sucesso){
     // fecha a aba do cesto assim que inicia (o cronômetro segue rodando no card)
     fecharModal();

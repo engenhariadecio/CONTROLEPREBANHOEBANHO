@@ -1,0 +1,935 @@
+{% extends 'base.html' %}
+{% block title %}Pintura — Controle de Produtividade{% endblock %}
+{% block content %}
+
+<div class="mv-bar" id="mvBar">
+  <div class="mv-item"><i class="bi bi-speedometer2"></i><div><span class="mv-lbl">Monovia</span><strong id="mvVel">—</strong></div></div>
+  <div class="mv-item"><i class="bi bi-rulers"></i><div><span class="mv-lbl">Odômetro</span><strong id="mvOdo">—</strong></div></div>
+</div>
+
+<div class="layout-sel">
+  <button class="layout-btn active" id="lbT" onclick="setLayout('todos')"><i class="bi bi-layout-split"></i>Todos</button>
+  <button class="layout-btn" id="lbF" onclick="setLayout('fila')"><i class="bi bi-list-ol"></i>Fila de espera <span class="aba-cnt" id="cntFila">0</span></button>
+  <button class="layout-btn" id="lbM" onclick="setLayout('mv')"><i class="bi bi-arrow-left-right"></i>Carregando monovia <span class="aba-cnt" id="cntMv">0</span></button>
+  <button class="layout-btn" id="lbE" onclick="setLayout('est')"><i class="bi bi-house-gear-fill"></i>Carregando estacionária <span class="aba-cnt" id="cntEst">0</span></button>
+  <button class="layout-btn" id="lbP" onclick="setLayout('prep')"><i class="bi bi-brush-fill"></i>Preparação para pintura <span class="aba-cnt" id="cntPrep">0</span></button>
+  <button class="layout-btn" id="lbAr" onclick="setLayout('armaz')"><i class="bi bi-box2-fill"></i>Armazenamento <span class="aba-cnt" id="cntArm">0</span></button>
+  <button class="layout-btn" id="lbD" onclick="setLayout('desc')"><i class="bi bi-box-arrow-down"></i>Descarga <span class="aba-cnt" id="cntDesc">0</span></button>
+</div>
+
+<div class="pint-cols" id="pintCols">
+  <div id="colFila">
+    <div class="section-title" style="margin-bottom:6px;"><i class="bi bi-list-ol"></i>Fila de espera da pintura</div>
+    <p class="hint" style="margin:0 0 12px;">Cestos que saíram do banho. Escolha se vai para a <strong>monovia</strong> ou para a <strong>estacionária</strong>.</p>
+    <div id="listaFila" class="flow-list"><div class="muted small">Carregando…</div></div>
+  </div>
+  <div id="colMv">
+    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-arrow-left-right"></i>Carregando monovia</div>
+    <div id="listaMv" class="flow-list"><div class="muted small">Carregando…</div></div>
+  </div>
+  <div id="colEst">
+    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-house-gear-fill"></i>Carregando estacionária</div>
+    <div id="listaEst" class="flow-list"><div class="muted small">Carregando…</div></div>
+  </div>
+  <div id="colPrep">
+    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-brush-fill"></i>Preparação para pintura</div>
+    <div id="listaPrep" class="flow-list"><div class="muted small">Carregando…</div></div>
+  </div>
+  <div id="colArm">
+    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-box2-fill"></i>Armazenamento</div>
+    <div id="listaArm" class="flow-list"><div class="muted small">Carregando…</div></div>
+  </div>
+  <div id="colDesc">
+    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-box-arrow-down"></i>Descarregamento</div>
+    <div id="listaDesc" class="flow-list"><div class="muted small">Carregando…</div></div>
+  </div>
+</div>
+
+<!-- ══ MODAL PRINCIPAL (menu → configuração → operadores → cronômetro) ══ -->
+<div class="modal-overlay" id="modal">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-head">
+      <h5><i class="bi bi-palette-fill"></i><span id="mTitulo">Lote</span></h5>
+      <button class="modal-x" onclick="fecharModal()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body">
+
+      <!-- VIEW: menu de ações -->
+      <div id="vMenu" style="display:none;">
+        <div id="mResumo" class="lote-resumo"></div>
+        <label class="label" style="margin-top:14px;">O que será feito com estas peças?</label>
+        <div class="acao-grid">
+          <button class="acao-btn" onclick="escolherAcao('PREPARACAO')"><i class="bi bi-brush-fill"></i><span>Preparação para pintura</span></button>
+          <button class="acao-btn" onclick="armazenar('Palete')"><i class="bi bi-box2-fill"></i><span>Armazenamento palete</span></button>
+          <button class="acao-btn" onclick="armazenar('Arara')"><i class="bi bi-hospital"></i><span>Armazenamento arara</span></button>
+          <button class="acao-btn acao-retrab" onclick="escolherAcao('RETRABALHO')"><i class="bi bi-arrow-repeat"></i><span>Retrabalho</span></button>
+        </div>
+        <button class="btn btn-ghost btn-sm btn-block" style="margin-top:14px;" onclick="verDetalhes()"><i class="bi bi-eye"></i>Ver detalhes e histórico</button>
+      </div>
+
+      <!-- VIEW: sub-seleção (preparação / armazenamento) -->
+      <div id="vSub" style="display:none;">
+        <label class="label" id="subTitulo">Selecione</label>
+        <div class="sub-grid" id="subGrid"></div>
+        <div id="subOutroBox" style="display:none;margin-top:14px;">
+          <label class="label">Descreva</label>
+          <input id="subOutro" class="input" placeholder="Ex: mascaramento com fita">
+        </div>
+        <div id="subJustBox" style="display:none;margin-top:14px;">
+          <label class="label">Justificativa</label>
+          <textarea id="subJust" class="input" rows="2" placeholder="Por que as peças serão armazenadas?"></textarea>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:18px;">
+          <button class="btn btn-ghost" style="flex:0 0 auto;" onclick="mostrarView('menu')"><i class="bi bi-arrow-left"></i>Voltar</button>
+          <button class="btn btn-aqua" style="flex:1;" id="subOk" onclick="irParaOperadores()" disabled><i class="bi bi-arrow-right"></i>Continuar</button>
+        </div>
+      </div>
+
+      <!-- VIEW: operadores -->
+      <div id="vOper" style="display:none;">
+        <div class="alert alert-info" id="operCtx"><i class="bi bi-info-circle"></i><span></span></div>
+        <label class="label">Quantos operadores nesta atividade?</label>
+        <div class="opbtns">
+          <button class="opbtn active" id="nop1" onclick="setNOper(1)">1</button>
+          <button class="opbtn" id="nop2" onclick="setNOper(2)">2</button>
+          <button class="opbtn" id="nop3" onclick="setNOper(3)">3</button>
+          <button class="opbtn" id="nop4" onclick="setNOper(4)">4</button>
+        </div>
+        <div id="opAsk" style="margin-top:22px;">
+          <label class="label">Deseja registrar quem são os operadores?</label>
+          <div class="op-ask">
+            <button class="btn btn-ghost" onclick="mostrarSelOper()"><i class="bi bi-person-check-fill"></i>Escolher nomes</button>
+            <button class="btn btn-aqua" onclick="iniciarAtividade()"><i class="bi bi-play-fill"></i>Iniciar agora</button>
+          </div>
+          <p class="hint" style="margin-top:12px;">Ao iniciar agora, a atividade fica no seu nome.</p>
+        </div>
+        <div id="opSel" style="display:none;margin-top:18px;">
+          <label class="label">Operadores <span class="filtro-hint" id="opCount">— 0 de 1</span></label>
+          <div id="opChips" class="op-chips"></div>
+          <div class="op-add">
+            <input id="opNovoNome" class="input input-sm" placeholder="Digitar nome fora da lista…" autocomplete="off">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="addOperManual()"><i class="bi bi-plus-lg"></i>Adicionar</button>
+          </div>
+          <input id="opSearch" class="input input-sm" placeholder="Buscar por nome ou matrícula…" oninput="renderOperLista()" style="margin:8px 0;">
+          <div id="opLista" class="op-lista"></div>
+          <div style="display:flex;gap:10px;margin-top:14px;">
+            <button class="btn btn-ghost" style="flex:0 0 auto;" onclick="voltarAsk()"><i class="bi bi-arrow-left"></i>Voltar</button>
+            <button class="btn btn-aqua" style="flex:1;" id="opConfirm" onclick="iniciarAtividade()" disabled><i class="bi bi-play-fill"></i>Iniciar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW: cronômetro -->
+      <div id="vCron" style="display:none;text-align:center;">
+        <div class="cron-status" id="cronRot"></div>
+        <div class="cron-big" id="cronBig">00:00</div>
+        <div class="cron-status" id="cronSt"></div>
+        <div style="display:flex;gap:10px;margin-top:22px;">
+          <button class="btn btn-ghost" style="flex:1;" id="btnPausa" onclick="pedirPausa()"></button>
+          <button class="btn btn-primary" style="flex:1;" onclick="pedirFinalizar()"><i class="bi bi-stop-fill"></i>Finalizar</button>
+        </div>
+        <p class="hint" style="margin-top:14px;">Use <strong>Lançar parada</strong> para interrupções (não conta no tempo).</p>
+      </div>
+
+      <!-- VIEW: finalizar -->
+      <div id="vFim" style="display:none;">
+        <div id="fimResumo" class="db-grid" style="margin-bottom:14px;"></div>
+        <div class="field" id="fimDestinoBox" style="display:none;">
+          <label class="label">Para onde vão as peças agora?</label>
+          <div class="sub-grid">
+            <button class="sub-btn" data-dest="ARM_PALETE" onclick="setDestino(this)">Armazenamento palete</button>
+            <button class="sub-btn" data-dest="ARM_ARARA" onclick="setDestino(this)">Armazenamento arara</button>
+          </div>
+          <div class="sub-grid" style="margin-top:8px;">
+            <button class="sub-btn" data-dest="MONOVIA" onclick="setDestino(this)">Carregar monovia</button>
+            <button class="sub-btn" data-dest="ESTACIONARIA" onclick="setDestino(this)">Carregar estacionária</button>
+          </div>
+          <input type="hidden" id="fimLocal" value="">
+        </div>
+        <div class="field" id="fimRepasseBox" style="display:none;">
+          <label class="label">Alguma peça <strong>não</strong> foi descarregada?</label>
+          <div class="sub-grid">
+            <button class="sub-btn" id="rpNao" onclick="setRepasse(0)">Desceu tudo</button>
+            <button class="sub-btn" id="rpParte" onclick="setRepasse(1)">Parte volta</button>
+            <button class="sub-btn" id="rpTudo" onclick="setRepasse(2)">Tudo volta</button>
+          </div>
+          <div id="rpQtdBox" style="display:none;margin-top:12px;">
+            <label class="label">Quantas peças seguem para outro passe <span class="muted small" id="rpMax"></span></label>
+            <input id="rpQtd" class="input" type="number" min="1" step="1">
+          </div>
+          <div id="rpMotivoBox" style="display:none;margin-top:12px;">
+            <label class="label">Motivo</label>
+            <select id="rpMotivo" class="input">
+              <option value="">Selecione…</option>
+              <option>Falha de camada</option><option>Escorrimento</option>
+              <option>Casca de laranja</option><option>Falha de cobertura</option>
+              <option>Sujeira / contaminação</option><option>Cor fora do padrão</option>
+              <option>Outro</option>
+            </select>
+          </div>
+          <div class="hint" id="rpHint" style="margin-top:8px;"></div>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label class="label">Observação</label>
+          <textarea id="fimObs" class="input" rows="3" placeholder="Opcional"></textarea>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:18px;">
+          <button class="btn btn-ghost" style="flex:0 0 auto;" onclick="mostrarView('cron')"><i class="bi bi-arrow-left"></i>Voltar</button>
+          <button class="btn btn-stop" style="flex:1;" onclick="confirmarFinalizar()"><i class="bi bi-check-lg"></i>Confirmar</button>
+        </div>
+      </div>
+
+      <!-- VIEW: retrabalho -->
+      <div id="vRetrab" style="display:none;">
+        <label class="label">Quantas peças vão para retrabalho?</label>
+        <div class="sub-grid">
+          <button class="sub-btn" id="rbTodas" onclick="setRetrabTodas(true)">Todas as peças</button>
+          <button class="sub-btn" id="rbParcial" onclick="setRetrabTodas(false)">Informar quantidade</button>
+        </div>
+        <div id="rbQtdBox" style="display:none;margin-top:12px;">
+          <label class="label">Quantidade de peças <span class="muted small" id="rbMax"></span></label>
+          <input id="rbQtd" class="input" type="number" min="1" step="1" oninput="validarRetrab()">
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label class="label">Motivo do retrabalho</label>
+          <input id="rbMotivo" class="input" placeholder="Ex: falha de camada, oxidação residual">
+        </div>
+        <div id="rbLocalBox" style="display:none;">
+          <label class="label">Onde ficaram as peças que NÃO vão para retrabalho?</label>
+          <textarea id="rbLocal" class="input" rows="2" placeholder="Ex: arara 3, área de espera"></textarea>
+          <div class="hint">Obrigatório no retrabalho parcial: o cesto vai com as peças de retrabalho.</div>
+        </div>
+        <div id="rbCestoBox" style="display:none;margin-top:12px;">
+          <label class="label">Número do cesto para o retrabalho</label>
+          <input id="rbCesto" class="input" type="number" min="1" oninput="validarRetrab()">
+        </div>
+        <div id="rbReposBox" style="display:none;margin-top:18px;">
+          <label class="label">Necessita reposicionamento das peças pelo pré-banho?</label>
+          <div class="sub-grid">
+            <button class="sub-btn" id="rbSim" onclick="setRepos(true)">Sim</button>
+            <button class="sub-btn" id="rbNao" onclick="setRepos(false)">Não</button>
+          </div>
+        </div>
+        <p class="hint" id="rbHint" style="margin-top:12px;"></p>
+        <div style="display:flex;gap:10px;margin-top:14px;">
+          <button class="btn btn-ghost" style="flex:0 0 auto;" onclick="mostrarView('menu')"><i class="bi bi-arrow-left"></i>Voltar</button>
+          <button class="btn btn-primary" style="flex:1;" id="rbOk" onclick="confirmarRetrabalho()" disabled><i class="bi bi-arrow-repeat"></i>Confirmar retrabalho</button>
+        </div>
+      </div>
+
+      <!-- VIEW: cadastro de OP (OP nova e retrabalho sem reposicionamento) -->
+      <div id="vCad" style="display:none;">
+        <div class="alert alert-info" id="cadCtx"><i class="bi bi-info-circle"></i><span></span></div>
+        <div id="cadDestBox">
+          <label class="label">Destino da carga</label>
+          <div class="sub-grid">
+            <button class="sub-btn" data-d="monovia" onclick="setCadDest(this)">Monovia</button>
+            <button class="sub-btn" data-d="estacionaria" onclick="setCadDest(this)">Estacionária</button>
+          </div>
+        </div>
+        <label class="label" style="margin-top:14px;">Ordens (OPs)</label>
+        <div id="cadItens" class="itens-list"></div>
+        <div class="add-op-box">
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="cadOp" class="input input-sm" placeholder="Bipe ou digite a OP" inputmode="numeric" autocomplete="off" style="flex:1;">
+            <button class="btn btn-aqua btn-sm" onclick="cadAddOrdem()"><i class="bi bi-plus-lg"></i>Adicionar</button>
+          </div>
+          <div id="cadMsg" class="hint"></div>
+        </div>
+        <div class="grid-2" style="margin-top:6px;">
+          <div class="field col-full" style="margin:0;"><label class="label">Processo</label>
+            <select id="cadProc" class="select input-sm"><option value="">Selecione…</option>{% for p in processos %}<option>{{ p }}</option>{% endfor %}</select>
+          </div>
+          <div class="field col-full" style="margin:0;"><label class="label">Observação</label>
+            <textarea id="cadObs" class="input input-sm" rows="2"></textarea></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button class="btn btn-ghost" style="flex:0 0 auto;" onclick="fecharModal()">Cancelar</button>
+          <button class="btn btn-primary" style="flex:1;" id="cadOk" onclick="confirmarCadastro()"></button>
+        </div>
+      </div>
+
+      <!-- VIEW: detalhes -->
+      <div id="vDet" style="display:none;">
+        <div id="detCorpo"></div>
+        <button class="btn btn-ghost btn-block" style="margin-top:14px;" onclick="mostrarView('menu')"><i class="bi bi-arrow-left"></i>Voltar</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Modal motivo da parada -->
+<div class="modal-overlay" id="modalMotivo">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-head">
+      <h5><i class="bi bi-pause-circle"></i>Motivo da parada</h5>
+      <button class="modal-x" onclick="fecharMotivo()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="motivo-grid">
+        <button class="motivo-btn" onclick="escolherMotivo('Almoço/Janta')"><i class="bi bi-cup-hot"></i>Almoço/Janta</button>
+        <button class="motivo-btn" onclick="escolherMotivo('Café')"><i class="bi bi-cup"></i>Café</button>
+        <button class="motivo-btn" onclick="escolherMotivo('Laboral')"><i class="bi bi-person-arms-up"></i>Laboral</button>
+        <button class="motivo-btn" onclick="escolherMotivo('Falta de material')"><i class="bi bi-box"></i>Falta de material</button>
+        <button class="motivo-btn" onclick="escolherMotivo('Manutenção')"><i class="bi bi-tools"></i>Manutenção</button>
+        <button class="motivo-btn" onclick="escolherMotivo('Outros')"><i class="bi bi-three-dots"></i>Outros</button>
+      </div>
+      <div id="outroMotivo" style="display:none;margin-top:14px;">
+        <label class="label">Descreva o motivo</label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="outroMotivoTxt" class="input input-sm" style="flex:1;">
+          <button class="btn btn-aqua btn-sm" onclick="confirmarOutroMotivo()">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.mv-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch;margin-bottom:16px;}
+.mv-item{display:flex;align-items:center;gap:10px;background:var(--card,#fff);border:1px solid rgba(15,61,92,.12);
+  border-radius:14px;padding:10px 16px;box-shadow:0 1px 3px rgba(15,61,92,.06);}
+.mv-item i{font-size:19px;opacity:.5;}
+.mv-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.5px;opacity:.6;display:block;}
+.mv-item strong{font-family:'JetBrains Mono',monospace;font-size:16px;display:block;line-height:1.2;}
+.mv-bar.parado .mv-item{border-color:rgba(214,60,60,.35);} .mv-bar.parado #mvVel{color:#d63c3c;}
+.mv-novo{margin-left:auto;flex:0 0 auto;}
+.pint-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:1200px){.pint-cols{grid-template-columns:1fr;}}
+.aba-cnt{display:inline-block;min-width:20px;padding:1px 6px;margin-left:6px;border-radius:999px;
+  background:rgba(15,61,92,.10);font-size:11px;font-weight:800;font-family:'JetBrains Mono',monospace;}
+.layout-btn.active .aba-cnt{background:rgba(255,255,255,.25);}
+.destino-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.6px;opacity:.55;
+  font-weight:800;margin-bottom:-2px;text-align:center;}
+.na-linha{opacity:.72;}
+.eta-chip{background:rgba(14,154,167,.12);border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700;}
+.lote-resumo{background:rgba(15,61,92,.04);border-radius:12px;padding:12px 14px;font-size:13px;}
+.lote-resumo b{font-family:'JetBrains Mono',monospace;}
+.acao-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+@media(max-width:520px){.acao-grid{grid-template-columns:1fr;}}
+.acao-btn{display:flex;align-items:center;gap:10px;padding:14px;border:1.5px solid rgba(15,61,92,.15);
+  border-radius:14px;background:#fff;cursor:pointer;text-align:left;font-size:13.5px;font-weight:600;
+  color:var(--ink,#0F3D5C);transition:.15s;}
+.acao-btn i{font-size:20px;opacity:.6;}
+.acao-btn:hover{border-color:var(--aqua,#0E9AA7);background:rgba(14,154,167,.06);}
+.acao-retrab{border-color:rgba(214,60,60,.3);} .acao-retrab:hover{border-color:#d63c3c;background:rgba(214,60,60,.06);}
+.sub-grid{display:flex;gap:8px;flex-wrap:wrap;}
+.sub-btn{flex:1;min-width:130px;padding:12px;border:1.5px solid rgba(15,61,92,.15);border-radius:12px;
+  background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--ink,#0F3D5C);}
+.sub-btn.active{border-color:var(--aqua,#0E9AA7);background:rgba(14,154,167,.1);}
+.lote-card .cesto-badge.sem{background:#64748b;}
+/* o carregamento na monovia é o caminho de todo dia: primário forte.
+   A estacionária fica ao lado, mais leve, e o resto em "Outras opções". */
+.flow-cta-wrap .btn-ghost.flow-cta{box-shadow:none;min-height:46px;font-size:.92rem;font-weight:700;}
+.hist-item{border-left:3px solid rgba(15,61,92,.2);padding:8px 0 8px 12px;margin-bottom:8px;}
+.hist-item b{font-size:13px;} .hist-item .small{opacity:.7;}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='jornada.js') }}"></script>
+<script>
+const ATIV_PREP={{ ativ_prep|tojson }}, LOCAIS={{ locais|tojson }};
+let DADOS={cestos:[],sem_cesto:[],em_atividade:[]}, semTelemetria=false;
+let loteAtual=null, ativAtual=null, acao='', subSel='', nOper=1, _selOper=[], OPERADORES=[];
+let cadItens=[], cadModo='', cadDest='', cadCardId=null;
+let rbTodas=null, rbRepos=null, destinoFim='';
+
+/* ── util ── */
+function fmtTempo(s){const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=s%60;
+  const mm=String(m).padStart(2,'0'),xx=String(x).padStart(2,'0');return h>0?`${h}:${mm}:${xx}`:`${mm}:${xx}`;}
+let servidorOffset=0;
+async function sincronizarRelogio(){
+  try{const t0=Date.now();const j=await (await fetch('/api/agora')).json();const t1=Date.now();
+    servidorOffset=new Date(j.agora_iso).getTime()+(t1-t0)/2-t1;}catch(_){servidorOffset=0;}
+}
+function agoraServidor(){return Date.now()+servidorOffset;}
+function segAtiv(a){
+  if(!a||!a.inicio_iso)return 0;
+  let p=a.pausa_acumulada_seg||0;
+  if(a.pausado&&a.pausa_inicio_iso)p+=Math.floor((agoraServidor()-new Date(a.pausa_inicio_iso).getTime())/1000);
+  return Math.max(0,Math.floor((agoraServidor()-new Date(a.inicio_iso).getTime())/1000)-p);
+}
+function setLayout(m){
+  const MAP={todos:'lbT',ativ:'lbA',fila:'lbF',desc:'lbD'};
+  Object.values(MAP).forEach(id=>document.getElementById(id).classList.remove('active'));
+  if(MAP[m])document.getElementById(MAP[m]).classList.add('active');
+  colAtiv.style.display=(m==='todos'||m==='ativ')?'':'none';
+  colFila.style.display=(m==='todos'||m==='fila')?'':'none';
+  const temD=document.getElementById('lbD').style.display!=='none';
+  colDesc.style.display=(temD&&(m==='todos'||m==='desc'))?'':'none';
+  if(m==='todos')pintCols.style.gridTemplateColumns=temD?'1fr 1fr 1fr':'1fr 1fr';
+  pintCols.style.gridTemplateColumns=(m==='todos')?'':'1fr';
+}
+
+/* ── carregar painel ── */
+async function carregar(){
+  const j=await (await fetch('/api/pintura/painel')).json();
+  DADOS=j;
+  const mv=j.monovia||{};
+  semTelemetria = !mv || mv.modo==='sem_dados' || mv.modo==='desatualizado';
+  mvBar.classList.toggle('parado', !!(mv.parada&&!semTelemetria));
+  mvVel.textContent = semTelemetria?'sem sinal':(mv.velocidade.toFixed(2)+' m/min');
+  mvOdo.textContent = semTelemetria?'—':(mv.odometro_m.toFixed(0)+' m');
+
+  const GRUPO={MONOVIA:'Mv',ESTACIONARIA:'Est',OP_NOVA:'Mv',
+               PREPARACAO:'Prep',ARMAZENAMENTO:'Arm'};
+  const buckets={Mv:[],Est:[],Prep:[],Arm:[]};
+  (j.em_atividade||[]).forEach(l=>{
+    const t=(l.atividade||{}).tipo;
+    let g=GRUPO[t]||'Prep';
+    if(t==='OP_NOVA')g=((l.atividade.subtipo||'')==='estacionaria')?'Est':'Mv';
+    buckets[g].push(l);
+  });
+  const VAZIO={Mv:'Nenhuma carga na monovia.',Est:'Nenhuma carga na estacionária.',
+               Prep:'Nenhuma preparação em andamento.',Arm:'Nenhum armazenamento em andamento.'};
+  Object.keys(buckets).forEach(g=>{
+    document.getElementById('lista'+g).innerHTML=buckets[g].length
+      ? buckets[g].map(cardAtividade).join('')
+      : `<div class="empty panel"><i class="bi bi-hourglass"></i>${VAZIO[g]}</div>`;
+  });
+  cntMv.textContent=buckets.Mv.length; cntEst.textContent=buckets.Est.length;
+  cntPrep.textContent=buckets.Prep.length; cntArm.textContent=buckets.Arm.length;
+
+  const _antigo=(j.em_atividade||[]).length?j.em_atividade.map(l=>{
+    const a=l.atividade||{};
+    return `<div class="flow-card live ${a.pausado?'is-paused':''}">
+      <div class="flow-left">
+        <div class="cesto-badge ${l.numero_cesto?'':'sem'}">${l.numero_cesto||'S/C'}</div>
+        <div class="flow-info">
+          <div class="top">${a.tipo_lbl||''} ${a.detalhe?`<span class="pill pill-normal">${a.detalhe}</span>`:''}</div>
+          <div class="ln">${l.n_itens>1?('<strong>'+l.n_itens+' OPs</strong>'):('OP <strong>'+(l.ordem||'—')+'</strong>')} · ${l.quantidade} pç · ${l.area_total} m²</div>
+          <div class="ln muted" style="font-size:12px;">${a.operadores_txt||'—'}</div>
+          <div class="cron cron-banho ativ-cron" data-a='${JSON.stringify(a).replace(/'/g,"&#39;")}'>${fmtTempo(segAtiv(a))}${a.pausado?'<span class="cron-suf">pausado</span>':''}</div>
+        </div>
+      </div>
+      <div class="flow-cta-wrap">
+        <button class="btn btn-ghost flow-cta" onclick="abrirAtividade(${l.id},'pausa')"><i class="bi ${a.pausado?'bi-play-fill':'bi-pause-fill'}"></i>${a.pausado?'Retomar':'Lançar parada'}</button>
+        <button class="btn btn-stop flow-cta" onclick="abrirAtividade(${l.id},'fim')"><i class="bi bi-stop-circle-fill"></i>Finalizar</button>
+      </div>
+    </div>`;}).join(''):'';
+
+  const temDesc=j.descarga_ativa!==false;
+  lbD.style.display=temDesc?'':'none';
+  colDesc.style.display=temDesc?colDesc.style.display:'none';
+  const prontos=temDesc?(j.prontos_descarga||[]):[], naLinha=temDesc?(j.na_linha||[]):[];
+  listaDesc.innerHTML=(prontos.length||naLinha.length)
+    ? prontos.map(l=>cardDescarga(l,true)).join('')+naLinha.map(l=>cardDescarga(l,false)).join('')
+    : '<div class="empty panel"><i class="bi bi-box-arrow-down"></i>Nada na linha.</div>';
+
+  // Uma fila só: cesto que saiu do banho e peças que ficaram em palete/arara
+  // esperam a mesma coisa, então competem pela mesma atenção do operador.
+  const fila=[...(j.cestos||[]),...(j.sem_cesto||[])]
+    .sort((a,b)=>(b.esperando_seg||0)-(a.esperando_seg||0));
+  listaFila.innerHTML=fila.length?fila.map((l,i)=>cardLote(l,l.com_cesto,i+1)).join('')
+    :'<div class="empty panel"><i class="bi bi-inbox"></i>Fila vazia — nenhum cesto aguardando pintura.</div>';
+
+  cntFila.textContent=fila.length;
+  cntDesc.textContent=prontos.length+naLinha.length;
+}
+
+function cardAtividade(l){
+  const a=l.atividade||{};
+  const ehCarga=(a.tipo==='MONOVIA'||a.tipo==='ESTACIONARIA'||a.tipo==='OP_NOVA');
+  const outro=(a.tipo==='ESTACIONARIA')?'MONOVIA':'ESTACIONARIA';
+  const outroLbl=(a.tipo==='ESTACIONARIA')?'monovia':'estacionária';
+  return `<div class="flow-card live ${a.pausado?'is-paused':''}">
+    <div class="flow-left">
+      <div class="cesto-badge ${l.numero_cesto?'':'sem'}">${l.numero_cesto||'S/C'}</div>
+      <div class="flow-info">
+        <div class="top">${a.tipo_lbl||''} ${a.detalhe?`<span class="pill pill-normal">${a.detalhe}</span>`:''}</div>
+        <div class="ln">${l.n_itens>1?('<strong>'+l.n_itens+' OPs</strong>'):('OP <strong>'+(l.ordem||'—')+'</strong>')} · ${l.quantidade} pç · ${l.area_total} m²</div>
+        <div class="ln muted" style="font-size:12px;">${a.n_operadores||1} oper. · ${a.operadores_txt||'—'}</div>
+        <div class="cron cron-banho ativ-cron" data-a='${JSON.stringify(a).replace(/'/g,"&#39;")}'>${fmtTempo(segAtiv(a))}${a.pausado?'<span class="cron-suf">pausado</span>':''}</div>
+      </div>
+    </div>
+    <div class="flow-cta-wrap">
+      <button class="btn btn-ghost flow-cta" onclick="abrirAtividade(${l.id},'pausa')"><i class="bi ${a.pausado?'bi-play-fill':'bi-pause-fill'}"></i>${a.pausado?'Retomar':'Lançar parada'}</button>
+      <button class="btn btn-stop flow-cta" onclick="abrirAtividade(${l.id},'fim')"><i class="bi bi-stop-circle-fill"></i>Finalizar</button>
+      ${ehCarga?`<button class="btn-detalhes" onclick="corrigirDestino(${a.id},'${outro}','${outroLbl}')"><i class="bi bi-arrow-left-right"></i>Mudar para ${outroLbl}</button>`:''}
+      <button class="btn-detalhes" onclick="abrirLote(${l.id},true)"><i class="bi bi-eye"></i>Ver detalhes</button>
+    </div>
+  </div>`;
+}
+
+async function corrigirDestino(ativId,tipo,lbl){
+  if(!confirm(`Mudar o destino desta carga para ${lbl}?\n\n`
+    +`O cronômetro e os operadores continuam. Use só para corrigir um engano.`))return;
+  const j=await (await fetch('/api/pintura/atividade/destino',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:ativId,tipo,motivo:'corrigido pelo operador'})})).json();
+  if(!j.sucesso){alert(j.erro||'Erro.');return;}
+  carregar();
+}
+
+function cardDescarga(l,pronto){
+  const st=l.linha_status||{}, cg=l.carga||{};
+  const orig=l.numero_cesto?('cesto '+l.numero_cesto):('lote #'+l.id);
+  return `<div class="flow-card ${pronto?'fila-card':'na-linha'}">
+    <div class="flow-left">
+      <div class="cesto-badge ${l.numero_cesto?'':'sem'}">${l.numero_cesto||'S/C'}</div>
+      <div class="flow-info">
+        <div class="top">${cg.tipo_lbl||'Na linha'} ${pronto?'<span class="pill pill-normal">pronto</span>':`<span class="eta-chip">chega em ~${st.eta_min!=null?st.eta_min+' min':'—'}</span>`}${l.voltas>1?`<span class="pill pill-retrab">${l.voltas}º passe</span>`:''}</div>
+        <div class="ln">${l.n_itens>1?('<strong>'+l.n_itens+' OPs</strong>'):('OP <strong>'+(l.ordem||'—')+'</strong>')} · ${l.quantidade} pç · ${l.area_total} m²</div>
+        <div class="ln muted" style="font-size:12px;">veio do ${orig}${st.faltam_m?` · faltam ${st.faltam_m} m`:''}${st.modo==='manual'?' · sem rastreio de linha':''}</div>
+        ${l.motivo_repasse?`<div class="ln muted" style="font-size:12px;"><i class="bi bi-arrow-clockwise"></i> repasse: ${l.motivo_repasse}</div>`:''}
+        <div class="cron cron-espera linha-cron" data-ini="${l.na_linha_iso}">${fmtTempo(l.na_linha_seg||0)}<span class="cron-suf">na linha</span></div>
+      </div>
+    </div>
+    <div class="flow-cta-wrap">
+      ${pronto?`<button class="btn btn-aqua flow-cta" onclick="acaoDireta(${l.id},'DESCARGA')"><i class="bi bi-box-arrow-down"></i>Descarregar</button>`
+              :`<button class="btn btn-ghost flow-cta" onclick="acaoDireta(${l.id},'DESCARGA')"><i class="bi bi-box-arrow-down"></i>Descarregar assim mesmo</button>`}
+      <button class="btn-detalhes" onclick="abrirLote(${l.id},true)"><i class="bi bi-eye"></i>Ver detalhes</button>
+    </div>
+  </div>`;
+}
+
+function cardLote(l,comCesto,pos){
+  return `<div class="flow-card fila-card lote-card">
+    <div class="flow-left">
+      <div class="cesto-badge ${comCesto?'':'sem'}">${comCesto?l.numero_cesto:'S/C'}</div>
+      <div class="flow-info">
+        <div class="top">${l.processo||'Sem processo'} <span class="pill ${l.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${l.tipo}</span>${pos?`<span class="pos-fila">${pos}º na fila</span>`:''}</div>
+        <div class="ln">${l.n_itens>1?('<strong>'+l.n_itens+' OPs</strong>'):('OP <strong>'+(l.ordem||'—')+'</strong>')} · ${l.quantidade} pç</div>
+        <div class="ln muted" style="font-size:12px;">${l.area_total} m² · ${l.peso_total} kg${!comCesto&&l.numero_cesto?` · veio do cesto <strong>${l.numero_cesto}</strong>`:''}</div>
+        ${!comCesto&&l.local?`<div class="ln muted" style="font-size:12px;"><i class="bi bi-geo-alt"></i> ${l.local}</div>`:''}
+        <div class="cron cron-espera lote-cron" data-ini="${l.criado_iso}">${fmtTempo(l.esperando_seg)}<span class="cron-suf">aguardando</span></div>
+      </div>
+    </div>
+    <div class="flow-cta-wrap">
+      <div class="destino-lbl">Enviar para:</div>
+      <button class="btn btn-aqua flow-cta" onclick="acaoDireta(${l.id},'MONOVIA')"><i class="bi bi-arrow-left-right"></i>Monovia</button>
+      <button class="btn btn-ghost flow-cta" onclick="acaoDireta(${l.id},'ESTACIONARIA')"><i class="bi bi-house-gear-fill"></i>Estacionária</button>
+      <button class="btn-detalhes" onclick="abrirLote(${l.id})"><i class="bi bi-three-dots"></i>Outras opções</button>
+      <button class="btn-detalhes" onclick="abrirLote(${l.id},true)"><i class="bi bi-eye"></i>Ver detalhes</button>
+    </div>
+  </div>`;
+}
+
+function tick(){
+  document.querySelectorAll('.ativ-cron[data-a]').forEach(e=>{
+    try{const a=JSON.parse(e.dataset.a);e.innerHTML=fmtTempo(segAtiv(a))+(a.pausado?'<span class="cron-suf">pausado</span>':'');}catch(_){}
+  });
+  document.querySelectorAll('.linha-cron[data-ini]').forEach(e=>{
+    if(!e.dataset.ini)return;
+    const seg=Math.max(0,Math.floor((agoraServidor()-new Date(e.dataset.ini).getTime())/1000));
+    e.innerHTML=fmtTempo(seg)+'<span class="cron-suf">na linha</span>';
+  });
+  document.querySelectorAll('.lote-cron[data-ini]').forEach(e=>{
+    if(!e.dataset.ini)return;
+    e.innerHTML=fmtTempo(tempoUtilSegundos(new Date(e.dataset.ini).getTime(),agoraServidor()))+'<span class="cron-suf">aguardando</span>';
+  });
+  if(_viewAtual==='cron'&&ativAtual&&!ativAtual.pausado)cronBig.textContent=fmtTempo(segAtiv(ativAtual));
+}
+
+/* ── modal ── */
+let _viewAtual='';
+function mostrarView(v){
+  _viewAtual=v;
+  ['vMenu','vSub','vOper','vCron','vFim','vRetrab','vCad','vDet'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById({menu:'vMenu',sub:'vSub',oper:'vOper',cron:'vCron',fim:'vFim',retrab:'vRetrab',cad:'vCad',det:'vDet'}[v]).style.display='';
+}
+function fecharModal(){modal.classList.remove('open');loteAtual=null;ativAtual=null;carregar();}
+modal.addEventListener('click',e=>{if(e.target.id==='modal')fecharModal();});
+
+async function abrirLote(id,detalhes){
+  const l=await (await fetch('/api/pintura/lote/'+id)).json();
+  loteAtual=l;ativAtual=null;
+  mTitulo.textContent = l.numero_cesto&&l.com_cesto ? ('Cesto '+l.numero_cesto) : ('Lote #'+l.id+' (sem cesto)');
+  mResumo.innerHTML=`<div><strong>${l.quantidade}</strong> peças · <strong>${l.area_total}</strong> m² · <strong>${l.peso_total}</strong> kg</div>
+    <div class="small muted" style="margin-top:4px;">${l.n_itens} OP(s) · ${l.processo||'sem processo'}${l.numero_cesto&&!l.com_cesto?` · veio do cesto ${l.numero_cesto}`:''}</div>
+    ${l.local?`<div class="small muted" style="margin-top:4px;"><i class="bi bi-geo-alt"></i> ${l.local}</div>`:''}`;
+  modal.classList.add('open');
+  mostrarView(detalhes?'det':'menu');
+  if(detalhes)renderDetalhes(l);
+}
+
+/* Atalho: do card direto para "quem vai carregar", pulando o menu de ações.
+   É o caminho de todo dia — o menu completo fica em "Outras opções". */
+async function acaoDireta(id,tipo){
+  const l=await (await fetch('/api/pintura/lote/'+id)).json();
+  loteAtual=l;ativAtual=null;acao=tipo;subSel='';
+  subOutro.value='';subJust.value='';
+  mTitulo.textContent = l.numero_cesto&&l.com_cesto ? ('Cesto '+l.numero_cesto) : ('Lote #'+l.id+' (sem cesto)');
+  modal.classList.add('open');
+  irParaOperadores();
+}
+
+function verDetalhes(){mostrarView('det');renderDetalhes(loteAtual);}
+function renderDetalhes(l){
+  const itens=(l.itens||[]).map(it=>`<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td>
+    <td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td>
+    <td><span class="pill ${it.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${it.tipo||'Normal'}</span></td></tr>`).join('');
+  const co=l.cesto_origem;
+  const hist=(l.historico||[]).map(h=>`<div class="hist-item"><b>${h.tipo_lbl}</b>${h.detalhe?' · '+h.detalhe:''}
+    <div class="small">${h.inicio} → ${h.fim||'em andamento'} · <strong>${h.minutos} min</strong>${h.total_pausa_min?` · parada ${h.total_pausa_min} min`:''}</div>
+    <div class="small">${h.operadores_txt||''}</div>${h.observacao?`<div class="small">Obs.: ${h.observacao}</div>`:''}</div>`).join('');
+  detCorpo.innerHTML=`
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr><th>OP</th><th>Código</th><th>Descrição</th><th>Qtd</th><th>Tipo</th></tr></thead>
+      <tbody>${itens}</tbody></table></div>
+    ${co?`<div style="margin-top:14px;"><span class="small muted"><i class="bi bi-box-seam"></i> Cesto de origem</span>
+      <div class="db-grid">
+        <div><span class="small muted">Cesto</span><br><strong>${co.numero_cesto}</strong></div>
+        <div><span class="small muted">Preparação</span><br><strong>${co.prep_minutos} min</strong></div>
+        <div><span class="small muted">Banho</span><br><strong>${co.banho_minutos} min</strong></div>
+        <div><span class="small muted">Saiu do banho</span><br><strong>${co.banho_fim||'—'}</strong></div>
+      </div>
+      <div class="small muted" style="margin-top:6px;">Preparado por: ${co.operadores_prep_txt||'—'}</div></div>`:''}
+    ${l.local?`<div class="db-obs" style="margin-top:12px;"><span class="small muted">Armazenamento:</span><br>${l.local}</div>`:''}
+    ${hist?`<div style="margin-top:16px;"><span class="small muted"><i class="bi bi-clock-history"></i> Histórico na pintura</span>${hist}</div>`:''}`;
+}
+
+/* ── escolher ação ── */
+function armazenar(onde){
+  acao='ARMAZENAMENTO';subSel=onde;subOutro.value='';subJust.value='';
+  irParaOperadores();
+}
+
+function escolherAcao(a){
+  acao=a;subSel='';
+  if(a==='RETRABALHO'){prepararRetrabalho();return;}
+  if(a==='PREPARACAO'){
+    subTitulo.textContent='Qual atividade será realizada?';
+    subGrid.innerHTML=ATIV_PREP.map(x=>`<button class="sub-btn" data-v="${x}" onclick="setSub(this)">${x}</button>`).join('');
+    subJustBox.style.display='none';subOutroBox.style.display='none';subOutro.value='';
+    subOk.disabled=true;mostrarView('sub');return;
+  }
+  irParaOperadores();
+}
+function setSub(btn){
+  subGrid.querySelectorAll('.sub-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');subSel=btn.dataset.v;
+  subOutroBox.style.display=subSel.toLowerCase().startsWith('outro')?'':'none';
+  subOk.disabled=false;
+}
+function irParaOperadores(){
+  const rot={MONOVIA:'Carregar monovia',ESTACIONARIA:'Carregar estacionária',
+             PREPARACAO:'Preparação para pintura',ARMAZENAMENTO:'Armazenamento',
+             DESCARGA:'Descarregar'}[acao]||acao;
+  operCtx.querySelector('span').textContent=rot+(subSel?(' · '+(subSel.toLowerCase().startsWith('outro')&&subOutro.value?subOutro.value:subSel)):'');
+  nOper=1;_selOper=[];[1,2,3,4].forEach(k=>document.getElementById('nop'+k).classList.toggle('active',k===1));
+  opAsk.style.display='';opSel.style.display='none';
+  mostrarView('oper');
+}
+
+/* ── operadores ── */
+async function carregarOperadores(){try{OPERADORES=await (await fetch('/api/operadores/prep')).json();}catch(_){OPERADORES=[];}}
+function setNOper(n){nOper=n;[1,2,3,4].forEach(k=>document.getElementById('nop'+k).classList.toggle('active',n===k));
+  if(_selOper.length>nOper)_selOper=_selOper.slice(0,nOper);
+  if(opSel.style.display!=='none')renderOperLista();}
+function mostrarSelOper(){opAsk.style.display='none';opSel.style.display='block';opSearch.value='';opNovoNome.value='';renderOperLista();}
+function voltarAsk(){opSel.style.display='none';opAsk.style.display='block';}
+function toggleOper(mat){
+  const i=_selOper.findIndex(o=>!o.custom&&o.matricula===mat);
+  if(i>=0)_selOper.splice(i,1);
+  else{const op=OPERADORES.find(o=>o.matricula===mat);if(!op)return;
+    if(nOper===1)_selOper=[{nome:op.nome,matricula:op.matricula}];
+    else if(_selOper.length<nOper)_selOper.push({nome:op.nome,matricula:op.matricula});}
+  renderOperLista();
+}
+function addOperManual(){
+  const n=opNovoNome.value.trim();if(!n)return;
+  if(nOper===1)_selOper=[{nome:n,matricula:'',custom:true}];
+  else if(_selOper.length<nOper)_selOper.push({nome:n,matricula:'',custom:true});
+  opNovoNome.value='';renderOperLista();
+}
+function renderOperLista(){
+  opChips.innerHTML=_selOper.map((o,i)=>`<span class="op-chip">${o.nome}${o.matricula?`<span class="op-chip-mat">${o.matricula}</span>`:''}<button class="op-chip-x" onclick="_selOper.splice(${i},1);renderOperLista()">&times;</button></span>`).join('')
+    ||'<span class="muted small">Nenhum selecionado</span>';
+  const f=(opSearch.value||'').toLowerCase();
+  opLista.innerHTML=OPERADORES.filter(o=>!f||o.nome.toLowerCase().includes(f)||o.matricula.toLowerCase().includes(f))
+    .map(o=>{const sel=_selOper.some(x=>!x.custom&&x.matricula===o.matricula);
+      return `<button class="op-item ${sel?'sel':''}" onclick="toggleOper('${o.matricula}')">
+        <span class="op-check"><i class="bi ${sel?'bi-check-circle-fill':'bi-circle'}"></i></span>
+        <span style="flex:1;">${o.nome}</span><span class="op-chip-mat">${o.matricula}</span></button>`;}).join('')
+    ||'<div class="muted small" style="padding:8px;">Nenhum operador encontrado.</div>';
+  opCount.textContent=`— ${_selOper.length} de ${nOper}`;
+  opConfirm.disabled=_selOper.length===0;
+}
+
+/* ── iniciar / cronômetro ── */
+async function iniciarAtividade(){
+  const body={lote_id:loteAtual.id,tipo:acao,subtipo:subSel,
+    subtipo_outro:subOutro.value.trim(),justificativa:subJust.value.trim(),
+    n_operadores:nOper,operadores:_selOper};
+  const j=await (await fetch('/api/pintura/atividade/iniciar',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if(!j.sucesso){alert(j.erro||'Erro ao iniciar.');return;}
+  // Fecha e volta para a lista: o cronômetro corre no card da coluna
+  // "Carregando agora", igual ao pré-banho e ao banho.
+  fecharModal();
+}
+function abrirCron(){
+  cronRot.textContent=(ativAtual.tipo_lbl||'')+(ativAtual.detalhe?' · '+ativAtual.detalhe:'');
+  cronBig.textContent=fmtTempo(segAtiv(ativAtual));
+  atualizarBotaoPausa();mostrarView('cron');
+}
+async function abrirAtividade(loteId,alvo){
+  const l=await (await fetch('/api/pintura/lote/'+loteId)).json();
+  loteAtual=l;
+  ativAtual=(l.historico||[]).find(h=>h.estado==='EM_ANDAMENTO');
+  if(!ativAtual){carregar();return;}
+  acao=ativAtual.tipo;
+  mTitulo.textContent=l.numero_cesto&&l.com_cesto?('Cesto '+l.numero_cesto):('Lote #'+l.id);
+  if(alvo==='pausa'){                 // parada: age direto, sem abrir a tela do cronômetro
+    if(ativAtual.pausado){await enviarPausa('');carregar();return;}
+    modal.classList.add('open');abrirCron();pedirPausa();return;
+  }
+  modal.classList.add('open');abrirCron();
+  if(alvo==='fim')pedirFinalizar();
+}
+function atualizarBotaoPausa(){
+  const p=ativAtual&&ativAtual.pausado;
+  btnPausa.innerHTML=p?'<i class="bi bi-play-fill"></i>Retomar':'<i class="bi bi-pause-fill"></i>Lançar parada';
+  cronSt.textContent=p?('Parado: '+(ativAtual.pausa_motivo||'')):'';
+}
+function pedirPausa(){
+  if(ativAtual.pausado){enviarPausa('');return;}
+  outroMotivo.style.display='none';modalMotivo.classList.add('open');
+}
+function fecharMotivo(){modalMotivo.classList.remove('open');}
+modalMotivo.addEventListener('click',e=>{if(e.target.id==='modalMotivo')fecharMotivo();});
+function escolherMotivo(m){
+  if(m==='Outros'){outroMotivo.style.display='';outroMotivoTxt.value='';outroMotivoTxt.focus();return;}
+  fecharMotivo();enviarPausa(m);
+}
+function confirmarOutroMotivo(){const t=outroMotivoTxt.value.trim();if(!t)return;fecharMotivo();enviarPausa(t);}
+async function enviarPausa(motivo){
+  const j=await (await fetch('/api/pintura/atividade/pausar',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({id:ativAtual.id,motivo})})).json();
+  if(!j.sucesso){alert(j.erro||'Erro.');return;}
+  const l=await (await fetch('/api/pintura/lote/'+loteAtual.id)).json();
+  ativAtual=(l.historico||[]).find(h=>h.estado==='EM_ANDAMENTO')||ativAtual;
+  atualizarBotaoPausa();cronBig.textContent=fmtTempo(segAtiv(ativAtual));
+}
+
+/* ── finalizar ── */
+function pedirFinalizar(){
+  destinoFim='';fimObs.value='';fimLocal.value='';
+  fimDestinoBox.style.display=(acao==='PREPARACAO')?'':'none';
+  fimRepasseBox.style.display=(acao==='DESCARGA')?'':'none';
+  if(acao==='DESCARGA'){
+    repasseModo=0;rpQtd.value='';rpMotivo.value='';rpMax.textContent=`(máx. ${loteAtual.quantidade})`;
+    rpQtd.max=loteAtual.quantidade;setRepasse(0);
+  }
+  fimDestinoBox.querySelectorAll('.sub-btn').forEach(b=>b.classList.remove('active'));
+  fimResumo.innerHTML=`<div><span class="small muted">Peças</span><br><strong>${loteAtual.quantidade}</strong></div>
+    <div><span class="small muted">Área</span><br><strong>${loteAtual.area_total} m²</strong></div>
+    <div><span class="small muted">Tempo</span><br><strong>${fmtTempo(segAtiv(ativAtual))}</strong></div>
+    <div><span class="small muted">Paradas</span><br><strong>${ativAtual.total_pausa_min||0} min</strong></div>`;
+  mostrarView('fim');
+}
+let repasseModo=0;
+function setRepasse(m){
+  repasseModo=m;
+  rpNao.classList.toggle('active',m===0);
+  rpParte.classList.toggle('active',m===1);
+  rpTudo.classList.toggle('active',m===2);
+  rpQtdBox.style.display=(m===1)?'':'none';
+  rpMotivoBox.style.display=(m===0)?'none':'';
+  rpHint.textContent = m===0 ? ''
+    : 'As peças ficam penduradas e dão outra volta na cabine. Elas voltam a aparecer '
+      +'na coluna de descarga depois de uma volta completa do trilho.';
+}
+
+function setDestino(btn){
+  fimDestinoBox.querySelectorAll('.sub-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');destinoFim=btn.dataset.dest;
+}
+async function confirmarFinalizar(){
+  if(acao==='PREPARACAO'&&!destinoFim){alert('Escolha para onde vão as peças.');return;}
+  const body={id:ativAtual.id,observacao:fimObs.value.trim(),destino:destinoFim,local:fimLocal.value.trim()};
+  if(acao==='DESCARGA'){
+    let q=0;
+    if(repasseModo===2)q=loteAtual.quantidade;
+    else if(repasseModo===1){
+      q=parseInt(rpQtd.value||'0',10);
+      if(!(q>0&&q<loteAtual.quantidade)){alert(`Informe de 1 a ${loteAtual.quantidade-1} peças.`);return;}
+    }
+    if(q>0&&!rpMotivo.value){alert('Informe o motivo do repasse.');return;}
+    body.qtd_repasse=q; body.motivo_repasse=rpMotivo.value;
+  }
+  const j=await (await fetch('/api/pintura/atividade/finalizar',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if(!j.sucesso){alert(j.erro||'Erro ao finalizar.');return;}
+  if(j.proxima){                       // preparação → segue direto para o carregamento
+    const l=await (await fetch('/api/pintura/lote/'+j.lote_id)).json();
+    loteAtual=l;acao=j.proxima;subSel='';subOutro.value='';subJust.value='';
+    irParaOperadores();return;
+  }
+  fecharModal();
+}
+
+/* ── retrabalho ── */
+function prepararRetrabalho(){
+  rbTodas=null;rbRepos=null;rbQtd.value='';rbMotivo.value='';rbLocal.value='';rbCesto.value='';
+  rbQtdBox.style.display='none';rbLocalBox.style.display='none';rbReposBox.style.display='none';
+  rbCestoBox.style.display=loteAtual.com_cesto?'none':'';
+  rbTodasBtnReset();rbOk.disabled=true;rbHint.textContent='';
+  rbMax.textContent=`(máx. ${loteAtual.quantidade})`;
+  mostrarView('retrab');
+}
+function rbTodasBtnReset(){document.getElementById('rbTodas').classList.remove('active');
+  document.getElementById('rbParcial').classList.remove('active');
+  document.getElementById('rbSim').classList.remove('active');
+  document.getElementById('rbNao').classList.remove('active');}
+function setRetrabTodas(v){
+  rbTodas=v;
+  document.getElementById('rbTodas').classList.toggle('active',v);
+  document.getElementById('rbParcial').classList.toggle('active',!v);
+  rbQtdBox.style.display=v?'none':'';
+  rbLocalBox.style.display=v?'none':'';
+  rbReposBox.style.display='';
+  validarRetrab();
+}
+function setRepos(v){
+  rbRepos=v;
+  document.getElementById('rbSim').classList.toggle('active',v);
+  document.getElementById('rbNao').classList.toggle('active',!v);
+  rbHint.textContent=v?'O cesto ficará como AGUARDANDO MONTAGEM na tela do pré-banho.'
+                      :'O cadastro será confirmado agora e o cesto vai direto para a fila do banho.';
+  validarRetrab();
+}
+function validarRetrab(){
+  let ok = rbTodas!==null && rbRepos!==null;
+  if(rbTodas===false){
+    const q=parseInt(rbQtd.value||'0',10);
+    ok = ok && q>0 && q<loteAtual.quantidade && rbLocal.value.trim().length>0;
+  }
+  if(!loteAtual.com_cesto) ok = ok && parseInt(rbCesto.value||'0',10)>0;
+  rbOk.disabled=!ok;
+}
+rbLocal.addEventListener('input',validarRetrab);
+async function confirmarRetrabalho(){
+  const body={lote_id:loteAtual.id,todas:rbTodas,quantidade:parseInt(rbQtd.value||'0',10),
+    reposicionamento:rbRepos,motivo:rbMotivo.value.trim(),local_restante:rbLocal.value.trim()};
+  if(!loteAtual.com_cesto)body.numero_cesto=parseInt(rbCesto.value||'0',10);
+  const j=await (await fetch('/api/pintura/retrabalho',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if(!j.sucesso){alert(j.erro||'Erro.');return;}
+  if(j.reposicionamento){
+    alert(`Cesto ${j.numero_cesto} enviado ao pré-banho como AGUARDANDO MONTAGEM.`);
+    fecharModal();return;
+  }
+  // sem reposicionamento: cadastro na hora
+  abrirCadastro('retrabalho', j.card);
+}
+
+/* ── cadastro de OP (OP nova e retrabalho) ── */
+function abrirOpNova(){
+  loteAtual=null;ativAtual=null;
+  modal.classList.add('open');
+  mTitulo.textContent='Carregar OP nova';
+  abrirCadastro('op_nova');
+}
+function abrirCadastro(modo,card){
+  cadModo=modo;cadDest='';cadCardId=card?card.id:null;
+  cadItens=card?JSON.parse(JSON.stringify(card.itens||[])):[];
+  cadDestBox.style.display=(modo==='op_nova')?'':'none';
+  cadDestBox.querySelectorAll('.sub-btn').forEach(b=>b.classList.remove('active'));
+  cadProc.value=card?(card.processo||''):'';
+  cadObs.value=card?(card.observacao||''):'';
+  cadOp.value='';cadMsg.textContent='';
+  cadCtx.querySelector('span').textContent = modo==='op_nova'
+    ? 'OP avulsa: as peças não ficam vinculadas a nenhum cesto.'
+    : `Cesto ${card.numero_cesto} — retrabalho. Os itens já vêm do processo e ficam travados como Retrabalho.`;
+  cadOk.innerHTML = modo==='op_nova'
+    ? '<i class="bi bi-arrow-right"></i>Continuar'
+    : '<i class="bi bi-check2-circle"></i>Concluir e enviar ao banho';
+  renderCadItens();mostrarView('cad');
+}
+function setCadDest(btn){
+  cadDestBox.querySelectorAll('.sub-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');cadDest=btn.dataset.d;
+}
+function renderCadItens(){
+  cadItens.forEach(it=>{if(cadModo==='retrabalho')it.tipo='Retrabalho';});
+  cadItens_render();
+}
+function cadItens_render(){
+  document.getElementById('cadItens').innerHTML=cadItens.length?cadItens.map((it,i)=>`
+    <div class="item-op-edit${it.tipo==='Retrabalho'?' item-op-retrab':''}">
+      <div class="item-op-head">
+        <span class="item-op-n">${i+1}</span>
+        <span class="pill ${it.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}" style="margin-left:auto;margin-right:8px;">${it.tipo||'Normal'}</span>
+        <button class="item-op-del" onclick="cadItens.splice(${i},1);cadItens_render()"><i class="bi bi-trash"></i></button>
+      </div>
+      <div class="item-grid">
+        <div><label class="mini-label">OP</label><input class="input input-sm" value="${it.ordem||''}"
+          oninput="cadItens[${i}].ordem=this.value" inputmode="numeric"></div>
+        <div><label class="mini-label">Código</label><input class="input input-sm" value="${it.material||''}"
+          oninput="cadItens[${i}].material=this.value"></div>
+        <div class="item-grid-full"><label class="mini-label">Descrição</label>
+          <input class="input input-sm" value="${(it.texto_breve||'').replace(/"/g,'&quot;')}"
+            oninput="cadItens[${i}].texto_breve=this.value"></div>
+        <div><label class="mini-label">Quantidade</label><input class="input input-sm" type="number" min="0"
+          value="${it.quantidade||0}" oninput="cadItens[${i}].quantidade=parseInt(this.value||'0',10)"></div>
+      </div>
+    </div>`).join(''):'<div class="muted small" style="padding:8px 0;">Nenhuma OP ainda. Bipe ou digite abaixo.</div>';
+}
+async function cadAddOrdem(){
+  const v=cadOp.value.trim();if(!v)return;
+  cadMsg.textContent='Buscando…';
+  try{
+    const j=await (await fetch('/api/buscar_ordem/'+encodeURIComponent(v))).json();
+    if(j.encontrado){
+      cadItens.push({ordem:j.ordem,material:j.material,texto_breve:j.texto_breve,
+        quantidade:j.quantidade,tipo:cadModo==='retrabalho'?'Retrabalho':'Normal',motivo:''});
+      cadMsg.textContent='';
+    }else{
+      cadItens.push({ordem:j.ordem||v,material:'',texto_breve:'',quantidade:0,
+        tipo:cadModo==='retrabalho'?'Retrabalho':'Normal',motivo:''});
+      cadMsg.textContent='OP não encontrada na lista mestra — preencha a quantidade manualmente.';
+    }
+  }catch(_){cadMsg.textContent='Falha na busca.';}
+  cadOp.value='';cadItens_render();cadOp.focus();
+}
+cadOp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();cadAddOrdem();}});
+
+async function confirmarCadastro(){
+  if(!cadItens.length){alert('Adicione ao menos uma OP.');return;}
+  if(cadModo==='op_nova'){
+    if(!cadDest){alert('Escolha monovia ou estacionária.');return;}
+    // guarda o cadastro e segue para a seleção de operadores
+    _opNovaPendente={destino:cadDest,itens:cadItens,processo:cadProc.value,observacao:cadObs.value.trim()};
+    acao=(cadDest==='monovia')?'MONOVIA':'ESTACIONARIA';subSel='';
+    operCtx.querySelector('span').textContent='Carregar OP nova · '+(cadDest==='monovia'?'Monovia':'Estacionária');
+    nOper=1;_selOper=[];[1,2,3,4].forEach(k=>document.getElementById('nop'+k).classList.toggle('active',k===1));
+    opAsk.style.display='';opSel.style.display='none';
+    _modoOpNova=true;mostrarView('oper');return;
+  }
+  const j=await (await fetch('/api/pintura/retrabalho/cadastrar',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:cadCardId,itens:cadItens,processo:cadProc.value,observacao:cadObs.value.trim()})})).json();
+  if(!j.sucesso){alert(j.erro||'Erro.');return;}
+  alert('Cesto enviado para a fila do banho.');
+  fecharModal();
+}
+
+/* OP nova: iniciar depois de escolher operadores */
+let _opNovaPendente=null,_modoOpNova=false;
+const _iniciarOriginal=iniciarAtividade;
+iniciarAtividade=async function(){
+  if(!_modoOpNova)return _iniciarOriginal();
+  const body={..._opNovaPendente,n_operadores:nOper,operadores:_selOper};
+  const j=await (await fetch('/api/pintura/op_nova',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if(!j.sucesso){alert(j.erro||'Erro.');return;}
+  _modoOpNova=false;_opNovaPendente=null;
+  fecharModal();
+};
+
+/* ── boot ── */
+sincronizarRelogio().then(()=>carregarAgenda()).then(carregarOperadores).then(()=>{
+  carregar();setInterval(()=>{if(!modal.classList.contains('open'))carregar();},5000);
+  setInterval(tick,1000);
+});
+setInterval(sincronizarRelogio,60000);
+setInterval(carregarAgenda,300000);
+</script>
+{% endblock %}

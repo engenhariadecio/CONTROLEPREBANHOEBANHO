@@ -7,6 +7,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+.etapa-bloco{margin-top:16px;border-top:1px solid rgba(15,61,92,.12);padding-top:12px;}
+.etapa-item{border-left:3px solid rgba(14,154,167,.45);padding:6px 0 6px 12px;margin-bottom:10px;}
+.etapa-nome{font-weight:700;font-size:.88rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.etapa-item .small{font-size:.76rem;}
+.chart-per{font-size:.7rem;opacity:.6;font-weight:500;margin-left:6px;}
+</style>
 </head>
 <body class="gp-body">
 <main class="gp-wrap">
@@ -53,6 +60,18 @@
 
   <!-- ══════════════════ VISÃO: AO VIVO ══════════════════ -->
   <section id="viewLive">
+    <div id="pintHoje" style="display:none;">
+      <div class="gp-secao"><i class="bi bi-palette-fill"></i>Pintado hoje<span class="gp-secao-tag" id="hojeTag"></span></div>
+      <div class="gp-kpis gp-kpis-3" style="margin-bottom:20px;">
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-violet"><i class="bi bi-stack"></i></div><div><div class="gp-kpi-val" id="hjPecas">0</div><div class="gp-kpi-lbl">Peças na linha hoje</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-bounding-box"></i></div><div><div class="gp-kpi-val" id="hjArea">0</div><div class="gp-kpi-lbl">Área hoje (m²)</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-arrow-left-right"></i></div><div><div class="gp-kpi-val" id="hjMv">0</div><div class="gp-kpi-lbl">Cargas monovia</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-house-gear-fill"></i></div><div><div class="gp-kpi-val" id="hjEs">0</div><div class="gp-kpi-lbl">Cargas estacionária</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-list-ol"></i></div><div><div class="gp-kpi-val" id="hjFila">0</div><div class="gp-kpi-lbl">Na fila da pintura</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-sky"><i class="bi bi-hourglass-top"></i></div><div><div class="gp-kpi-val" id="hjEspera">—</div><div class="gp-kpi-lbl">Maior espera na fila</div></div></div>
+      </div>
+    </div>
+
     <div class="gp-secao"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos ativos agora<span class="gp-secao-tag" id="ativosTag"></span></div>
     <div class="cat-menu" id="catMenu">
       <button class="cat-tab on" data-cat="" onclick="setCategoria('')"><i class="bi bi-grid-fill"></i>Todos <span class="cat-count" id="cnt-todos">0</span></button>
@@ -60,6 +79,8 @@
       <button class="cat-tab" data-cat="PREENCHER" onclick="setCategoria('PREENCHER')"><i class="bi bi-pencil-square"></i>Aguardando cadastro <span class="cat-count" id="cnt-PREENCHER">0</span></button>
       <button class="cat-tab" data-cat="FILA_BANHO" onclick="setCategoria('FILA_BANHO')"><i class="bi bi-list-ol"></i>Aguardando banho <span class="cat-count" id="cnt-FILA_BANHO">0</span></button>
       <button class="cat-tab" data-cat="EM_BANHO" onclick="setCategoria('EM_BANHO')"><i class="bi bi-droplet-fill"></i>Em banho <span class="cat-count" id="cnt-EM_BANHO">0</span></button>
+      <button class="cat-tab" data-cat="FILA_PINTURA" onclick="setCategoria('FILA_PINTURA')"><i class="bi bi-list-ol"></i>Aguardando pintura <span class="cat-count" id="cnt-FILA_PINTURA">0</span></button>
+      <button class="cat-tab" data-cat="CARREGANDO_PINT" onclick="setCategoria('CARREGANDO_PINT')"><i class="bi bi-palette-fill"></i>Carregando <span class="cat-count" id="cnt-CARREGANDO_PINT">0</span></button>
     </div>
     <div id="ativosWrap" class="ativos-cats">
       <div class="gp-card muted small" style="padding:16px;">Carregando…</div>
@@ -116,6 +137,8 @@
     <div class="setor-bar">
       <button class="setor-btn on" id="setorPrep" onclick="setSetor('prep')"><i class="bi bi-hourglass-split"></i> Pré-banho <span class="setor-cnt" id="cntPrep">0</span></button>
       <button class="setor-btn" id="setorBanho" onclick="setSetor('banho')"><i class="bi bi-droplet-fill"></i> Banho <span class="setor-cnt" id="cntBanho">0</span></button>
+      <button class="setor-btn" id="setorPintura" onclick="setSetor('pintura')"><i class="bi bi-palette-fill"></i> Pintura <span class="setor-cnt" id="cntPintura">0</span></button>
+      <button class="setor-btn" id="setorGeral" onclick="setSetor('geral')"><i class="bi bi-diagram-3-fill"></i> Todos <span class="setor-cnt" id="cntGeral">0</span></button>
     </div>
     <p class="small muted" id="setorHint" style="margin:0 0 6px;"></p>
 
@@ -124,8 +147,8 @@
     <div class="gp-kpis">
       <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-check2-all"></i></div><div><div class="gp-kpi-val" id="kTotal">0</div><div class="gp-kpi-lbl" id="lblTotal">Concluídos</div></div></div>
       <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kAnd">0</div><div class="gp-kpi-lbl">Em andamento</div></div></div>
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-check-circle-fill"></i></div><div><div class="gp-kpi-val" id="kBanhoNormal">0</div><div class="gp-kpi-lbl">Normais</div></div></div>
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kBanhoRetrab">0</div><div class="gp-kpi-lbl">Retrabalho</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-check-circle-fill"></i></div><div><div class="gp-kpi-val" id="kBanhoNormal">0</div><div class="gp-kpi-lbl" id="lblNormais">Normais</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kBanhoRetrab">0</div><div class="gp-kpi-lbl" id="lblRetrab">Retrabalho</div></div></div>
     </div>
 
     <div class="gp-secao"><i class="bi bi-clock-fill"></i>Tempo médio (min)</div>
@@ -135,28 +158,70 @@
       <div class="gp-kpi" id="kpiBanho"><div class="gp-kpi-ic ic-sky"><i class="bi bi-droplet-half"></i></div><div><div class="gp-kpi-val" id="kBanho">0</div><div class="gp-kpi-lbl">Banho</div></div></div>
     </div>
 
+    <div id="blocoGeral" style="display:none;">
+      <div class="gp-secao"><i class="bi bi-clock-history"></i>Tempo médio de cada etapa (min)</div>
+      <div class="gp-kpis gp-kpis-3">
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="gPrep">0</div><div class="gp-kpi-lbl">Preparação pré-banho</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-violet"><i class="bi bi-list-ol"></i></div><div><div class="gp-kpi-val" id="gAgBanho">0</div><div class="gp-kpi-lbl">Aguardando banho</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-droplet-fill"></i></div><div><div class="gp-kpi-val" id="gBanho">0</div><div class="gp-kpi-lbl">Banho</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-hourglass-top"></i></div><div><div class="gp-kpi-val" id="gAgPint">0</div><div class="gp-kpi-lbl">Aguardando pintura</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-arrow-left-right"></i></div><div><div class="gp-kpi-val" id="gMv">0</div><div class="gp-kpi-lbl">Carregamento monovia</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-sky"><i class="bi bi-house-gear-fill"></i></div><div><div class="gp-kpi-val" id="gEst">0</div><div class="gp-kpi-lbl">Carregamento estacionária</div></div></div>
+      </div>
+      <div class="gp-kpis gp-kpis-3" style="margin-top:14px;">
+        <div class="gp-kpi" style="grid-column:span 2;"><div class="gp-kpi-ic ic-green"><i class="bi bi-stopwatch-fill"></i></div><div><div class="gp-kpi-val" id="gTotal">0</div><div class="gp-kpi-lbl">Tempo médio total do processo (início ao fim)</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-check2-all"></i></div><div><div class="gp-kpi-val" id="gConcl">0</div><div class="gp-kpi-lbl">Cestos com ciclo completo</div></div></div>
+      </div>
+    </div>
+
+    <div id="blocoPintura" style="display:none;">
+      <div class="gp-secao"><i class="bi bi-signpost-split-fill"></i>Destino do cesto (definido pelo operador)</div>
+      <div class="gp-kpis gp-kpis-3">
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-arrow-left-right"></i></div><div><div class="gp-kpi-val" id="kMvCargas">0</div><div class="gp-kpi-lbl">Monovia — carregamentos</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-stack"></i></div><div><div class="gp-kpi-val" id="kMvPecas">0</div><div class="gp-kpi-lbl">Monovia — peças</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-violet"><i class="bi bi-clock-fill"></i></div><div><div class="gp-kpi-val" id="kMvTempo">0</div><div class="gp-kpi-lbl">Monovia — min/carga</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-house-gear-fill"></i></div><div><div class="gp-kpi-val" id="kEsCargas">0</div><div class="gp-kpi-lbl">Estacionária — carregamentos</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-stack"></i></div><div><div class="gp-kpi-val" id="kEsPecas">0</div><div class="gp-kpi-lbl">Estacionária — peças</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-sky"><i class="bi bi-clock-fill"></i></div><div><div class="gp-kpi-val" id="kEsTempo">0</div><div class="gp-kpi-lbl">Estacionária — min/carga</div></div></div>
+      </div>
+      <div class="gp-secao"><i class="bi bi-palette-fill"></i>Monovia e aproveitamento</div>
+      <div class="gp-kpis gp-kpis-3">
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-check-circle-fill"></i></div><div><div class="gp-kpi-val" id="kAprov">0%</div><div class="gp-kpi-lbl">Aproveitamento</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-clockwise"></i></div><div><div class="gp-kpi-val" id="kRepasse">0</div><div class="gp-kpi-lbl">Peças em repasse</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-rulers"></i></div><div><div class="gp-kpi-val" id="kOcup">0%</div><div class="gp-kpi-lbl">Ocupação do trilho</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-violet"><i class="bi bi-bounding-box"></i></div><div><div class="gp-kpi-val" id="kAreaProc">0</div><div class="gp-kpi-lbl">Área processada (m²)</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-sky"><i class="bi bi-box-arrow-down"></i></div><div><div class="gp-kpi-val" id="kDescarga">0</div><div class="gp-kpi-lbl">Tempo descarga (min)</div></div></div>
+        <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-pause-circle-fill"></i></div><div><div class="gp-kpi-val" id="kParadas">0</div><div class="gp-kpi-lbl">Paradas monovia (min)</div></div></div>
+      </div>
+    </div>
+
     <div class="gp-secao"><i class="bi bi-bar-chart-line-fill"></i>Totais e qualidade</div>
     <div class="gp-kpis gp-kpis-3">
       <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-stack"></i></div><div><div class="gp-kpi-val" id="kPecas">0</div><div class="gp-kpi-lbl">Peças totais</div></div></div>
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-box-seam"></i></div><div><div class="gp-kpi-val" id="kPeso">0</div><div class="gp-kpi-lbl">Peso total (kg)</div></div></div>
       <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-rulers"></i></div><div><div class="gp-kpi-val" id="kArea">0</div><div class="gp-kpi-lbl">Área total (m²)</div></div></div>
       <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-list-ol"></i></div><div><div class="gp-kpi-val" id="kTotalOps">0</div><div class="gp-kpi-lbl">OPs processadas</div></div></div>
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-boxes"></i></div><div><div class="gp-kpi-val" id="kMediaPecas">0</div><div class="gp-kpi-lbl">Média peças/cesto</div></div></div>
       <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kTaxaRetrab">0%</div><div class="gp-kpi-lbl">Taxa de retrabalho</div></div></div>
     </div>
 
     <!-- Gráficos -->
     <div class="gp-secao"><i class="bi bi-pie-chart-fill"></i>Análise gráfica</div>
     <div class="chart-grid">
-      <div class="chart-box"><h6><i class="bi bi-pie-chart-fill"></i>Normal × Retrabalho</h6><canvas id="chartTipo" height="200"></canvas></div>
+      <div class="chart-box"><h6><i class="bi bi-graph-up"></i>Cestos por dia<span class="chart-per" id="chartDiaPer"></span></h6><canvas id="chartDia" height="180"></canvas></div>
       <div class="chart-box"><h6><i class="bi bi-bar-chart-fill"></i>Cestos por processo</h6><canvas id="chartProc" height="200"></canvas></div>
-    </div>
-    <div class="chart-grid">
-      <div class="chart-box"><h6><i class="bi bi-graph-up"></i>Cestos concluídos por dia</h6><canvas id="chartDia" height="180"></canvas></div>
-      <div class="chart-box"><h6><i class="bi bi-box-seam"></i>Peso processado por dia (kg)</h6><canvas id="chartPeso" height="180"></canvas></div>
     </div>
     <div class="chart-grid" style="grid-template-columns:1fr;">
       <div class="chart-box"><h6><i class="bi bi-rulers"></i>Área processada por dia (m²)</h6><canvas id="chartArea" height="170"></canvas></div>
+    </div>
+
+    <div id="graficosPintura" style="display:none;">
+      <div class="chart-grid">
+        <div class="chart-box"><h6><i class="bi bi-signpost-split-fill"></i>Monovia × Estacionária</h6><canvas id="chartDestino" height="200"></canvas></div>
+        <div class="chart-box"><h6><i class="bi bi-check-circle-fill"></i>Aproveitamento × repasse</h6><canvas id="chartAprov" height="200"></canvas></div>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-box"><h6><i class="bi bi-list-check"></i>Lançamentos por tipo</h6><canvas id="chartTipos" height="180"></canvas></div>
+        <div class="chart-box"><h6><i class="bi bi-clock-history"></i>Tempos médios (min)</h6><canvas id="chartTempos" height="180"></canvas></div>
+      </div>
     </div>
 
     <!-- Tabela do setor selecionado -->
@@ -167,21 +232,10 @@
         <table class="tbl">
           <thead><tr>
             <th>#</th><th>Cesto</th><th>OP</th><th>Código</th><th>Texto breve</th><th>Qtd</th>
-            <th>Processo</th><th>Tipo</th><th>Operadores</th><th>Cadastrado por</th><th>Prep (min)</th><th>Fim preparação</th><th>Estado</th><th>Ver</th>
+            <th>Processo</th><th>Tipo</th>
+            <th>Início do processo</th><th>Fim do processo</th><th>Total (min)</th><th>Estado</th><th>Ver</th>
           </tr></thead>
-          <tbody id="histBodyPrep"><tr><td colspan="14" class="empty">Carregando…</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="gp-card" id="wrapBanho" style="overflow:hidden;padding:0;display:none;">
-      <div class="table-wrap">
-        <table class="tbl">
-          <thead><tr>
-            <th>#</th><th>Cesto</th><th>OP</th><th>Código</th><th>Texto breve</th><th>Qtd</th>
-            <th>Processo</th><th>Tipo</th><th>Operadores</th><th>Cadastrado por</th><th>Banho (min)</th><th>Fim banho</th><th>Ver</th>
-          </tr></thead>
-          <tbody id="histBodyBanho"><tr><td colspan="13" class="empty">Carregando…</td></tr></tbody>
+          <tbody id="histBodyPrep"><tr><td colspan="13" class="empty">Carregando…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -215,8 +269,10 @@ const ESTADO_INFO={
   PREENCHER:{t:'Aguardando cadastro',c:'#64748b',i:'pencil-square'},
   FILA_BANHO:{t:'Aguardando banho',c:'#7C5CFC',i:'list-ol'},
   EM_BANHO:{t:'Em banho',c:'#1668C0',i:'droplet-fill'},
+  FILA_PINTURA:{t:'Aguardando pintura',c:'#D97706',i:'list-ol'},
+  CARREGANDO_PINT:{t:'Carregando na pintura',c:'#0E9AA7',i:'palette-fill'},
 };
-const ORDEM_CAT=['PREPARANDO','PREENCHER','FILA_BANHO','EM_BANHO'];
+const ORDEM_CAT=['PREPARANDO','PREENCHER','FILA_BANHO','EM_BANHO','FILA_PINTURA','CARREGANDO_PINT'];
 let _offset=0;
 async function _sincronizar(){
   try{const t0=Date.now();const j=await (await fetch('/api/agora')).json();const t1=Date.now();
@@ -235,6 +291,10 @@ function _cardAtivoHTML(c){
     cronHTML=`<div class="ativo-cron cron-el" data-tipo="corrido" data-ini="${c.banho_inicio_iso}">${_fmt(_segDe(c.banho_inicio_iso))}</div>`;
   }else if(c.estado==='FILA_BANHO'&&c.prep_fim_iso){
     cronHTML=`<div class="ativo-cron cron-el cron-espera" data-tipo="fila" data-ini="${c.prep_fim_iso}">${_fmt(_esperaFila(c.prep_fim_iso))}</div>`;
+  }else if(c.estado==='FILA_PINTURA'&&c._esperaIso){
+    cronHTML=`<div class="ativo-cron cron-el cron-espera" data-tipo="fila" data-ini="${c._esperaIso}">${_fmt(_esperaFila(c._esperaIso))}</div>`;
+  }else if(c.estado==='CARREGANDO_PINT'&&c._cronIso&&!c.pausado){
+    cronHTML=`<div class="ativo-cron cron-el" data-tipo="corrido" data-ini="${c._cronIso}">${_fmt(_segDe(c._cronIso))}</div>`;
   }else if(c.estado==='PREPARANDO'&&!c.pausado&&c.prep_inicio_iso){
     cronHTML=`<div class="ativo-cron cron-el" data-tipo="corrido" data-ini="${c.prep_inicio_iso}">${_fmt(_segDe(c.prep_inicio_iso))}</div>`;
   }else{
@@ -246,8 +306,11 @@ function _cardAtivoHTML(c){
       <span class="ativo-estado" style="background:${e.c}1a;color:${e.c};"><i class="bi bi-${e.i}"></i>${e.t}${c.pausado?' (pausado)':''}</span>
     </div>
     <div class="ativo-info">${(function(){var ops=((c.itens&&c.itens.length)?c.itens.map(function(it){return it.ordem;}):[c.ordem]).filter(Boolean);return ops.length>1?('OPs: '+ops.join(', ')):('OP '+(ops[0]||'—'));})()} · <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}" style="font-size:.6rem;">${c.tipo}</span> · ${c.qtd_total||0} pç</div>
+    ${c._sub?`<div class="ativo-info muted" style="font-size:.7rem;">${c._sub}</div>`:''}
     ${cronHTML}
-    <button class="btn-detalhes btn-detalhes-block" onclick="verDetalhes(${c.id})"><i class="bi bi-eye"></i>Ver detalhes</button>
+    ${c.lote_id
+      ? `<button class="btn-detalhes btn-detalhes-block" onclick="verDetalhesLote(${c.lote_id})"><i class="bi bi-eye"></i>Ver detalhes</button>`
+      : `<button class="btn-detalhes btn-detalhes-block" onclick="verDetalhes('${c.id}')"><i class="bi bi-eye"></i>Ver detalhes</button>`}
   </div>`;
 }
 
@@ -258,14 +321,32 @@ function setCategoria(cat){
   pintarAtivos();
 }
 
+function _lotesComoAtivos(pt){
+  // A pintura trabalha com LOTES (as peças), não com cestos — mas para a
+  // gerência o que importa é "onde está cada coisa agora". Traduzimos os lotes
+  // para o mesmo formato de card, para entrarem na mesma lista.
+  if(!pt)return [];
+  const out=[];
+  (pt.fila||[]).forEach(l=>out.push({...l,id:'L'+l.id,lote_id:l.id,
+    estado:'FILA_PINTURA',qtd_total:l.quantidade,
+    numero_cesto:l.com_cesto?l.numero_cesto:'S/C',
+    _esperaIso:l.criado_iso}));
+  (pt.carregando||[]).forEach(l=>out.push({...l,id:'L'+l.id,lote_id:l.id,
+    estado:'CARREGANDO_PINT',qtd_total:l.quantidade,
+    numero_cesto:l.com_cesto?l.numero_cesto:'S/C',
+    pausado:l.pausado,_cronIso:l.inicio_iso,
+    _sub:(l.tipo_lbl||'')+(l.operadores_txt?' · '+l.operadores_txt:'')}));
+  return out;
+}
+
 function pintarAtivos(){
   const wrap=document.getElementById('ativosWrap');
   if(!wrap)return;
-  const ativos=(window._ativosCache||[]);
+  const ativos=(window._ativosCache||[]).concat(_lotesComoAtivos(window._pintCache));
   const tag=document.getElementById('ativosTag');
   if(tag)tag.textContent=ativos.length?(ativos.length+(ativos.length>1?' cestos':' cesto')):'';
   // contadores por categoria
-  const cont={EM_BANHO:0,FILA_BANHO:0,PREPARANDO:0,PREENCHER:0};
+  const cont={EM_BANHO:0,FILA_BANHO:0,PREPARANDO:0,PREENCHER:0,FILA_PINTURA:0,CARREGANDO_PINT:0};
   ativos.forEach(c=>{if(cont[c.estado]!==undefined)cont[c.estado]++;});
   const t=document.getElementById('cnt-todos'); if(t)t.textContent=ativos.length;
   Object.keys(cont).forEach(k=>{const e=document.getElementById('cnt-'+k);if(e)e.textContent=cont[k];});
@@ -297,11 +378,74 @@ async function carregarAtivos(){
     if(!r.ok) return;
     const d=await r.json();
     window._ativosCache=(d.ativos||[]);
+    window._pintCache=d.pintura||null;
+    pintarFaixaHoje(d.pintura);
     pintarAtivos();
   }catch(_){}
 }
+function pintarFaixaHoje(pt){
+  const box=document.getElementById('pintHoje');
+  if(!box)return;
+  if(!pt){box.style.display='none';return;}
+  box.style.display='';
+  const h=pt.hoje||{};
+  const st=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  st('hjPecas',h.pecas||0); st('hjArea',h.area||0);
+  st('hjMv',h.monovia||0); st('hjEs',h.estacionaria||0);
+  st('hjFila',pt.fila_qtd||0);
+  st('hjEspera',pt.espera_max_seg?_fmt(pt.espera_max_seg):'—');
+  const tag=document.getElementById('hojeTag');
+  if(tag)tag.textContent=(h.cargas||0)+((h.cargas===1)?' carga':' cargas')
+    +(pt.carregando_qtd?(' · '+pt.carregando_qtd+' carregando agora'):'');
+}
+
+async function verDetalhesLote(loteId){
+  // Lote da pintura: busca o histórico completo (todas as etapas, operadores,
+  // tempos e o caminho percorrido) direto do módulo.
+  let l;
+  try{ l=await (await fetch('/api/pintura/lote/'+loteId)).json(); }catch(_){ return; }
+  if(!l||l.erro)return;
+  const itens=(l.itens||[]);
+  const linhas=itens.map(it=>`<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td>
+    <td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td>
+    <td><span class="pill ${it.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${it.tipo||'Normal'}</span></td></tr>`).join('');
+  const co=l.cesto_origem;
+  const hist=(l.historico||[]).map(h=>`<div class="etapa-item">
+    <div class="etapa-nome"><i class="bi bi-palette-fill"></i> ${h.tipo_lbl}${h.detalhe?' · '+h.detalhe:''}
+      ${h.estado==='EM_ANDAMENTO'?'<span class="pill pill-fila">em andamento</span>':''}</div>
+    <div class="small">${h.inicio} ${h.fim?('→ '+h.fim):''} · <strong>${h.minutos} min</strong>${h.total_pausa_min?` · parada ${h.total_pausa_min} min`:''}</div>
+    <div class="small muted">${h.n_operadores} oper.: ${h.operadores_txt||'—'}</div>
+    ${h.pausas&&h.pausas.texto?`<div class="small muted">Paradas: ${h.pausas.texto}</div>`:''}
+    ${h.observacao?`<div class="small muted">Obs.: ${h.observacao}</div>`:''}</div>`).join('');
+  document.getElementById('detTitulo').textContent =
+    (l.com_cesto&&l.numero_cesto)?('Cesto '+l.numero_cesto):('Lote #'+l.id+' (sem cesto)');
+  document.getElementById('detCorpo').innerHTML=`
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <span class="pill pill-fila">${l.estado==='AGUARDANDO'?'Aguardando pintura':'Em atividade'}</span>
+      <span class="pill ${l.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${l.tipo}</span>
+      <span class="pill pill-banho">${l.processo||'Sem processo'}</span>
+    </div>
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr><th>OP</th><th>Código</th><th>Descrição</th><th>Qtd</th><th>Tipo</th></tr></thead>
+      <tbody>${linhas}</tbody></table></div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;">
+      <div><span class="small muted">Peças</span><br><strong style="font-size:1.2rem;">${l.quantidade}</strong></div>
+      <div><span class="small muted">Área</span><br><strong style="font-size:1.2rem;">${l.area_total} m²</strong></div>
+      <div><span class="small muted">Peso</span><br><strong style="font-size:1.2rem;">${l.peso_total} kg</strong></div>
+    </div>
+    ${l.local?`<div class="db-obs" style="margin-top:12px;"><span class="small muted">Armazenamento:</span> ${l.local}</div>`:''}
+    ${co?`<div class="etapa-bloco"><div class="small muted" style="margin-bottom:6px;"><i class="bi bi-signpost-2"></i> Caminho percorrido</div>
+      <div class="etapa-item"><div class="etapa-nome"><i class="bi bi-hourglass-split"></i> Preparação</div>
+        <div class="small"><strong>${co.prep_minutos} min</strong></div>
+        <div class="small muted">${co.operadores_prep_txt||'—'}</div></div>
+      <div class="etapa-item"><div class="etapa-nome"><i class="bi bi-droplet-fill"></i> Banho</div>
+        <div class="small">até ${co.banho_fim||'—'} · <strong>${co.banho_minutos} min</strong></div></div>
+      ${hist}</div>`:(hist?`<div class="etapa-bloco">${hist}</div>`:'')}`;
+  document.getElementById('modalDetalhes').classList.add('open');
+}
+
 function verDetalhes(id){
-  const a=(window._ativosCache||[]).find(x=>x.id===id);
+  const a=(window._ativosCache||[]).find(x=>String(x.id)===String(id));
   if(!a)return;
   const itens=(a.itens&&a.itens.length)?a.itens:[{ordem:a.ordem,material:a.material,texto_breve:a.texto_breve,quantidade:a.quantidade}];
   const linhas=itens.map(it=>{const rt=(it.tipo||'Normal')==='Retrabalho';const pill=`<span class="pill ${rt?'pill-retrab':'pill-normal'}">${it.tipo||'Normal'}</span>${rt&&it.motivo?`<br><span class="small muted">${it.motivo}</span>`:''}`;return `<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td><td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td><td>${pill}</td></tr>`;}).join('');
@@ -326,6 +470,63 @@ function verDetalhes(id){
     ${_operadoresHTML(a)}`;
   document.getElementById('modalDetalhes').classList.add('open');
 }
+// Todas as etapas do cesto: quem fez, quanto tempo e o caminho percorrido.
+function _etapasHTML(a){
+  const p=a.pintura||null;
+  const L=[];
+  const _op=n=>n?`<div class="small muted">${n}</div>`:'';
+  L.push(`<tr><td><strong>Preparação</strong>${_op(a.operadores_prep_txt||a.operador_prep)}</td>
+    <td><span class="small">${a.prep_inicio||'—'}</span></td>
+    <td><span class="small">${a.prep_fim||'—'}</span></td>
+    <td class="mono">${a.prep_minutos||0}</td></tr>`);
+  if(a.total_pausa_min)
+    L.push(`<tr><td colspan="3"><span class="small muted">Paradas na preparação: ${(a.pausas&&a.pausas.texto)||''}</span></td>
+      <td class="mono small">${a.total_pausa_min}</td></tr>`);
+  L.push(`<tr><td><span class="muted">Aguardando banho</span></td><td colspan="2"></td>
+    <td class="mono muted">${a.espera_min||0}</td></tr>`);
+  L.push(`<tr><td><strong>Banho</strong>${_op([a.operador_banho_inicio,a.operador_banho_fim].filter(Boolean).join(' → '))}</td>
+    <td><span class="small">${a.banho_inicio||'—'}</span></td>
+    <td><span class="small">${a.banho_fim||'—'}</span></td>
+    <td class="mono">${a.banho_minutos||0}</td></tr>`);
+  if(p){
+    if(a.espera_pintura_min!=null)
+      L.push(`<tr><td><span class="muted">Aguardando pintura</span></td><td colspan="2"></td>
+        <td class="mono muted">${a.espera_pintura_min||0}</td></tr>`);
+    if(p.outras)
+      L.push(`<tr><td><strong>Preparação p/ pintura</strong><div class="small muted">${p.outras}</div></td>
+        <td colspan="2"></td><td class="mono">${p.outras_min||0}</td></tr>`);
+    if(p.carga_min!=null&&p.destino)
+      L.push(`<tr><td><strong>${p.destino}</strong>${_op((p.n_oper_carga||'')+' oper.: '+(p.carga_operadores||'—'))}
+        ${p.metros?`<div class="small muted">${p.metros} m · ${p.ganchos} ganchos</div>`:''}</td>
+        <td><span class="small">${_fmtISO(p.carga_ini)}</span></td>
+        <td><span class="small">${_fmtISO(p.carga_fim)}</span></td>
+        <td class="mono">${p.carga_min||0}</td></tr>`);
+    if(p.descarga_min)
+      L.push(`<tr><td><strong>Descarga</strong>${_op((p.n_oper_desc||'')+' oper.: '+(p.descarga_operadores||'—'))}
+        ${p.pecas_repasse?`<div class="small muted">${p.pecas_ok} OK · ${p.pecas_repasse} repasse (${p.motivo_repasse||'—'})</div>`:''}</td>
+        <td><span class="small">${_fmtISO(p.descarga_ini)}</span></td>
+        <td><span class="small">${_fmtISO(p.descarga_fim)}</span></td>
+        <td class="mono">${p.descarga_min||0}</td></tr>`);
+    if(p.local)L.push(`<tr><td colspan="4"><span class="small muted"><i class="bi bi-geo-alt"></i> ${p.local}</span></td></tr>`);
+  }
+  const tot=(a.ciclo_total!=null&&a.ciclo_total!=='')
+    ? `<tr class="tot"><td><strong>TOTAL do processo</strong></td>
+        <td><span class="small">${a.ciclo_ini||'—'}</span></td>
+        <td><span class="small">${a.ciclo_fim||'—'}</span></td>
+        <td class="mono"><strong>${a.ciclo_total}</strong></td></tr>
+       <tr><td><span class="muted">Trabalhado (sem esperas)</span></td><td colspan="2"></td>
+        <td class="mono muted">${a.ciclo_trabalho||0}</td></tr>`
+    : `<tr class="tot"><td colspan="4"><span class="small muted">Processo em andamento — sem tempo total ainda.</span></td></tr>`;
+  return `<div class="table-wrap" style="margin-top:14px;"><table class="tbl">
+    <thead><tr><th>Etapa</th><th>Início</th><th>Fim</th><th>Tempo (min)</th></tr></thead>
+    <tbody>${L.join('')}${tot}</tbody></table></div>`;
+}
+function _fmtISO(v){
+  if(!v)return '—';
+  try{const d=new Date(v.replace('Z','')+'Z');
+    return d.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});}catch(_){return v;}
+}
+
 function _operadoresHTML(a){
   let html='';
   if(a.cadastrado_por){
@@ -350,16 +551,85 @@ function _operadoresHTML(a){
 function fecharDetalhes(){document.getElementById('modalDetalhes').classList.remove('open');}
 // ── Setor ativo (Pré-banho / Banho) — controla KPIs, gráficos e tabela ──────
 window._setor='prep';
-function setHistTab(qual){
-  const isPrep=qual==='prep';
-  const wp=document.getElementById('wrapPrep'), wb=document.getElementById('wrapBanho');
-  if(wp)wp.style.display=isPrep?'':'none';
-  if(wb)wb.style.display=isPrep?'none':'';
+function setHistTab(qual){ /* tabela única agora — mantido por compatibilidade */ }
+
+// Tabela do setor: uma linha por cesto/lote, com o processo de ponta a ponta.
+// Substitui as duas tabelas antigas (pré-banho e banho), que repetiam colunas
+// de operadores e cadastro sem mostrar o ciclo.
+function renderTabelaSetor(b, setor){
+  const tb=document.getElementById('histBodyPrep'); if(!tb)return;
+  const regs=(b&&b.registros)||[];
+  window._registrosCache=regs;
+  if(!regs.length){
+    tb.innerHTML='<tr><td colspan="13" class="empty">Nenhum registro no período.</td></tr>';
+    return;
+  }
+  tb.innerHTML=regs.map((r,i)=>{
+    const lote=r.lote||{};
+    const cesto=r.numero_cesto||lote.numero_cesto||'S/C';
+    const itens=(r.itens&&r.itens.length)?r.itens:(lote.itens||[]);
+    const op=itens.length>1?(itens.length+' OPs'):((itens[0]||{}).ordem||r.ordem||'—');
+    const cod=itens.length>1?'—':((itens[0]||{}).material||r.material||'—');
+    const txt=itens.length>1?'—':((itens[0]||{}).texto_breve||r.texto_breve||'—');
+    const qtd=r.qtd_total!=null?r.qtd_total:(lote.quantidade||0);
+    const proc=r.processo||lote.processo||'—';
+    const tipo=r.tipo||lote.tipo||'Normal';
+    // início/fim do PROCESSO — vazio enquanto não terminou
+    const ini=r.ciclo_ini||r.prep_inicio||r.inicio||'—';
+    const fim=r.ciclo_fim||r.fim||'';
+    const tot=(r.ciclo_total!=null&&r.ciclo_total!=='')?r.ciclo_total:'';
+    const etapa=r.etapa||r.estado_lbl||r.estado||'—';
+    const emCurso=!fim;
+    return `<tr data-busca="${(cesto+' '+op+' '+cod+' '+txt+' '+proc).toLowerCase()}">
+      <td class="mono">${i+1}</td><td><strong>${cesto}</strong></td>
+      <td>${op}</td><td class="mono small">${cod}</td>
+      <td><span class="small">${txt}</span></td><td class="mono">${qtd}</td>
+      <td><span class="small">${proc}</span></td>
+      <td><span class="pill ${tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${tipo}</span></td>
+      <td class="mono small">${ini}</td>
+      <td class="mono small">${emCurso?'<span class="muted">—</span>':fim}</td>
+      <td class="mono">${tot!==''?('<strong>'+tot+'</strong>'):'<span class="muted">—</span>'}</td>
+      <td><span class="pill ${emCurso?'pill-fila':'pill-normal'}">${etapa}</span></td>
+      <td><button class="btn-detalhes" onclick="verDetalhesHist(${r.id})"><i class="bi bi-eye"></i></button></td>
+    </tr>`;}).join('');
+  if(typeof aplicarBuscaHistorico==='function')aplicarBuscaHistorico();
 }
+let _gPint={};
+function renderGraficosPintura(b, mv, es){
+  if(typeof Chart==='undefined')return;
+  const AZ='#185FA5', VD='#2BA45C', VM='#D63C3C', AM='#BA7517';
+  function faz(id,cfg){
+    const el=document.getElementById(id); if(!el)return null;
+    if(_gPint[id]){ _gPint[id].destroy(); }
+    _gPint[id]=new Chart(el,cfg); return _gPint[id];
+  }
+  faz('chartDestino',{type:'doughnut',
+    data:{labels:['Monovia','Estacionária'],
+      datasets:[{data:[mv.cargas||0,es.cargas||0],backgroundColor:[AZ,AM],borderWidth:0}]},
+    options:{responsive:true,plugins:{legend:{position:'bottom'}}}});
+  faz('chartAprov',{type:'doughnut',
+    data:{labels:['Desceram OK','Repasse'],
+      datasets:[{data:[b.pecas_ok||0,b.pecas_repasse||0],backgroundColor:[VD,VM],borderWidth:0}]},
+    options:{responsive:true,plugins:{legend:{position:'bottom'}}}});
+  const tp=b.por_tipo||{};
+  faz('chartTipos',{type:'bar',
+    data:{labels:Object.keys(tp),datasets:[{data:Object.values(tp),backgroundColor:AZ}]},
+    options:{responsive:true,indexAxis:'y',plugins:{legend:{display:false}},
+      scales:{x:{beginAtZero:true,ticks:{precision:0}}}}});
+  faz('chartTempos',{type:'bar',
+    data:{labels:['Espera na fila','Carregamento','Na linha','Descarga'],
+      datasets:[{data:[b.media_espera||0,b.media_tempo||0,b.media_linha||0,b.media_descarga||0],
+        backgroundColor:[AM,AZ,VD,'#7F77DD']}]},
+    options:{responsive:true,plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:true}}}});
+}
+
 function setSetor(s){
   window._setor=s;
-  document.getElementById('setorPrep').classList.toggle('on',s==='prep');
-  document.getElementById('setorBanho').classList.toggle('on',s==='banho');
+  [['setorPrep','prep'],['setorBanho','banho'],['setorPintura','pintura'],
+   ['setorGeral','geral']].forEach(([id,k])=>{
+    const e=document.getElementById(id); if(e)e.classList.toggle('on',s===k);
+  });
   renderSetorAtivo();
 }
 window.renderSetorAtivo=function(){
@@ -370,37 +640,95 @@ window.renderSetorAtivo=function(){
   const cp=document.getElementById('cntPrep'), cb=document.getElementById('cntBanho');
   if(cp&&d.prep)cp.textContent=d.prep.total;
   if(cb&&d.banho)cb.textContent=d.banho.total;
+  const cx=document.getElementById('setorPintura'), cn=document.getElementById('cntPintura');
+  if(cx) cx.style.display = d.pintura ? '' : 'none';   // some se o módulo estiver desligado
+  if(cn&&d.pintura)cn.textContent=d.pintura.carregamentos||0;
+  const cg=document.getElementById('cntGeral');
+  if(cg&&d.geral)cg.textContent=d.geral.total||0;
+  const prep=s==='prep', pint=s==='pintura', ger=s==='geral';
+  if(pint&&!d.pintura){ setSetor('banho'); return; }
+  const bg=document.getElementById('blocoGeral');
+  if(bg) bg.style.display = ger ? '' : 'none';
+  if(ger){
+    const g=b;
+    set('gPrep',g.media_prep||0); set('gAgBanho',g.media_ag_banho||0);
+    set('gBanho',g.media_banho||0); set('gAgPint',g.media_ag_pintura||0);
+    set('gMv',g.media_carga_monovia||0); set('gEst',g.media_carga_estacionaria||0);
+    set('gTotal',g.media_total||0); set('gConcl',g.concluidos_total||0);
+  }
+  // período selecionado no título de "Quantidade de cestos"
+  const pt2=document.getElementById('periodoTag');
+  if(pt2){
+    const de=document.getElementById('fDe')?.value, ate=document.getElementById('fAte')?.value;
+    const br=x=>x?x.split('-').reverse().join('/'):'';
+    pt2.textContent = (de||ate) ? ((de&&ate)?(br(de)+' a '+br(ate)):(de?('a partir de '+br(de)):('até '+br(ate))))
+                                : 'todo o período';
+  }
+  const cd=document.getElementById('chartDiaPer');
+  if(cd&&pt2)cd.textContent=' — '+pt2.textContent;
+  renderTabelaSetor(b, s);
+  // bloco exclusivo da pintura
+  const bpint=document.getElementById('blocoPintura');
+  if(bpint) bpint.style.display = pint ? '' : 'none';
   // KPIs (quantidade)
-  set('kTotal',b.total); set('kAnd',d.em_andamento);
-  set('kBanhoNormal',b.normais); set('kBanhoRetrab',b.retrabalhos);
-  document.getElementById('lblTotal').textContent=(s==='prep'?'Preparados':'Concluídos');
+  set('kTotal',pint?(b.carregamentos||0):b.total); set('kAnd',d.em_andamento);
+  document.getElementById('lblTotal').textContent =
+    prep?'Preparados':(pint?'Carregamentos':(ger?'Cestos no período':'Concluídos'));
+  set('kBanhoNormal',pint?(b.descargas||0):b.normais);
+  set('kBanhoRetrab',pint?(b.na_linha_agora||0):b.retrabalhos);
+  document.getElementById('lblNormais').textContent=pint?'Descargas':'Normais';
+  document.getElementById('lblRetrab').textContent=pint?'Na linha agora':'Retrabalho';
   // tempo médio — adapta ao setor
-  const prep=s==='prep';
-  document.getElementById('kpiPreparo').style.display=prep?'':'none';
-  document.getElementById('kpiEspera').style.display=prep?'none':'';
-  document.getElementById('kpiBanho').style.display=prep?'none':'';
-  if(prep){ set('kPrep',b.media_tempo); }
+  // Na aba "Todos" os tempos aparecem no bloco próprio (etapa por etapa),
+  // então os três cards genéricos saem de cena.
+  document.getElementById('kpiPreparo').style.display=(prep&&!ger)?'':'none';
+  document.getElementById('kpiEspera').style.display=(!prep&&!ger)?'':'none';
+  document.getElementById('kpiBanho').style.display=(!prep&&!ger)?'':'none';
+  if(ger){ /* nada: usa o bloco de etapas */ }
+  else if(prep){ set('kPrep',b.media_tempo); }
   else{ set('kEspera',b.media_espera); set('kBanho',b.media_tempo); }
+  const gp=document.getElementById('graficosPintura');
+  if(gp) gp.style.display = pint ? '' : 'none';
+  if(pint){
+    const mv=b.monovia||{}, es=b.estacionaria||{};
+    renderGraficosPintura(b, mv, es);
+    set('kMvCargas',mv.cargas||0); set('kMvPecas',mv.pecas||0); set('kMvTempo',mv.media_tempo||0);
+    set('kEsCargas',es.cargas||0); set('kEsPecas',es.pecas||0); set('kEsTempo',es.media_tempo||0);
+    set('kAprov',(b.aproveitamento_pct||0)+'%'); set('kRepasse',b.pecas_repasse||0);
+    set('kOcup',(b.ocupacao_media_pct||0)+'%'); set('kAreaProc',b.area_processada||0);
+    set('kDescarga',b.media_descarga||0); set('kParadas',b.parada_min||0);
+  }
   // totais e qualidade
-  set('kPecas',b.pecas); set('kPeso',b.peso); set('kArea',b.area);
-  set('kTotalOps',b.ops); set('kMediaPecas',b.media_pecas); set('kTaxaRetrab',(b.taxa_retrab||0)+'%');
+  set('kPecas',b.pecas); set('kArea',b.area);
+  set('kTotalOps',pint?(b.total||0):b.ops);
+  const _tx = pint ? (b.taxa_repasse_pct||0)
+            : (b.taxa_retrab!=null ? b.taxa_retrab
+              : (b.total ? Math.round(1000*(b.retrabalhos||0)/b.total)/10 : 0));
+  set('kTaxaRetrab',_tx+'%');
   // gráficos e tabela do setor
   if(typeof renderCharts==='function') renderCharts(b);
   if(typeof renderHistorico==='function') renderHistorico(d);
   setHistTab(s);
   // hint
   const hint=document.getElementById('setorHint');
-  if(hint) hint.innerHTML=prep
+  if(hint&&ger) hint.innerHTML='Mostrando <strong>todo o processo</strong>: cada cesto do início da '
+    +'preparação até a última etapa apontada. O tempo total só aparece quando o ciclo termina.';
+  else if(hint) hint.innerHTML=prep
     ? 'Mostrando o <strong>Pré-banho</strong>: cestos cuja preparação foi finalizada no período/turno (igual ao Excel pré-banho).'
-    : 'Mostrando o <strong>Banho</strong>: cestos cujo banho foi concluído no período/turno (igual ao Excel banho).';
-  const tt=document.getElementById('setorTabTitulo'); if(tt)tt.textContent=prep?'— Pré-banho':'— Banho';
+    : (pint
+      ? 'Mostrando a <strong>Pintura</strong>: lançamentos finalizados no período/turno. '
+        + '"Normais/Retrabalho" viram descargas e lotes na linha; a taxa mostra o repasse.'
+      : 'Mostrando o <strong>Banho</strong>: cestos cujo banho foi concluído no período/turno (igual ao Excel banho).');
+  const tt=document.getElementById('setorTabTitulo');
+  if(tt)tt.textContent=prep?'— Pré-banho':(pint?'— Pintura':(ger?'— Processo completo':'— Banho'));
 };
 function verDetalhesHist(id){
   const a=(window._registrosCache||[]).find(x=>x.id===id);
   if(!a)return;
   const itens=(a.itens&&a.itens.length)?a.itens:[{ordem:a.ordem,material:a.material,texto_breve:a.texto_breve,quantidade:a.quantidade}];
   const linhas=itens.map(it=>{const rt=(it.tipo||'Normal')==='Retrabalho';const pill=`<span class="pill ${rt?'pill-retrab':'pill-normal'}">${it.tipo||'Normal'}</span>${rt&&it.motivo?`<br><span class="small muted">${it.motivo}</span>`:''}`;return `<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td><td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td><td>${pill}</td></tr>`;}).join('');
-  document.getElementById('detTitulo').textContent='Cesto '+a.numero_cesto+' (concluído)';
+  document.getElementById('detTitulo').textContent='Cesto '+a.numero_cesto
+    +(a.etapa?(' — '+a.etapa):'');
   document.getElementById('detCorpo').innerHTML=`
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
       <span class="pill ${a.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${a.tipo}</span>
@@ -416,13 +744,7 @@ function verDetalhesHist(id){
       ${a.peso_total!==undefined?`<div><span class="small muted">Peso total</span><br><strong style="font-size:1.2rem;">${a.peso_total} kg</strong></div>`:''}
       ${a.area_total!==undefined?`<div><span class="small muted">Área total</span><br><strong style="font-size:1.2rem;">${a.area_total} m²</strong></div>`:''}
     </div>
-    <div class="table-wrap" style="margin-top:14px;"><table class="tbl">
-      <thead><tr><th>Etapa</th><th>Início</th><th>Fim</th><th>Tempo (min)</th></tr></thead>
-      <tbody>
-        <tr><td><strong>Preparação</strong></td><td><span class="small">${a.prep_inicio||'—'}</span></td><td><span class="small">${a.prep_fim||'—'}</span></td><td class="mono">${a.prep_minutos}</td></tr>
-        <tr><td><strong>Banho</strong></td><td><span class="small">${a.banho_inicio||'—'}</span></td><td><span class="small">${a.banho_fim||'—'}</span></td><td class="mono">${a.banho_minutos}</td></tr>
-      </tbody>
-    </table></div>
+    ${_etapasHTML(a)}
     ${a.observacao?`<div class="db-obs" style="margin-top:12px;"><span class="small muted">Observação prep:</span> ${a.observacao}</div>`:''}
     ${a.obs_banho?`<div class="db-obs" style="margin-top:8px;"><span class="small muted">Observação banho:</span> ${a.obs_banho}</div>`:''}
     ${_operadoresHTML(a)}`;
@@ -656,6 +978,5 @@ _sincronizar().then(()=>carregarAgenda()).then(()=>{
 setInterval(_sincronizar,60000);
 setInterval(carregarAgenda,300000);
 </script>
-<script src="{{ url_for('static', filename='wakelock.js') }}"></script>
 </body>
 </html>

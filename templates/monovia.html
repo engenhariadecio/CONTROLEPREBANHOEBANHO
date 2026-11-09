@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+{% block title %}Monovia — Ao vivo{% endblock %}
+{% block content %}
+
+<div class="section-title" style="margin-bottom:14px;">
+  <i class="bi bi-speedometer2"></i>Monovia <span id="mvNome" class="muted small" style="margin-left:6px;"></span>
+</div>
+
+<div class="mv-kpis">
+  <div class="mv-kpi" id="kVel"><span class="k-lbl">Velocidade</span><strong id="vVel">—</strong><span class="k-sub">m/min</span></div>
+  <div class="mv-kpi"><span class="k-lbl">Odômetro</span><strong id="vOdo">—</strong><span class="k-sub">metros</span></div>
+  <div class="mv-kpi" id="kSit"><span class="k-lbl">Situação</span><strong id="vSit">—</strong><span class="k-sub" id="vSitSub">&nbsp;</span></div>
+  <div class="mv-kpi"><span class="k-lbl">Última leitura</span><strong id="vIdade">—</strong><span class="k-sub" id="vFonte">&nbsp;</span></div>
+</div>
+
+<div class="mv-grid">
+  <div class="panel">
+    <div class="section-title" style="margin-bottom:10px;"><i class="bi bi-graph-up"></i>Velocidade (últimos minutos)</div>
+    <canvas id="chVel" height="110"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="section-title" style="margin-bottom:10px;"><i class="bi bi-geo-alt-fill"></i>Rastreio na linha</div>
+    <div class="hint" style="margin-bottom:10px;">Qual cesto está passando em cada ponto agora — calculado pelo trecho de trilho que cada lote ocupa.</div>
+    <div id="estacoes"><div class="muted small">Carregando…</div></div>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:16px;">
+  <div class="section-title" style="margin-bottom:10px;"><i class="bi bi-pause-circle-fill"></i>Paradas registradas</div>
+  <div class="table-wrap"><table class="tbl">
+    <thead><tr><th>Início</th><th>Fim</th><th>Duração</th><th>Turno</th><th>Motivo</th><th></th></tr></thead>
+    <tbody id="tbParadas"><tr><td colspan="6" class="muted small">Carregando…</td></tr></tbody>
+  </table></div>
+</div>
+
+<!-- Modal justificar parada -->
+<div class="modal-overlay" id="modalPar">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-head">
+      <h5><i class="bi bi-pencil-square"></i>Justificar parada</h5>
+      <button class="modal-x" onclick="fecharPar()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="pId">
+      <div class="field">
+        <label class="label">Motivo</label>
+        <select id="pMotivo" class="input">
+          <option value="">Selecione…</option>
+          <option>Troca de cor</option><option>Limpeza de cabine</option>
+          <option>Falha mecânica</option><option>Falha elétrica</option>
+          <option>Falta de peça</option><option>Falta de operador</option>
+          <option>Intervalo / refeição</option><option>Fim de turno</option>
+          <option>Manutenção programada</option><option>Outro</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label class="label">Justificativa</label>
+        <textarea id="pJust" class="input" rows="3"></textarea>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="fecharPar()" style="flex:0 0 auto;">Cancelar</button>
+      <button class="btn btn-aqua" style="flex:1;" onclick="salvarPar()"><i class="bi bi-check-lg"></i>Salvar</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.mv-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px;}
+.mv-kpi{background:var(--card,#fff);border:1px solid rgba(15,61,92,.12);border-radius:16px;padding:14px 18px;
+  box-shadow:0 1px 3px rgba(15,61,92,.06);}
+.mv-kpi .k-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.6px;opacity:.6;}
+.mv-kpi strong{display:block;font-family:'JetBrains Mono',monospace;font-size:30px;line-height:1.15;}
+.mv-kpi .k-sub{font-size:11px;opacity:.55;}
+.mv-kpi.alerta{border-color:rgba(214,60,60,.4);background:rgba(214,60,60,.05);}
+.mv-kpi.alerta strong{color:#d63c3c;}
+.mv-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media(max-width:900px){.mv-grid{grid-template-columns:1fr;}}
+.est-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(15,61,92,.08);}
+.est-row:last-child{border-bottom:0;}
+.est-dot{width:12px;height:12px;border-radius:50%;background:#cbd5e1;flex:0 0 auto;}
+.est-dot.on{background:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.15);}
+.est-nome{flex:1;font-weight:600;}
+.est-off{font-size:11px;opacity:.55;font-family:'JetBrains Mono',monospace;}
+.est-cestos{display:flex;gap:6px;flex-wrap:wrap;}
+.est-chip{background:rgba(15,61,92,.08);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let chart=null, hist=[];
+
+async function atualizar(){
+  const j=await (await fetch('/api/monovia/estado')).json();
+  mvNome.textContent=j.nome?('— '+j.nome):'';
+  const off = j.modo==='sem_dados'||j.modo==='desatualizado';
+  vVel.textContent = off?'—':(j.velocidade??0).toFixed(2);
+  vOdo.textContent = off?'—':(j.odometro_m??0).toFixed(0);
+  vSit.textContent = off?'SEM SINAL':(j.parada?'PARADA':'RODANDO');
+  vSitSub.textContent = j.parada_atual?('há '+Math.floor(j.parada_atual.segundos/60)+' min'):'';
+  vIdade.textContent = j.idade_seg==null?'—':(j.idade_seg<90?Math.round(j.idade_seg)+'s':Math.round(j.idade_seg/60)+'min');
+  vFonte.textContent = j.fonte?('fonte: '+j.fonte):'';
+  kSit.classList.toggle('alerta', off || !!j.parada);
+  kVel.classList.toggle('alerta', !off && !!j.parada);
+
+  // histórico do gráfico (client-side, últimos 60 pontos)
+  if(!off){
+    hist.push({t:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),v:j.velocidade||0});
+    if(hist.length>60)hist.shift();
+    desenhar();
+  }
+
+  document.getElementById('estacoes').innerHTML=(j.estacoes||[]).map(e=>{
+    const cargas=e.cargas||[];
+    return `<div class="est-row">
+      <span class="est-dot ${cargas.length?'on':''}"></span>
+      <span class="est-nome">${e.nome}<br><span class="est-off">${e.offset_m} m do carregamento</span></span>
+      <span class="est-cestos">${cargas.length?cargas.map(c=>`<span class="est-chip" title="OP ${c.ordem||'—'} · ${c.quantidade} pç · ${c.area_total} m²">${c.numero_cesto?('Cesto '+c.numero_cesto):('Lote #'+c.lote_id)}${c.posicao_pct!=null?' · '+c.posicao_pct+'%':''}</span>`).join(''):'<span class="muted small">vazio</span>'}</span>
+    </div>`;}).join('')||'<div class="muted small">Nenhuma estação configurada.</div>';
+}
+
+function desenhar(){
+  const ctx=document.getElementById('chVel');
+  const labels=hist.map(h=>h.t), dados=hist.map(h=>h.v);
+  if(!chart){
+    chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'m/min',data:dados,
+      borderColor:'#0F3D5C',backgroundColor:'rgba(15,61,92,.08)',fill:true,tension:.25,pointRadius:0,borderWidth:2}]},
+      options:{responsive:true,plugins:{legend:{display:false}},
+        scales:{y:{beginAtZero:true,grid:{color:'rgba(15,61,92,.07)'}},x:{ticks:{maxTicksLimit:6},grid:{display:false}}}}});
+  }else{chart.data.labels=labels;chart.data.datasets[0].data=dados;chart.update('none');}
+}
+
+async function carregarParadas(){
+  const j=await (await fetch('/api/monovia/paradas')).json();
+  const tb=document.getElementById('tbParadas');
+  tb.innerHTML=j.length?j.map(p=>`<tr>
+    <td class="mono small">${p.inicio}</td><td class="mono small">${p.fim||'—'}</td>
+    <td class="mono"><strong>${p.duracao_min} min</strong></td><td class="small">${p.turno}</td>
+    <td>${p.motivo?`<span class="pill pill-normal">${p.motivo}</span> <span class="small muted">${p.justificativa||''}</span>`:'<span class="small muted">sem justificativa</span>'}</td>
+    <td><button class="btn-detalhes" onclick="abrirPar(${p.id},'${(p.motivo||'').replace(/'/g,"")}','${(p.justificativa||'').replace(/'/g,"")}')"><i class="bi bi-pencil"></i></button></td>
+  </tr>`).join(''):'<tr><td colspan="6" class="muted small">Nenhuma parada registrada.</td></tr>';
+}
+
+function abrirPar(id,motivo,just){pId.value=id;pMotivo.value=motivo||'';pJust.value=just||'';modalPar.classList.add('open');}
+function fecharPar(){modalPar.classList.remove('open');}
+async function salvarPar(){
+  await fetch('/api/monovia/parada/justificar',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:pId.value,motivo:pMotivo.value,justificativa:pJust.value})});
+  fecharPar();carregarParadas();
+}
+modalPar.addEventListener('click',e=>{if(e.target.id==='modalPar')fecharPar();});
+
+atualizar();carregarParadas();
+setInterval(atualizar,3000);
+setInterval(carregarParadas,30000);
+</script>
+{% endblock %}

@@ -28,7 +28,8 @@ from flask import (
     session, jsonify, send_file
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Text, inspect, text
+from sqlalchemy import (create_engine, Column, Integer, String, DateTime, Float,
+                        Text, inspect, text, func)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, sessionmaker, scoped_session
 from openpyxl import Workbook, load_workbook
@@ -273,48 +274,38 @@ Session = scoped_session(sessionmaker(bind=engine))
 Base = declarative_base()
 
 TOTAL_CESTOS_PADRAO = 20
-_total_cestos_cache = {'valor': None}
+_cestos_cache = {'n': None}
 
 
-def get_total_cestos(forcar=False):
-    """Total de cestos físicos (configurável no admin). Padrão 20."""
-    if _total_cestos_cache['valor'] is not None and not forcar:
-        return _total_cestos_cache['valor']
+def total_cestos(forcar=False):
+    """Quantidade de cestos disponíveis (configurável em Administração)."""
+    if _cestos_cache['n'] is not None and not forcar:
+        return _cestos_cache['n']
     n = TOTAL_CESTOS_PADRAO
     try:
         db = Session()
-        try:
-            row = db.query(Config).filter_by(chave='total_cestos').first()
-            if row and str(row.valor).strip().isdigit():
-                n = int(row.valor)
-        finally:
-            db.close()
+        row = db.query(Config).filter_by(chave='total_cestos').first()
+        if row and row.valor:
+            v = int(row.valor)
+            if 1 <= v <= 200:
+                n = v
     except Exception:
-        n = TOTAL_CESTOS_PADRAO
-    n = max(1, min(n, 999))
-    _total_cestos_cache['valor'] = n
+        pass
+    _cestos_cache['n'] = n
     return n
 
 
 def set_total_cestos(n):
-    try:
-        n = int(n)
-    except (ValueError, TypeError):
-        n = TOTAL_CESTOS_PADRAO
-    n = max(1, min(n, 999))
+    n = max(1, min(200, int(n)))
     db = Session()
-    try:
-        row = db.query(Config).filter_by(chave='total_cestos').first()
-        if not row:
-            row = Config(chave='total_cestos')
-            db.add(row)
-        row.valor = str(n)
-        db.commit()
-    finally:
-        db.close()
-    _total_cestos_cache['valor'] = n
+    row = db.query(Config).filter_by(chave='total_cestos').first()
+    if not row:
+        row = Config(chave='total_cestos')
+        db.add(row)
+    row.valor = str(n)
+    db.commit()
+    _cestos_cache['n'] = n
     return n
-
 
 PROCESSOS = [
     "AÇO SEM OXIDAÇÃO", "AÇO COM OXIDAÇÃO", "ALUMÍNIO",
@@ -325,8 +316,14 @@ ST_PREPARANDO = 'PREPARANDO'
 ST_PREENCHER = 'PREENCHER'
 ST_FILA_BANHO = 'FILA_BANHO'
 ST_EM_BANHO = 'EM_BANHO'
+# ── Módulo Pintura/Monovia ──
+ST_FILA_PINTURA = 'FILA_PINTURA'          # saiu do banho: AGUARDANDO PINTURA
+ST_EM_PINTURA = 'EM_PINTURA'              # atividade de pintura em curso
+ST_AG_MONTAGEM = 'AGUARDANDO_MONTAGEM'    # retrabalho: pré-banho precisa remontar
+ST_CARREGANDO = 'CARREGANDO'              # (legado da 1ª versão do módulo)
 ST_CONCLUIDO = 'CONCLUIDO'
-ESTADOS_ATIVOS = (ST_PREPARANDO, ST_PREENCHER, ST_FILA_BANHO, ST_EM_BANHO)
+ESTADOS_ATIVOS = (ST_PREPARANDO, ST_PREENCHER, ST_FILA_BANHO, ST_EM_BANHO,
+                  ST_FILA_PINTURA, ST_EM_PINTURA, ST_AG_MONTAGEM, ST_CARREGANDO)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -640,6 +637,12 @@ def turno_banho(c):
     return turno_num(dt)
 
 
+def turno_pintura(c):
+    """Turno da PINTURA — pelo horário em que o carregamento na monovia terminou."""
+    dt = c.pintura_fim or c.pintura_inicio or datetime.utcnow()
+    return turno_num(dt)
+
+
 def turno_de_card(c):
     """Turno de conclusão do cesto (fim do banho). Sempre pelo horário."""
     return turno_banho(c)
@@ -737,6 +740,24 @@ class Card(Base):
     banho_minutos = Column(Float, default=0)
     obs_banho = Column(Text, default='')
 
+    # ── Pintura / Monovia ───────────────────────────────────────────────────
+    pintura_inicio = Column(DateTime)          # início do carregamento na monovia
+    pintura_fim = Column(DateTime)             # fim do carregamento
+    pintura_minutos = Column(Float, default=0)
+    operador_pintura_inicio = Column(String(120), default='')
+    oper_pint_ini_mat = Column(String(50), default='')
+    operador_pintura_fim = Column(String(120), default='')
+    oper_pint_fim_mat = Column(String(50), default='')
+    obs_pintura = Column(Text, default='')
+    monovia_linha = Column(String(20), default='')
+    odo_carga_ini = Column(Float)              # odômetro da monovia ao iniciar a carga
+    odo_carga_fim = Column(Float)              # odômetro ao terminar -> define o trecho do lote
+    n_ganchos = Column(Integer, default=0)
+    descarregado_em = Column(DateTime)
+    # rastreio do retrabalho que voltou da pintura
+    card_origem_id = Column(Integer)
+    lote_origem_id = Column(Integer)
+
     criado_em = Column(DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -779,6 +800,10 @@ class Card(Base):
         espera_min = 0.0
         if self.banho_inicio and self.prep_fim:
             espera_min = round(tempo_util_segundos(self.prep_fim, self.banho_inicio) / 60, 1)
+        # espera da pintura = tempo útil entre a saída do banho e o início da carga
+        espera_pintura_min = 0.0
+        if self.pintura_inicio and self.banho_fim:
+            espera_pintura_min = round(tempo_util_segundos(self.banho_fim, self.pintura_inicio) / 60, 1)
         return {
             'id': self.id, 'estado': self.estado,
             'numero_cesto': self.numero_cesto,
@@ -829,6 +854,33 @@ class Card(Base):
             'pausa_acumulada_seg': self.pausa_acumulada_seg or 0,
             'pausas': pausas,
             'data_ref': (self.banho_fim - timedelta(hours=3)).strftime('%Y-%m-%d') if self.banho_fim else '',
+            # ── Pintura / Monovia ──
+            'pintura_inicio': fmt(self.pintura_inicio), 'pintura_fim': fmt(self.pintura_fim),
+            'pintura_inicio_data': fmt_data(self.pintura_inicio),
+            'pintura_inicio_hora': fmt_hora(self.pintura_inicio),
+            'pintura_fim_data': fmt_data(self.pintura_fim),
+            'pintura_fim_hora': fmt_hora(self.pintura_fim),
+            'pintura_inicio_iso': iso(self.pintura_inicio),
+            'banho_fim_iso': iso(self.banho_fim),
+            'pintura_minutos': round(self.pintura_minutos or 0, 1),
+            'espera_pintura_min': espera_pintura_min,
+            'espera_pintura_seg_atual': (tempo_util_segundos(self.banho_fim, datetime.utcnow())
+                                         if self.estado == ST_FILA_PINTURA and self.banho_fim else 0),
+            'operador_pintura_inicio': self.operador_pintura_inicio or '',
+            'operador_pintura_fim': self.operador_pintura_fim or '',
+            'oper_pint_ini_mat': self.oper_pint_ini_mat or '',
+            'oper_pint_fim_mat': self.oper_pint_fim_mat or '',
+            'obs_pintura': self.obs_pintura or '',
+            'monovia_linha': self.monovia_linha or '',
+            'odo_carga_ini': self.odo_carga_ini, 'odo_carga_fim': self.odo_carga_fim,
+            'metros_monovia': (round(self.odo_carga_fim - self.odo_carga_ini, 2)
+                               if self.odo_carga_ini is not None and self.odo_carga_fim is not None else 0),
+            'n_ganchos': self.n_ganchos or 0,
+            'descarregado_em': fmt(self.descarregado_em),
+            'card_origem_id': self.card_origem_id,
+            'lote_origem_id': self.lote_origem_id,
+            'turno_pintura': turno_pintura(self),
+            'turno_pintura_lbl': turno_label(turno_pintura(self)),
         }
 
 
@@ -853,6 +905,17 @@ def _migrar_colunas():
         'oper_banho_fim_mat': "VARCHAR(50) DEFAULT ''",
         'motivo_retrabalho': "VARCHAR(60) DEFAULT ''",
         'cadastrado_por': "VARCHAR(120) DEFAULT ''",
+        # ── pintura / monovia ──
+        'pintura_inicio': 'TIMESTAMP NULL', 'pintura_fim': 'TIMESTAMP NULL',
+        'pintura_minutos': 'FLOAT DEFAULT 0',
+        'operador_pintura_inicio': "VARCHAR(120) DEFAULT ''",
+        'oper_pint_ini_mat': "VARCHAR(50) DEFAULT ''",
+        'operador_pintura_fim': "VARCHAR(120) DEFAULT ''",
+        'oper_pint_fim_mat': "VARCHAR(50) DEFAULT ''",
+        'obs_pintura': 'TEXT', 'monovia_linha': "VARCHAR(20) DEFAULT ''",
+        'odo_carga_ini': 'FLOAT', 'odo_carga_fim': 'FLOAT',
+        'n_ganchos': 'INTEGER DEFAULT 0', 'descarregado_em': 'TIMESTAMP NULL',
+        'card_origem_id': 'INTEGER', 'lote_origem_id': 'INTEGER',
     }
     with engine.begin() as conn:
         for col, tipo in novas.items():
@@ -892,7 +955,7 @@ def _resolver_duplicados_ativos():
             lista_ordenada = sorted(lista, key=lambda x: x.id)
             antigos = lista_ordenada[:-1]
             for c in antigos:
-                livre = next((n for n in range(1, get_total_cestos() + 1) if n not in ocupados), None)
+                livre = next((n for n in range(1, total_cestos() + 1) if n not in ocupados), None)
                 if livre is not None:
                     c.numero_cesto = livre
                     ocupados.add(livre)
@@ -912,15 +975,45 @@ def _resolver_duplicados_ativos():
         db.close()
 
 
+def _definicao_indice_ativos(conn):
+    """Devolve o SQL do índice ux_cards_num_ativo como está HOJE no banco."""
+    try:
+        if DATABASE_URL.startswith('postgresql'):
+            q = ("SELECT indexdef FROM pg_indexes "
+                 "WHERE indexname = 'ux_cards_num_ativo'")
+        else:
+            q = ("SELECT sql FROM sqlite_master "
+                 "WHERE type = 'index' AND name = 'ux_cards_num_ativo'")
+        row = conn.execute(text(q)).first()
+        return (row[0] or '') if row else ''
+    except Exception:
+        return ''
+
+
 def _criar_indice_unico_ativos():
-    """Impede dois cestos ATIVOS com o mesmo número (causa de duplicação)."""
+    """Impede dois cestos ATIVOS com o mesmo número (causa de duplicação).
+
+    ATENÇÃO: o índice é PARCIAL — o WHERE lista os estados um a um. Quando
+    ESTADOS_ATIVOS ganha um estado novo (foi o caso ao entrar o módulo de
+    pintura), 'CREATE UNIQUE INDEX IF NOT EXISTS' NÃO atualiza o índice antigo:
+    ele vê o nome já existindo e não faz nada. O índice continuaria valendo só
+    para os estados velhos e os novos ficariam sem proteção — em silêncio.
+    Por isso comparamos a definição atual e recriamos quando ela está defasada.
+    """
     _resolver_duplicados_ativos()
     estados = "','".join(ESTADOS_ATIVOS)
     sql = (f"CREATE UNIQUE INDEX IF NOT EXISTS ux_cards_num_ativo "
            f"ON cards (numero_cesto) WHERE estado IN ('{estados}')")
     try:
         with engine.begin() as conn:
-            conn.execute(text(sql))
+            atual = _definicao_indice_ativos(conn)
+            faltando = [e for e in ESTADOS_ATIVOS if e not in atual] if atual else []
+            if faltando:
+                print(f'[indice] índice desatualizado (sem {", ".join(faltando)}) — recriando.')
+                conn.execute(text('DROP INDEX IF EXISTS ux_cards_num_ativo'))
+                atual = ''
+            if not atual:
+                conn.execute(text(sql))
         print('[indice] índice único de cestos ativos OK.')
     except Exception as e:
         print(f'[indice] aviso: {e}')
@@ -929,6 +1022,11 @@ def _criar_indice_unico_ativos():
 def init_db():
     Base.metadata.create_all(engine)
     _migrar_colunas()
+    try:
+        import pintura
+        pintura.criar_tabelas()
+    except Exception as e:
+        print(f'[pintura] init: {e}')
     _criar_indice_unico_ativos()
     carregar_lista_mestre()
     carregar_area_peso()
@@ -937,6 +1035,7 @@ def init_db():
         if db.query(Usuario).count() == 0:
             seed = [('admin', 'Administrador', 'admin123', 'admin'),
                     ('banho', 'Operador de Banho', 'banho123', 'banho'),
+                    ('pintura', 'Operador de Pintura', 'pintura123', 'pintura'),
                     ('gerencia', 'Gerência', 'painel123', 'painel')]
             for i in range(1, 7):
                 seed.append((f'op{i}', f'Operador {i}', 'op1234', 'prep'))
@@ -945,9 +1044,29 @@ def init_db():
                                senha_hash=generate_password_hash(senha),
                                perfil=perfil, perfis=perfil))
             db.commit()
+        else:
+            # Banco que já existia antes do módulo de pintura: o seed acima não
+            # roda (só vale para banco vazio), então NINGUÉM teria acesso à tela
+            # de pintura e não haveria como nem criar o primeiro usuário sem ser
+            # pelo admin. Criamos um único usuário, e só se não existir nenhum
+            # com esse acesso.
+            tem_pintura = any('pintura' in u.acessos() for u in db.query(Usuario).all())
+            if not tem_pintura and not db.query(Usuario).filter_by(login='pintura').first():
+                db.add(Usuario(login='pintura', nome='Operador de Pintura',
+                               senha_hash=generate_password_hash('pintura123'),
+                               perfil='pintura', perfis='pintura'))
+                db.commit()
+                print('[usuarios] criado o login "pintura" (senha: pintura123). '
+                      'TROQUE A SENHA em Administração > Usuários.')
     finally:
         db.close()
     get_agenda(forcar=True)
+    try:
+        import pintura
+        if pintura.pintura_ativa():
+            pintura.reparar_lotes_orfaos()
+    except Exception as e:
+        print(f'[pintura] reparo: {e}')
 
 
 def login_required(*perfis):
@@ -966,7 +1085,8 @@ def login_required(*perfis):
 
 
 _DESTINO = {'admin': 'dashboard', 'banho': 'tela_banho',
-            'prep': 'tela_prep', 'painel': 'painel_gerencia'}
+            'prep': 'tela_prep', 'painel': 'painel_gerencia',
+            'pintura': 'pintura.tela_pintura'}
 
 
 def _rota_do_perfil(p):
@@ -1021,9 +1141,14 @@ def login():
     return render_template('login.html', erro=erro)
 
 
+# Perfis aceitos no cadastro de usuários. Manter em sincronia com _PAINEL_INFO:
+# um perfil fora desta lista é silenciosamente descartado ao salvar.
+PERFIS_VALIDOS = ('prep', 'banho', 'pintura', 'painel', 'admin')
+
 _PAINEL_INFO = {
     'prep':   {'titulo': 'Pré-banho',  'desc': 'Preparação dos cestos', 'icone': 'hourglass-split'},
     'banho':  {'titulo': 'Banho',      'desc': 'Fila e banho dos cestos', 'icone': 'droplet-fill'},
+    'pintura': {'titulo': 'Pintura',   'desc': 'Monovia, estacionária e descarga', 'icone': 'palette-fill'},
     'painel': {'titulo': 'Gerência',   'desc': 'Painel de acompanhamento', 'icone': 'bar-chart-line-fill'},
     'admin':  {'titulo': 'Administração', 'desc': 'Dashboard e configurações', 'icone': 'gear-fill'},
 }
@@ -1034,6 +1159,14 @@ def selecionar():
     if 'usuario' not in session:
         return redirect(url_for('login'))
     acessos = session.get('perfis') or []
+    # O admin passa por qualquer login_required, então a tela de escolha precisa
+    # listar TUDO — senão um painel novo (como a Pintura) fica invisível para ele
+    # só porque não estava marcado no cadastro, feito antes de o módulo existir.
+    # Isso vem ANTES do atalho de perfil único: um admin com só 'admin' marcado
+    # também precisa enxergar os demais painéis.
+    if 'admin' in acessos:
+        acessos = [p for p in ('prep', 'banho', 'pintura', 'painel', 'admin')
+                   if p in _PAINEL_INFO]
     if len(acessos) == 1:
         session['perfil'] = acessos[0]
         return redirect(url_for(_rota_do_perfil(acessos[0])))
@@ -1071,12 +1204,13 @@ def _lista_operadores_prep():
 
 
 @app.route('/api/operadores/prep')
-@login_required('prep', 'banho')
+@login_required('prep', 'banho', 'pintura')
 def api_operadores_prep():
     """Operadores de preparação (nome + matrícula=login) para o líder selecionar."""
     db = Session()
     try:
-        us = db.query(Usuario).filter(Usuario.perfil == 'prep').order_by(Usuario.nome).all()
+        us = db.query(Usuario).filter(Usuario.perfil.in_(('prep', 'pintura'))
+                                      ).order_by(Usuario.nome).all()
         return jsonify([{'nome': u.nome, 'matricula': u.login} for u in us])
     finally:
         db.close()
@@ -1123,7 +1257,7 @@ def admin_usuarios():
                 nn = request.form.get('novo_nome', '').strip()
                 ns = request.form.get('nova_senha', '')
                 acessos = [p for p in request.form.getlist('novo_perfis')
-                           if p in ('prep', 'banho', 'painel', 'admin')]
+                           if p in PERFIS_VALIDOS]
                 if not acessos:
                     acessos = ['prep']
                 if nu and nn and ns and not db.query(Usuario).filter_by(login=nu).first():
@@ -1137,7 +1271,7 @@ def admin_usuarios():
             elif acao == 'acessos':
                 u = db.query(Usuario).filter_by(login=request.form.get('usuario_acessos')).first()
                 acessos = [p for p in request.form.getlist('acessos')
-                           if p in ('prep', 'banho', 'painel', 'admin')]
+                           if p in PERFIS_VALIDOS]
                 if u and acessos:
                     u.perfis = ','.join(acessos)
                     u.perfil = acessos[0]
@@ -1231,7 +1365,7 @@ def _achar_colunas(linhas):
 # APIs — grade e fluxo
 # ─────────────────────────────────────────────────────────────────────────────
 @app.route('/api/cestos')
-@login_required('prep', 'banho')
+@login_required('prep', 'banho', 'pintura')
 def api_cestos():
     db = Session()
     try:
@@ -1239,7 +1373,7 @@ def api_cestos():
         mapa = {c.numero_cesto: c for c in ativos}  # se houver duplicado, o mais novo prevalece
         grade = [{'numero': n, 'ocupado': n in mapa,
                   'card': mapa[n].to_dict() if n in mapa else None}
-                 for n in range(1, get_total_cestos() + 1)]
+                 for n in range(1, total_cestos() + 1)]
         return jsonify(grade)
     finally:
         db.close()
@@ -1365,7 +1499,7 @@ def api_cesto_mudar_numero():
             novo = int(d.get('numero_cesto'))
         except (ValueError, TypeError):
             return jsonify({'sucesso': False, 'erro': 'Número inválido.'}), 400
-        _tot = get_total_cestos()
+        _tot = total_cestos()
         if not (1 <= novo <= _tot):
             return jsonify({'sucesso': False, 'erro': f'O número deve ser entre 1 e {_tot}.'}), 400
         ocupado = db.query(Card).filter(Card.numero_cesto == novo,
@@ -1412,7 +1546,7 @@ def api_lista_status():
 
 
 @app.route('/api/buscar_ordem/<path:ordem>')
-@login_required('prep', 'banho')
+@login_required('prep', 'banho', 'pintura')
 def api_buscar_ordem(ordem):
     o = _norm_ordem(ordem)
     with _lista_lock:
@@ -1423,7 +1557,7 @@ def api_buscar_ordem(ordem):
 
 
 @app.route('/api/buscar_codigo/<path:codigo>')
-@login_required('prep', 'banho')
+@login_required('prep', 'banho', 'pintura')
 def api_buscar_codigo(codigo):
     bruto = str(codigo).strip()
     with _lista_lock:
@@ -1444,7 +1578,7 @@ def api_prep_iniciar():
         numero = int(d.get('numero_cesto'))
     except (ValueError, TypeError):
         return jsonify({'sucesso': False, 'erro': 'Cesto inválido.'}), 400
-    if not (1 <= numero <= get_total_cestos()):
+    if not (1 <= numero <= total_cestos()):
         return jsonify({'sucesso': False, 'erro': 'Cesto fora do intervalo.'}), 400
     db = Session()
     try:
@@ -1489,6 +1623,57 @@ def api_prep_iniciar():
         except IntegrityError:
             db.rollback()
             return jsonify({'sucesso': False, 'erro': f'Cesto {numero} já está em uso.'}), 400
+        return jsonify({'sucesso': True, 'id': card.id})
+    finally:
+        db.close()
+
+
+@app.route('/api/prep/montagem/iniciar', methods=['POST'])
+@login_required('prep', 'banho')
+def api_prep_montagem_iniciar():
+    """Cesto de retrabalho que voltou da pintura precisando de reposicionamento.
+    Inicia o tempo de montagem e cai no fluxo normal do pré-banho
+    (PREPARANDO -> parar -> cadastro pré-preenchido -> fila do banho)."""
+    d = request.json or {}
+    db = Session()
+    try:
+        card = db.query(Card).get(int(d.get('id', 0)))
+        if not card or card.estado != ST_AG_MONTAGEM:
+            return jsonify({'sucesso': False, 'erro': 'Cesto não está aguardando montagem.'}), 404
+        try:
+            n_op = int(d.get('n_operadores', 1))
+            n_op = n_op if n_op in (1, 2, 3, 4) else 1
+        except (ValueError, TypeError):
+            n_op = 1
+        operadores = []
+        for item in (d.get('operadores') or [])[:4]:
+            if isinstance(item, dict):
+                nome = (item.get('nome') or '').strip()
+                mat = (item.get('matricula') or '').strip()
+                if mat and not nome:
+                    u = db.query(Usuario).filter_by(login=mat).first()
+                    if u:
+                        nome = u.nome
+                if nome or mat:
+                    operadores.append({'nome': nome or mat, 'matricula': mat})
+            else:
+                mat = str(item).strip()
+                if mat:
+                    u = db.query(Usuario).filter_by(login=mat).first()
+                    operadores.append({'nome': u.nome if u else mat, 'matricula': mat})
+        if not operadores:
+            operadores = [{'nome': session.get('nome', ''), 'matricula': session.get('usuario', '')}]
+        card.operador_prep = operadores[0]['nome']
+        card.operador_prep2 = operadores[1]['nome'] if len(operadores) > 1 else ''
+        card.operadores_prep_json = json.dumps(operadores, ensure_ascii=False)
+        card.n_operadores = n_op
+        card.prep_inicio = datetime.utcnow()
+        card.prep_fim = None
+        card.prep_minutos = 0
+        card.pausa_acumulada_seg = 0
+        card.pausas_json = ''
+        card.estado = ST_PREPARANDO
+        db.commit()
         return jsonify({'sucesso': True, 'id': card.id})
     finally:
         db.close()
@@ -1670,6 +1855,16 @@ def api_card_editar():
         db.close()
 
 
+def _pintura_ativa():
+    """Módulo de pintura ligado? (config 'monovia' -> ativo). Import tardio para
+    não criar dependência circular com pintura.py."""
+    try:
+        import pintura
+        return pintura.pintura_ativa()
+    except Exception:
+        return False
+
+
 @app.route('/api/banho/fila')
 @login_required('banho')
 def api_banho_fila():
@@ -1719,9 +1914,24 @@ def api_banho_finalizar():
         nome_op = session.get('nome', '')
         card.operador_banho_fim = nome_op
         card.oper_banho_fim_mat = session.get('usuario', '')
-        card.estado = ST_CONCLUIDO
+        # Com o módulo de pintura ativo o cesto NÃO volta para o pré-banho:
+        # fica AGUARDANDO PINTURA e as peças viram um lote.
+        ativa = _pintura_ativa()
+        card.estado = ST_FILA_PINTURA if ativa else ST_CONCLUIDO
+        minutos, estado = card.banho_minutos, card.estado
+        # Fecha o banho PRIMEIRO. Se a criação do lote falhar (schema
+        # desatualizado, por exemplo), o operador não pode ficar preso sem
+        # conseguir tirar o cesto do banho.
         db.commit()
-        return jsonify({'sucesso': True, 'banho_minutos': card.banho_minutos})
+        if ativa:
+            try:
+                import pintura
+                pintura.criar_lote_do_cesto(card, db)
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                print(f'[pintura] falha ao criar lote do cesto {card.numero_cesto}: {e}')
+        return jsonify({'sucesso': True, 'banho_minutos': minutos, 'proximo': estado})
     finally:
         db.close()
 
@@ -1729,6 +1939,23 @@ def api_banho_finalizar():
 # ─────────────────────────────────────────────────────────────────────────────
 # Dados dos dashboards
 # ─────────────────────────────────────────────────────────────────────────────
+_ETAPAS = {'PREPARANDO': 'Preparando cesto', 'PREENCHER': 'Aguardando cadastro',
+           'FILA_BANHO': 'Aguardando banho', 'EM_BANHO': 'Em banho',
+           'FILA_PINTURA': 'Aguardando pintura', 'EM_PINTURA': 'Em pintura',
+           'AGUARDANDO_MONTAGEM': 'Aguardando montagem'}
+
+
+def _etapa_atual(c, pt):
+    """Onde o cesto está — ou como terminou."""
+    if c.estado in _ETAPAS:
+        return _ETAPAS[c.estado]
+    if pt.get('descarga_fim'):
+        return 'Descarregado'
+    if pt.get('carga_fim'):
+        return (pt.get('destino') or 'Carregado').replace('Carregar ', 'Na ')
+    return 'Concluído'
+
+
 def _coletar_dados(de=None, ate=None, turnos=None):
     """Coleta os dados do painel, SEPARADOS por setor (pré-banho e banho).
     Cada setor conta pelo SEU evento, SUA data e SEU turno (horários da jornada):
@@ -1763,12 +1990,14 @@ def _coletar_dados(de=None, ate=None, turnos=None):
         # ── Datasets por setor ──────────────────────────────────────────────
         # Pré-banho: preparação finalizada E cadastrada (na fila, em banho ou concluído)
         prep_todos = db.query(Card).filter(
-            Card.estado.in_([ST_FILA_BANHO, ST_EM_BANHO, ST_CONCLUIDO])).all()
+            Card.estado.in_([ST_FILA_BANHO, ST_EM_BANHO, ST_FILA_PINTURA,
+                             ST_EM_PINTURA, ST_AG_MONTAGEM, ST_CARREGANDO,
+                             ST_CONCLUIDO])).all()
         prep_lista = [c for c in prep_todos
                       if c.prep_fim and _no_periodo(c.prep_fim)
                       and (not turnos or turno_prep(c) in turnos)]
-        # Banho: cestos concluídos
-        banho_todos = db.query(Card).filter_by(estado=ST_CONCLUIDO).all()
+        # Banho: todo cesto que JÁ SAIU do banho (independe de estar na pintura)
+        banho_todos = db.query(Card).filter(Card.banho_fim.isnot(None)).all()
         banho_lista = [c for c in banho_todos
                        if c.banho_fim and _no_periodo(c.banho_fim)
                        and (not turnos or turno_banho(c) in turnos)]
@@ -1834,11 +2063,83 @@ def _coletar_dados(de=None, ate=None, turnos=None):
             _vistos.add(c.numero_cesto)
             ativos.append(c)
 
+        # ── bloco GERAL: o processo inteiro, cesto a cesto ───────────────────
+        # Junta as etapas de todos os setores para responder "quanto tempo um
+        # cesto leva do começo ao fim, e onde ele passa esse tempo".
+        try:
+            import pintura as _pg
+            pint_card = (_pg.resumo_por_card() if _pg.pintura_ativa() else {})
+        except Exception:
+            pint_card = {}
+
+        geral_cards = [c for c in prep_todos if c.prep_inicio and _no_periodo(c.prep_inicio)
+                       and (not turnos or turno_prep(c) in turnos)]
+        m_prep, m_ag_banho, m_banho, m_ag_pint, m_mv, m_est, m_total = [], [], [], [], [], [], []
+        geral_regs = []
+        for c in geral_cards:
+            pt = pint_card.get(c.id, {})
+            tm = _tempos_do_ciclo(c, pt)
+            if c.prep_minutos:
+                m_prep.append(c.prep_minutos)
+            if tm['espera_banho']:
+                m_ag_banho.append(tm['espera_banho'])
+            if c.banho_minutos:
+                m_banho.append(c.banho_minutos)
+            if tm['espera_pintura']:
+                m_ag_pint.append(tm['espera_pintura'])
+            if pt.get('carga_min'):
+                (m_mv if pt.get('destino') == 'Carregar monovia' else m_est).append(pt['carga_min'])
+            # o total só faz sentido para quem chegou ao fim da etapa apontada
+            finalizado = bool(pt.get('carga_fim')) or (not _pintura_ativa() and c.banho_fim)
+            if finalizado and tm['total_processo']:
+                m_total.append(tm['total_processo'])
+            d = c.to_dict()
+            d.update(ciclo_ini=d['prep_inicio'],
+                     ciclo_fim=((pt.get('descarga_fim') or pt.get('carga_fim') or
+                                 (c.banho_fim if not _pintura_ativa() else None)) and
+                                ((pt.get('descarga_fim') or pt.get('carga_fim') or c.banho_fim)
+                                 - timedelta(hours=FUSO_LOCAL_HORAS)
+                                 ).strftime('%d/%m/%Y %H:%M:%S')) or '',
+                     ciclo_total=tm['total_processo'] if finalizado else None,
+                     ciclo_trabalho=tm['total_trabalho'],
+                     etapa=_etapa_atual(c, pt),
+                     pintura=pt and {k: (v.isoformat() + 'Z' if hasattr(v, 'isoformat') else v)
+                                     for k, v in pt.items()} or None)
+            geral_regs.append(d)
+
+        def _med(v):
+            return round(sum(v) / len(v), 1) if v else 0
+
+        geral_b = {
+            'total': len(geral_cards),
+            'pecas': sum(x['qtd_total'] for x in geral_regs),
+            'area': round(sum(x['area_total'] for x in geral_regs), 2),
+            'normais': sum(1 for c in geral_cards if c.tipo != 'Retrabalho'),
+            'retrabalhos': sum(1 for c in geral_cards if c.tipo == 'Retrabalho'),
+            'ops': sum(x['n_itens'] for x in geral_regs),
+            'media_prep': _med(m_prep), 'media_ag_banho': _med(m_ag_banho),
+            'media_banho': _med(m_banho), 'media_ag_pintura': _med(m_ag_pint),
+            'media_carga_monovia': _med(m_mv), 'media_carga_estacionaria': _med(m_est),
+            'media_total': _med(m_total), 'concluidos_total': len(m_total),
+            'registros': geral_regs,
+        }
+
+        # ── bloco do setor PINTURA (se o módulo estiver ativo) ──
+        pintura_b = None
+        try:
+            import pintura as _pint
+            if _pint.pintura_ativa():
+                pintura_b = _pint.coletar_dados_pintura(de, ate, turnos)
+        except Exception as _e:
+            print(f'[pintura] métricas indisponíveis: {_e}')
+
         return {
             'ativos': [c.to_dict() for c in ativos],
             'em_andamento': len(ativos),
             'prep': prep_b,
             'banho': banho_b,
+            'pintura': pintura_b,
+            'geral': geral_b,
             'registros_prep': prep_b['registros'],
             'registros_banho': banho_b['registros'],
             'total_prep': prep_b['total'],
@@ -1909,7 +2210,14 @@ def api_painel_ativos():
                 continue
             vistos.add(c.numero_cesto)
             ativos.append(c.to_dict())
-        return jsonify({'ativos': ativos})
+        pint = None
+        try:
+            import pintura
+            if pintura.pintura_ativa():
+                pint = pintura.estado_ao_vivo()
+        except Exception as e:
+            print(f'[pintura] ao vivo indisponível: {e}')
+        return jsonify({'ativos': ativos, 'pintura': pint})
     finally:
         db.close()
 
@@ -1920,6 +2228,17 @@ def api_config_agenda():
     if 'usuario' not in session:
         return jsonify({}), 403
     return jsonify(get_agenda())
+
+
+def _maior_cesto_em_uso():
+    """Maior número de cesto com histórico. Reduzir abaixo disso esconderia
+    cestos que ainda existem no chão de fábrica."""
+    db = Session()
+    try:
+        n = db.query(func.max(Card.numero_cesto)).scalar()
+        return int(n or 0)
+    except Exception:
+        return 0
 
 
 @app.route('/admin/config', methods=['GET', 'POST'])
@@ -1960,33 +2279,20 @@ def admin_config():
             'excecoes': excecoes,
         }
         set_agenda(novo)
-        # ---- total de cestos ----
-        if request.form.get('total_cestos') not in (None, ''):
+        msg = 'Jornada salva. O cálculo dos tempos de espera já usa os novos turnos e exceções.'
+        # ---- quantidade de cestos disponíveis ----
+        if request.form.get('total_cestos'):
             try:
-                novo_total = int(request.form.get('total_cestos'))
+                antes = total_cestos()
+                depois = set_total_cestos(int(request.form['total_cestos']))
+                if depois != antes:
+                    msg += f' Cestos disponíveis: {antes} → {depois}.'
             except (ValueError, TypeError):
-                novo_total = get_total_cestos()
-            # não deixa reduzir abaixo de cestos ATIVOS já existentes (evita "sumir" cesto em uso)
-            db = Session()
-            try:
-                ativos_nums = [c.numero_cesto for c in
-                               db.query(Card).filter(Card.estado.in_(ESTADOS_ATIVOS)).all()
-                               if c.numero_cesto]
-            finally:
-                db.close()
-            max_ativo = max(ativos_nums) if ativos_nums else 0
-            if novo_total < max_ativo:
-                novo_total = max_ativo
-                set_total_cestos(novo_total)
-                msg = (f'Configurações salvas. O total de cestos foi mantido em {max_ativo} '
-                       f'porque há cesto(s) ativo(s) com número até {max_ativo} — conclua-os antes de reduzir.')
-            else:
-                set_total_cestos(novo_total)
-                msg = 'Configurações salvas. A jornada e o número de cestos já estão valendo.'
-        else:
-            msg = 'Configurações salvas. A jornada e o número de cestos já estão valendo.'
+                msg += ' (Quantidade de cestos inválida — mantida a anterior.)'
     return render_template('config.html', nome=session.get('nome'),
-                           cfg=get_agenda(forcar=True), total_cestos=get_total_cestos(forcar=True), msg=msg)
+                           cfg=get_agenda(forcar=True), msg=msg,
+                           total_cestos=total_cestos(forcar=True),
+                           cestos_em_uso=_maior_cesto_em_uso())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2140,7 +2446,7 @@ def api_admin_card_salvar():
 
         # estado
         if d.get('estado'):
-            estados_validos = (ST_PREPARANDO, ST_PREENCHER, ST_FILA_BANHO, ST_EM_BANHO, ST_CONCLUIDO)
+            estados_validos = tuple(ESTADOS_ATIVOS) + (ST_CONCLUIDO,)
             if d['estado'] not in estados_validos:
                 return jsonify({'sucesso': False, 'erro': 'Estado inválido.'}), 400
             card.estado = d['estado']
@@ -2261,6 +2567,54 @@ def _estilo_cabecalho(ws, headers):
     ws.row_dimensions[1].height = 28
 
 
+def _tempos_do_ciclo(c, pint):
+    """Tempos de ponta a ponta de um cesto.
+
+    A linha do tempo tem trabalho e espera intercalados:
+
+      início prep ─[TRABALHO prep]─ fim prep
+                  ─[espera cadastro+banho]─ início banho
+                  ─[TRABALHO banho]─ fim banho
+                  ─[espera pintura]─ início carga
+                  ─[TRABALHO carga]─ fim carga
+                  ─[na linha/forno]─ início descarga
+                  ─[TRABALHO descarga]─ fim descarga
+
+    • total_processo  = do início da preparação ao fim (corrido, como o relógio
+                        de parede vê) — mas contado só dentro da jornada, senão
+                        um cesto que dorme no fim de semana marca 60 h.
+    • total_trabalho  = só as etapas com operador: prep + banho + carga +
+                        preparação/armazenamento + descarga. Não inclui as
+                        esperas nem o tempo de forno.
+    O nome 'aguardando cadastro' e 'aguardando banho' é o mesmo intervalo no
+    sistema (fim da prep -> início do banho), por isso ele aparece uma vez só.
+    """
+    pint = pint or {}
+    esp_banho = (round(tempo_util_segundos(c.prep_fim, c.banho_inicio) / 60, 1)
+                 if c.prep_fim and c.banho_inicio and c.banho_inicio >= c.prep_fim else 0)
+    carga_ini = pint.get('carga_ini')
+    esp_pint = (round(tempo_util_segundos(c.banho_fim, carga_ini) / 60, 1)
+                if c.banho_fim and carga_ini and carga_ini >= c.banho_fim else 0)
+    desc_ini, desc_fim = pint.get('descarga_ini'), pint.get('descarga_fim')
+    carga_fim = pint.get('carga_fim')
+    # tempo na linha (forno) — corrido: a monovia não para no fim do turno
+    na_linha = (round((desc_ini - carga_fim).total_seconds() / 60, 1)
+                if carga_fim and desc_ini and desc_ini >= carga_fim else 0)
+
+    fim_ciclo = desc_fim or carga_fim or c.banho_fim or c.prep_fim
+    total_proc = (round(tempo_util_segundos(c.prep_inicio, fim_ciclo) / 60, 1)
+                  if c.prep_inicio and fim_ciclo and fim_ciclo >= c.prep_inicio else 0)
+    total_trab = round((c.prep_minutos or 0) + (c.banho_minutos or 0)
+                       + (pint.get('carga_min') or 0) + (pint.get('outras_min') or 0)
+                       + (pint.get('descarga_min') or 0), 1)
+    return {
+        'espera_banho': esp_banho, 'espera_pintura': esp_pint, 'na_linha': na_linha,
+        'total_processo': total_proc, 'total_trabalho': total_trab,
+        'total_espera': round(max(0, total_proc - total_trab), 1),
+        'fim_ciclo': fim_ciclo,
+    }
+
+
 def _gerar_excel(tipo, turnos=None, de=None, ate=None):
     db = Session()
     try:
@@ -2279,13 +2633,25 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
         #  • banho / geral → cestos concluídos, pela finalização do banho e turno do banho
         if tipo == 'prebanho':
             base = db.query(Card).filter(
-                Card.estado.in_([ST_FILA_BANHO, ST_EM_BANHO, ST_CONCLUIDO])).order_by(Card.id).all()
+                Card.estado.in_([ST_FILA_BANHO, ST_EM_BANHO, ST_FILA_PINTURA,
+                                 ST_EM_PINTURA, ST_AG_MONTAGEM, ST_CARREGANDO,
+                                 ST_CONCLUIDO])).order_by(Card.id).all()
             cards = [c for c in base if _no_periodo(c.prep_fim)
                      and (not turnos or turno_prep(c) in turnos)]
         else:
-            base = db.query(Card).filter_by(estado=ST_CONCLUIDO).order_by(Card.id).all()
+            base = db.query(Card).filter(Card.banho_fim.isnot(None)).order_by(Card.id).all()
             cards = [c for c in base if _no_periodo(c.banho_fim)
                      and (not turnos or turno_banho(c) in turnos)]
+        # resumo da pintura por cesto (uma consulta só, para o relatório inteiro)
+        pint_por_card = {}
+        if tipo == 'geral':
+            try:
+                import pintura
+                if pintura.pintura_ativa():
+                    pint_por_card = pintura.resumo_por_card([c.id for c in cards])
+            except Exception as e:
+                print(f'[pintura] resumo indisponível no Excel geral: {e}')
+
         wb = Workbook()
         ws = wb.active
 
@@ -2324,10 +2690,30 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
                        'Operador Banho Início', 'Operador Banho Fim',
                        'Início Banho - Data', 'Início Banho - Hora',
                        'Final Banho - Data', 'Final Banho - Hora',
-                       'Tempo espera (min)', 'Tempo banho (min)', 'Total prep+banho (min)',
-                       'Observação Prep', 'Observação Banho', 'Turno pré-banho', 'Turno banho', 'Motivo retrab.']
+                       'Tempo espera banho (min)', 'Tempo banho (min)', 'Total prep+banho (min)',
+                       # ── PINTURA ──
+                       'Aguardando pintura (min)', 'Destino', 'Operadores carga', 'Nº oper. carga',
+                       'Início Carga - Data', 'Início Carga - Hora',
+                       'Fim Carga - Data', 'Fim Carga - Hora', 'Tempo carga (min)',
+                       'Outras atividades (min)', 'Detalhe outras atividades',
+                       'Metros monovia', 'Ganchos', 'Peças/gancho',
+                       'Tempo na linha/forno (min)',
+                       'Operadores descarga', 'Nº oper. descarga',
+                       'Início Descarga - Data', 'Início Descarga - Hora',
+                       'Fim Descarga - Data', 'Fim Descarga - Hora',
+                       'Tempo descarga (min)', 'Passes', 'Desceram OK', 'Repasse',
+                       'Motivo do repasse',
+                       # ── TOTAIS DO CICLO ──
+                       'CICLO: início', 'CICLO: fim',
+                       'TOTAL do processo (min)', 'TOTAL trabalhado (min)',
+                       'TOTAL de espera (min)',
+                       'Observação Prep', 'Observação Banho', 'Observação Pintura',
+                       'Turno pré-banho', 'Turno banho', 'Motivo retrab.']
             larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 18, 9, 16, 14, 16, 14, 13, 14,
-                    20, 20, 16, 14, 16, 14, 14, 14, 16, 28, 28, 12, 12, 18]
+                    20, 20, 16, 14, 16, 14, 16, 14, 16,
+                    18, 20, 26, 12, 16, 14, 16, 14, 14, 16, 30, 14, 9, 12, 18,
+                    24, 14, 16, 14, 16, 14, 15, 8, 11, 10, 22,
+                    18, 18, 18, 18, 18, 28, 28, 28, 12, 12, 18]
 
         _estilo_cabecalho(ws, headers)
 
@@ -2367,6 +2753,15 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
                         dd['espera_min'], dd['banho_minutos'], dd['obs_banho'], dd['turno_lbl']
                     ])
                 else:  # geral
+                    pt = pint_por_card.get(c.id, {})
+                    tm = _tempos_do_ciclo(c, pt)
+
+                    def _d(dt):
+                        return (dt - timedelta(hours=FUSO_LOCAL_HORAS)).strftime('%d/%m/%Y') if dt else ''
+
+                    def _h(dt):
+                        return (dt - timedelta(hours=FUSO_LOCAL_HORAS)).strftime('%H:%M:%S') if dt else ''
+                    ganchos = pt.get('ganchos') or 0
                     ws.append([
                         dd['id'], dd['numero_cesto'], it['ordem'], it['material'],
                         it['texto_breve'], it['quantidade'], area_it, peso_it,
@@ -2378,8 +2773,28 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
                         dd['operador_banho_inicio'], dd['operador_banho_fim'],
                         dd['banho_inicio_data'], dd['banho_inicio_hora'],
                         dd['banho_fim_data'], dd['banho_fim_hora'],
-                        dd['espera_min'], dd['banho_minutos'], total_prep_banho,
-                        dd['observacao'], dd['obs_banho'], dd['turno_prep_lbl'], dd['turno_banho_lbl'], it_motivo
+                        tm['espera_banho'], dd['banho_minutos'], total_prep_banho,
+                        # ── pintura ──
+                        tm['espera_pintura'], pt.get('destino', ''),
+                        pt.get('carga_operadores', ''), pt.get('n_oper_carga', ''),
+                        _d(pt.get('carga_ini')), _h(pt.get('carga_ini')),
+                        _d(pt.get('carga_fim')), _h(pt.get('carga_fim')),
+                        pt.get('carga_min', ''), pt.get('outras_min', ''), pt.get('outras', ''),
+                        pt.get('metros', ''), ganchos or '',
+                        (round(pt.get('pecas_carregadas', 0) / ganchos, 2) if ganchos else ''),
+                        tm['na_linha'] or '',
+                        pt.get('descarga_operadores', ''), pt.get('n_oper_desc', ''),
+                        _d(pt.get('descarga_ini')), _h(pt.get('descarga_ini')),
+                        _d(pt.get('descarga_fim')), _h(pt.get('descarga_fim')),
+                        pt.get('descarga_min', ''), pt.get('voltas', ''),
+                        pt.get('pecas_ok', ''), pt.get('pecas_repasse', ''),
+                        pt.get('motivo_repasse', ''),
+                        # ── totais do ciclo ──
+                        (dd['prep_inicio_data'] + ' ' + dd['prep_inicio_hora']).strip(),
+                        (_d(tm['fim_ciclo']) + ' ' + _h(tm['fim_ciclo'])).strip(),
+                        tm['total_processo'], tm['total_trabalho'], tm['total_espera'],
+                        dd['observacao'], dd['obs_banho'], dd.get('obs_pintura', ''),
+                        dd['turno_prep_lbl'], dd['turno_banho_lbl'], it_motivo
                     ])
 
         # ── Resumo (para conferência): contagem EXATA de cestos e peças ──
@@ -2499,6 +2914,31 @@ def _garantir_secret_key():
     print('[secret_key] AVISO: não foi possível ler a chave do banco '
           f'({ultima_exc}). Usando chave padrão do código. '
           'Defina SECRET_KEY nas variáveis do Railway para maior segurança.')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Módulo PINTURA / MONOVIA
+# Registrado aqui (no fim do arquivo) porque precisa dos modelos já definidos.
+# ─────────────────────────────────────────────────────────────────────────────
+try:
+    import pintura
+    pintura.init_pintura(
+        app=app, Base=Base, Session=Session, engine=engine,
+        Card=Card, Config=Config, login_required=login_required,
+        tempo_util_segundos=tempo_util_segundos, turno_num=turno_num,
+        turno_label=turno_label, get_agenda=get_agenda,
+        FUSO_LOCAL_HORAS=FUSO_LOCAL_HORAS,
+        ESTADOS_ATIVOS=ESTADOS_ATIVOS, ST_CONCLUIDO=ST_CONCLUIDO,
+        ST_FILA_PINTURA=ST_FILA_PINTURA, ST_EM_PINTURA=ST_EM_PINTURA,
+        ST_AG_MONTAGEM=ST_AG_MONTAGEM, ST_PREENCHER=ST_PREENCHER,
+        ST_FILA_BANHO=ST_FILA_BANHO, PROCESSOS=PROCESSOS, Usuario=Usuario,
+        _area_peso_do_codigo=_area_peso_do_codigo, _op_txt=_op_txt,
+        _pausas_resumo=_pausas_resumo,
+    )
+    app.register_blueprint(pintura.bp)
+    print('[pintura] módulo registrado.')
+except Exception as _e:
+    print(f'[pintura] NÃO registrado: {_e}')
 
 
 init_db()

@@ -1,16 +1,3 @@
-## Ajustes v22
-- A tela nunca desliga enquanto o site estiver aberto. Novo static/wakelock.js
-  (incluído em TODAS as telas, inclusive login e painel gerencial) usa a
-  Screen Wake Lock API dos navegadores para impedir que a tela do PC/tablet apague
-  ou entre em suspensão. Reativa sozinho ao voltar para a aba e em cliques/toques.
-  Para aparelhos/navegadores sem a API, há um fallback com vídeo invisível em loop.
-  Observação: funciona em HTTPS (Railway) — a tela fica ligada só com o site aberto.
-## Ajustes v21
-- O número total de cestos deixou de ser fixo (era 20) e virou CONFIGURÁVEL.
-  Novo campo em Administração -> Configurações: "Número de cestos" (total de cestos
-  físicos, 1 a 999). A grade da tela de preparação passa a mostrar de 1 até esse total.
-- Proteção: ao reduzir o total, o sistema não deixa cair abaixo do maior número de
-  cesto que esteja ATIVO no momento (para não esconder um cesto em uso).
 ## Ajustes v20
 - Painel gerencial: REMOVIDO o filtro por turnos e as tags de turno (colunas/pills).
   O filtro agora é só por período (linha do tempo Dia/Mês/Ano ou intervalo). Os turnos

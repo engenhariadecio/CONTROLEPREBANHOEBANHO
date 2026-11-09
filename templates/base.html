@@ -24,6 +24,8 @@
     {% if session.get('perfil') == 'admin' %}
     <a href="{{ url_for('dashboard') }}" class="tb-btn" title="Dashboard"><i class="bi bi-grid-1x2-fill"></i></a>
     <a href="{{ url_for('painel_gerencia') }}" class="tb-btn" title="Painel da gerência"><i class="bi bi-tv"></i></a>
+    <a href="{{ url_for('pintura.tela_pintura') }}" class="tb-btn" title="Pintura"><i class="bi bi-palette-fill"></i></a>
+    <a href="{{ url_for('pintura.tela_monovia') }}" class="tb-btn" title="Monovia (ao vivo)"><i class="bi bi-speedometer2"></i></a>
     <a href="{{ url_for('admin_mestre') }}" class="tb-btn" title="Lista mestra"><i class="bi bi-table"></i></a>
     <a href="{{ url_for('admin_cestos') }}" class="tb-btn" title="Manutenção de cestos"><i class="bi bi-tools"></i></a>
     <a href="{{ url_for('admin_config') }}" class="tb-btn" title="Configurações de jornada"><i class="bi bi-gear-fill"></i></a>
@@ -40,7 +42,6 @@
   {% block content %}{% endblock %}
 </main>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="{{ url_for('static', filename='wakelock.js') }}"></script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>
