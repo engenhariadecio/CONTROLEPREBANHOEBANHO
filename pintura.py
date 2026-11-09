@@ -92,7 +92,7 @@ CONFIG_PADRAO = {
             'nome': 'Monovia 1',
             'passo_gancho_m': 0.40,
             'area_max_gancho_m2': 1.20,
-            'velocidade_nominal_m_min': 3.5,
+            'velocidade_nominal_m_min': 1.4,
             # volta completa do trilho: usado quando a peça NÃO é descarregada e
             # segue para outro passe (falha de pintura)
             'perimetro_m': 120.0,
@@ -113,6 +113,8 @@ CONFIG_PADRAO = {
     # fica pendurado. Ligue quando for apontar a descarga — o código já existe
     # inteiro (repasse, tempo de forno, rastreio por odômetro).
     'descarga_ativa': False,
+    # Versão da config, para migrações pontuais. 2 = velocidade padrão 1,4 m/min.
+    '_versao': 2,
 }
 
 _cfg_cache = {'dados': None}
@@ -143,7 +145,7 @@ def _definir_modelos(Base):
         carga_ativ_id = Column(Integer)      # atividade que carregou este lote
         na_linha_desde = Column(DateTime)    # instante em que entrou na linha
         voltas = Column(Integer, default=1)  # nº de passes pela cabine
-        odo_repasse = Column(Float)          # odômetro quando voltou para outro passe
+        odo_repasse = Column(Float)          # marcador: !=None enquanto está em repasse
         motivo_repasse = Column(String(120), default='')
         criado_em = Column(DateTime, default=datetime.utcnow)
         finalizado_em = Column(DateTime)
@@ -223,6 +225,8 @@ def _definir_modelos(Base):
         estado = Column(String(20), default='EM_ANDAMENTO', index=True)
 
         monovia_linha = Column(String(20), default='')
+        # Legado: o odômetro foi substituído por velocidade × tempo. As colunas
+        # ficam para não perder o histórico já gravado.
         odo_ini = Column(Float)
         odo_fim = Column(Float)
         n_ganchos = Column(Integer, default=0)
@@ -276,9 +280,7 @@ def _definir_modelos(Base):
                 'pausas': pausas, 'total_pausa_min': round(pausas['total_seg'] / 60, 1),
                 'observacao': self.observacao or '', 'estado': self.estado,
                 'monovia_linha': self.monovia_linha or '',
-                'odo_ini': self.odo_ini, 'odo_fim': self.odo_fim,
-                'metros': (round(self.odo_fim - self.odo_ini, 2)
-                           if self.odo_ini is not None and self.odo_fim is not None else 0),
+                'metros': metros_carregados(self),
                 'n_ganchos': self.n_ganchos or 0,
                 'qtd_ok': self.qtd_ok or 0, 'qtd_repasse': self.qtd_repasse or 0,
                 'motivo_repasse': self.motivo_repasse or '',
@@ -475,6 +477,34 @@ def set_config(novo):
     return cfg
 
 
+def migrar_config():
+    """Ajustes únicos na configuração já salva.
+
+    `get_config` parte do padrão e aplica o que está no banco por cima, então
+    mudar CONFIG_PADRAO NÃO alcança quem já tem a chave 'monovia' gravada — é o
+    caso de qualquer instalação que já rodou. Aqui corrigimos esses casos, uma
+    vez só, sem pisar num valor que o usuário tenha escolhido.
+    """
+    # Lê o JSON CRU do banco: get_config mescla com CONFIG_PADRAO, que já tem
+    # _versao=2, e isso faria a migração achar que já rodou.
+    try:
+        row = _db().query(CTX['Config']).filter_by(chave='monovia').first()
+        salvo = json.loads(row.valor) if (row and row.valor) else None
+    except Exception:
+        return
+    if not salvo or int(salvo.get('_versao') or 1) >= 2:
+        return
+    cfg = get_config(forcar=True)
+    linhas = cfg.get('linhas') or []
+    for l in linhas:
+        # 3.5 era o padrão de fábrica antigo: só troca quem nunca editou
+        if abs(float(l.get('velocidade_nominal_m_min') or 0) - 3.5) < 0.001:
+            l['velocidade_nominal_m_min'] = 1.4
+            print('[pintura] velocidade da monovia: 3.5 -> 1.4 m/min (novo padrão). '
+                  'Ajuste em Administração > Configurações se a sua linha for outra.')
+    set_config(dict(cfg, linhas=linhas, _versao=2))
+
+
 def pintura_ativa():
     return bool(get_config().get('ativo', True))
 
@@ -529,7 +559,7 @@ def odometro_agora(linha_id=None, db=None):
             'idade_seg': round(idade, 1), 'modo': modo, 'fonte': st.fonte or ''}
 
 
-def _odometro_estimado(linha_id=None):
+def _odometro_estimado(linha_id=None):   # legado — telemetria futura
     """Sem telemetria: estima metros pela velocidade nominal, para o rastreio já
     funcionar no dia 1."""
     v = float(get_linha(linha_id).get('velocidade_nominal_m_min') or 3.5)
@@ -595,58 +625,85 @@ def ingerir_amostra(linha_id, velocidade=None, odometro=None, ts=None,
 # ─────────────────────────────────────────────────────────────────────────────
 # Rastreabilidade
 # ─────────────────────────────────────────────────────────────────────────────
-def posicao_da_atividade(ativ, odo_atual=None, db=None):
+def _janela_na_estacao(ativ, offset_m, linha):
+    """Entre que horas o lote passa por uma estação.
+
+    Cada peça leva  offset ÷ velocidade  minutos para chegar lá. A primeira peça
+    foi pendurada no início da carga e a última no fim, então o lote ocupa a
+    estação entre:
+
+        início da carga + offset/v   e   fim da carga + offset/v
+
+    É o mesmo raciocínio do odômetro, medido em tempo em vez de metros.
+    """
+    v = float(linha.get('velocidade_nominal_m_min') or 1.4)
+    if v <= 0 or not ativ.inicio:
+        return None
+    atraso = timedelta(minutes=offset_m / v)
+    fim = ativ.fim or datetime.utcnow()
+    return ativ.inicio + atraso, fim + atraso
+
+
+def posicao_da_atividade(ativ, agora=None, db=None):
+    """Onde o lote está na linha, estação por estação."""
     linha = get_linha(ativ.monovia_linha)
-    est = odometro_agora(linha['id'], db)
-    if odo_atual is None:
-        odo_atual = est['odometro_m']
-    ini = ativ.odo_ini
-    if ini is None:
-        return {'ok': False, 'motivo': 'carga sem odômetro', 'estacoes': []}
-    fim = ativ.odo_fim if ativ.odo_fim is not None else odo_atual
-    v = est['velocidade'] or linha.get('velocidade_nominal_m_min') or 3.5
+    agora = agora or datetime.utcnow()
+    if not _eh_monovia(ativ) or not ativ.inicio:
+        return {'ok': False, 'motivo': 'carga fora da monovia', 'estacoes': []}
+    v = float(linha.get('velocidade_nominal_m_min') or 1.4)
     out = []
     for e in linha.get('estacoes', []):
         d = float(e.get('offset_m') or 0)
-        a, b = ini + d, fim + d
-        if odo_atual < a:
-            faltam = a - odo_atual
-            sit, eta = 'a_caminho', (round(faltam / (v / 60.0) / 60.0, 1) if v > 0 else None)
-        elif odo_atual <= b:
+        jan = _janela_na_estacao(ativ, d, linha)
+        if not jan:
+            continue
+        entra, sai = jan
+        if agora < entra:
+            falta_min = (entra - agora).total_seconds() / 60.0
+            sit, eta, faltam = 'a_caminho', round(falta_min, 1), round(falta_min * v, 1)
+        elif agora <= sai:
             sit, eta, faltam = 'na_estacao', 0, 0
         else:
             sit, eta, faltam = 'passou', None, 0
         out.append({'estacao': e.get('id'), 'nome': e.get('nome'), 'offset_m': d,
-                    'situacao': sit, 'faltam_m': round(faltam, 1), 'eta_min': eta,
-                    'entra_em_m': round(a, 1), 'sai_em_m': round(b, 1)})
-    return {'ok': True, 'odometro_m': round(odo_atual, 1),
-            'trecho': [round(ini, 1), round(fim, 1)],
-            'metros_lote': round(fim - ini, 2), 'estacoes': out}
+                    'situacao': sit, 'faltam_m': faltam, 'eta_min': eta,
+                    'entra_em': entra.isoformat() + 'Z', 'sai_em': sai.isoformat() + 'Z'})
+    return {'ok': True, 'velocidade': v,
+            'metros_lote': metros_carregados(ativ, linha), 'estacoes': out}
 
 
-def atividades_na_estacao(estacao_id, linha_id=None, odo_atual=None, db=None):
+def atividades_na_estacao(estacao_id, linha_id=None, agora=None, db=None):
     """Quais cargas estão passando nesta estação agora — é o que a câmera pergunta."""
     linha = get_linha(linha_id)
     est = next((e for e in linha.get('estacoes', []) if e.get('id') == estacao_id), None)
     if not est:
         return []
     db = _db(db)
+    agora = agora or datetime.utcnow()
     d = float(est.get('offset_m') or 0)
-    if odo_atual is None:
-        odo_atual = odometro_agora(linha['id'], db)['odometro_m']
-    alvo = odo_atual - d
+    v = float(linha.get('velocidade_nominal_m_min') or 1.4)
+    if v <= 0:
+        return []
     A, L = MODELOS['atividade'], MODELOS['lote']
-    q = db.query(A).filter(A.odo_ini.isnot(None), A.odo_ini <= alvo
-                           ).order_by(A.odo_ini.desc()).limit(30).all()
+    # só as cargas recentes o bastante para ainda estarem na linha
+    limite = agora - timedelta(minutes=(d / v) + 24 * 60)
+    q = db.query(A).filter(A.inicio.isnot(None), A.inicio >= limite
+                           ).order_by(A.inicio.desc()).limit(60).all()
     out = []
     for a in q:
-        fim = a.odo_fim if a.odo_fim is not None else alvo
-        if fim >= alvo:
+        if not _eh_monovia(a):
+            continue
+        jan = _janela_na_estacao(a, d, linha)
+        if not jan:
+            continue
+        entra, sai = jan
+        if entra <= agora <= sai:
             lote = db.query(L).get(a.lote_id) if a.lote_id else None
             d_ = a.to_dict()
             d_['lote'] = lote.to_dict() if lote else None
+            dur = max(0.001, (sai - entra).total_seconds())
             d_['posicao_no_lote_pct'] = round(
-                100 * (alvo - a.odo_ini) / max(0.001, fim - a.odo_ini), 1)
+                100 * (agora - entra).total_seconds() / dur, 1)
             out.append(d_)
     return out
 
@@ -657,45 +714,68 @@ def _offset_descarga(linha):
 
 
 def situacao_na_linha(lote, ativ_carga, odo_atual=None, db=None):
-    """Onde o lote está entre a carga e a descarga.
+    """Quando o lote chega na descarga.
 
-    O lote chega na descarga quando a ÚLTIMA peça dele passou pela estação, ou
-    seja quando:  odo_atual >= odo_fim_da_carga + offset_descarga.
-    Sem monovia (estacionária) ou sem estação configurada, fica pronto na hora —
-    quem manda é o operador.
+    Sem odômetro, a conta é por TEMPO: a peça percorre o trajeto até a estação
+    de descarga à velocidade da monovia, então
+
+        minutos até a descarga = offset da estação (m) ÷ velocidade (m/min)
+
+    Com 1,4 m/min e a descarga a 90 m, são ~64 min depois do fim da carga.
+    Na estacionária, ou sem estação configurada, fica pronto na hora — quem
+    manda é o operador.
     """
-    if not ativ_carga or ativ_carga.tipo == TIPO_ESTACIONARIA:
+    if not ativ_carga or not _eh_monovia(ativ_carga) or not ativ_carga.fim:
         return {'pronto': True, 'modo': 'manual', 'faltam_m': 0, 'eta_min': 0}
     linha = get_linha(ativ_carga.monovia_linha)
     off = _offset_descarga(linha)
-    if off is None or ativ_carga.odo_fim is None:
+    v = float(linha.get('velocidade_nominal_m_min') or 1.4)
+    if off is None or v <= 0:
         return {'pronto': True, 'modo': 'manual', 'faltam_m': 0, 'eta_min': 0}
-    est = odometro_agora(linha['id'], db)
-    if odo_atual is None:
-        odo_atual = est['odometro_m']
     if lote is not None and lote.odo_repasse is not None:
         # peça não descarregada: dá uma volta inteira no trilho antes de voltar
-        # à estação de descarga
-        alvo = lote.odo_repasse + float(linha.get('perimetro_m') or 120.0)
+        distancia = float(linha.get('perimetro_m') or 120.0)
+        partida = lote.na_linha_desde or ativ_carga.fim
         modo = 'repasse'
     else:
-        alvo = ativ_carga.odo_fim + off
-        modo = 'odometro'
-    faltam = alvo - odo_atual
-    if faltam <= 0:
+        distancia, partida, modo = off, ativ_carga.fim, 'tempo'
+    passados = (datetime.utcnow() - partida).total_seconds() / 60.0
+    faltam_min = (distancia / v) - passados
+    if faltam_min <= 0:
         return {'pronto': True, 'modo': modo, 'faltam_m': 0, 'eta_min': 0}
-    v = est['velocidade'] or linha.get('velocidade_nominal_m_min') or 3.5
-    return {'pronto': False, 'modo': modo, 'faltam_m': round(faltam, 1),
-            'eta_min': round(faltam / v, 1) if v > 0 else None,
-            'primeira_peca_chegou': odo_atual >= (ativ_carga.odo_ini or 0) + off}
+    return {'pronto': False, 'modo': modo,
+            'faltam_m': round(faltam_min * v, 1),
+            'eta_min': round(faltam_min, 1)}
+
+
+def metros_carregados(ativ, linha=None):
+    """Metros de trilho que o lote ocupa.
+
+    Enquanto o operador carrega, a monovia anda. Então o comprimento do lote é
+    simplesmente quanto a linha andou durante o carregamento:
+
+        metros = velocidade (m/min) × tempo de carga (min)
+
+    É por isso que a velocidade da monovia é configurável: ela é a régua. Com
+    1,4 m/min, 10 minutos de carga = 14 m de trilho ocupado. Vale só para a
+    monovia; a estacionária não tem trilho correndo.
+    """
+    linha = linha or get_linha(ativ.monovia_linha)
+    if not _eh_monovia(ativ):
+        return 0.0
+    v = float(linha.get('velocidade_nominal_m_min') or 1.4)
+    return round(max(0.0, (ativ.minutos or 0) * v), 2)
+
+
+def _eh_monovia(ativ):
+    return (ativ.tipo == TIPO_MONOVIA
+            or (ativ.tipo == TIPO_OP_NOVA and (ativ.subtipo or '').lower() == 'monovia'))
 
 
 def metricas_carga(ativ, lote=None, linha=None):
-    """Empilhamento e ocupação — só com odômetro + quantidade/área já existentes."""
+    """Empilhamento e ocupação, a partir do tempo de carga e da velocidade."""
     linha = linha or get_linha(ativ.monovia_linha)
-    metros = 0.0
-    if ativ.odo_ini is not None and ativ.odo_fim is not None:
-        metros = max(0.0, ativ.odo_fim - ativ.odo_ini)
+    metros = metros_carregados(ativ, linha)
     passo = float(linha.get('passo_gancho_m') or 0.4)
     ganchos = int(metros / passo) if metros > 0 else 0
     # prioriza a foto gravada na atividade; o lote pode ter mudado desde então
@@ -713,6 +793,7 @@ def metricas_carga(ativ, lote=None, linha=None):
         'area_m2': round(area, 3), 'pecas': pecas,
         'ocupacao_pct': round(100 * area / area_max, 1) if area_max else 0,
         'min_por_metro': round((ativ.minutos or 0) / metros, 2) if metros else 0,
+        'velocidade': float(linha.get('velocidade_nominal_m_min') or 1.4),
     }
 
 
@@ -865,7 +946,7 @@ def api_painel():
         elif l.estado == 'NA_LINHA':
             carga = db.query(A).get(l.carga_ativ_id) if l.carga_ativ_id else None
             d['carga'] = carga.to_dict() if carga else None
-            d['linha_status'] = situacao_na_linha(l, carga, mv['odometro_m'], db)
+            d['linha_status'] = situacao_na_linha(l, carga, db=db)
             (prontos if d['linha_status']['pronto'] else na_linha).append(d)
         elif l.com_cesto:
             com_cesto.append(d)
@@ -874,7 +955,9 @@ def api_painel():
     return jsonify({'cestos': com_cesto, 'sem_cesto': sem_cesto,
                     'em_atividade': em_ativ, 'prontos_descarga': prontos,
                     'na_linha': na_linha, 'monovia': mv,
-                    'descarga_ativa': descarga_ativa()})
+                    'descarga_ativa': descarga_ativa(),
+                    'velocidade_nominal': float(
+                        get_linha().get('velocidade_nominal_m_min') or 1.4)})
 
 
 def estado_ao_vivo():
@@ -904,8 +987,7 @@ def estado_ao_vivo():
                                 or (a.subtipo or '').lower() == 'monovia'),
                  'estacionaria': sum(1 for a in hoje_q if a.tipo == TIPO_ESTACIONARIA
                                      or (a.subtipo or '').lower() == 'estacionaria'),
-                 'metros': round(sum(max(0, (a.odo_fim or 0) - (a.odo_ini or 0))
-                                     for a in hoje_q if a.odo_ini is not None), 1)}
+                 'metros': round(sum(metros_carregados(a) for a in hoje_q), 1)}
 
     def _res(l):
         d = l.to_dict()
@@ -942,6 +1024,7 @@ def estado_ao_vivo():
                      if descarga_ativa() else 0),
         'descarga_ativa': descarga_ativa(),
         'monovia': odometro_agora(db=db),
+        'velocidade_nominal': float(get_linha().get('velocidade_nominal_m_min') or 1.4),
     }
 
 
@@ -1015,9 +1098,7 @@ def api_ativ_iniciar():
              usuario_ini=session.get('nome', ''), inicio=datetime.utcnow(),
              estado='EM_ANDAMENTO')
     if tipo == TIPO_MONOVIA:
-        linha = get_linha(d.get('linha'))
-        ativ.monovia_linha = linha['id']
-        ativ.odo_ini = _odo_atual(linha['id'], db)
+        ativ.monovia_linha = get_linha(d.get('linha'))['id']
     db.add(ativ)
     db.flush()
 
@@ -1057,14 +1138,9 @@ def api_ativ_destino():
     else:
         ativ.tipo = novo
     if novo == TIPO_MONOVIA:
-        linha = get_linha(d.get('linha'))
-        ativ.monovia_linha = linha['id']
-        if ativ.odo_ini is None:
-            ativ.odo_ini = _odo_atual(linha['id'], db)
+        ativ.monovia_linha = get_linha(d.get('linha'))['id']
     else:
         ativ.monovia_linha = ''
-        ativ.odo_ini = None
-        ativ.odo_fim = None
     obs = (d.get('motivo') or '').strip()
     marca = f'[destino corrigido para {TIPOS_LBL.get(novo, novo)}'
     marca += f': {obs}]' if obs else ']'
@@ -1119,15 +1195,10 @@ def api_ativ_finalizar():
         ativ.area_lote = _ld['area_total']
 
     metricas = {}
-    if ativ.tipo == TIPO_MONOVIA or (ativ.tipo == TIPO_OP_NOVA and ativ.monovia_linha):
-        linha = get_linha(ativ.monovia_linha)
-        ativ.odo_fim = _odo_atual(linha['id'], db)
-        if d.get('metros_manual'):
-            try:
-                ativ.odo_fim = (ativ.odo_ini or 0) + float(d['metros_manual'])
-            except (ValueError, TypeError):
-                pass
-        metricas = metricas_carga(ativ, lote, linha)
+    if _eh_monovia(ativ):
+        # os metros saem de velocidade × tempo, então só dá para calcular depois
+        # de fechar o cronômetro (ativ.minutos já está preenchido acima)
+        metricas = metricas_carga(ativ, lote, get_linha(ativ.monovia_linha))
         ativ.n_ganchos = metricas['ganchos']
 
     proxima = None
@@ -1149,13 +1220,13 @@ def api_ativ_finalizar():
             fica, _desceu = _separar_retrabalho(itens, repasse)
             for it in fica:
                 it['tipo'] = lote.tipo or 'Normal'   # repasse não é retrabalho de banho
-            linha_r = get_linha(ativ.monovia_linha or
-                                (db.query(A).get(lote.carga_ativ_id).monovia_linha
-                                 if lote.carga_ativ_id else None))
             lote.itens_json = json.dumps(fica, ensure_ascii=False)
             lote.quantidade = repasse
             lote.voltas = (lote.voltas or 1) + 1
-            lote.odo_repasse = _odo_atual(linha_r['id'], db)
+            # marcador de repasse; a volta ao ponto de descarga é contada pelo
+            # tempo a partir de na_linha_desde
+            lote.odo_repasse = 1.0
+            lote.na_linha_desde = agora
             lote.motivo_repasse = ativ.motivo_repasse
             lote.estado = 'NA_LINHA'
         else:
@@ -1223,8 +1294,6 @@ def _resumo_no_card(db, lote, ativ):
     card.operador_pintura_fim = ativ.usuario_fim
     card.obs_pintura = ativ.observacao
     card.monovia_linha = ativ.monovia_linha or ''
-    card.odo_carga_ini = ativ.odo_ini
-    card.odo_carga_fim = ativ.odo_fim
     card.n_ganchos = ativ.n_ganchos or 0
 
 
@@ -1264,9 +1333,7 @@ def api_op_nova():
              n_operadores=n_op, usuario_ini=session.get('nome', ''),
              inicio=datetime.utcnow(), estado='EM_ANDAMENTO')
     if destino == 'monovia':
-        linha = get_linha(d.get('linha'))
-        ativ.monovia_linha = linha['id']
-        ativ.odo_ini = _odo_atual(linha['id'], db)
+        ativ.monovia_linha = get_linha(d.get('linha'))['id']
     db.add(ativ)
     db.flush()
     lote.atividade_atual_id = ativ.id
@@ -1504,7 +1571,7 @@ def api_monovia_deteccao():
     linha = get_linha(d.get('linha'))
     estacao = d.get('estacao', 'cam1')
     odo = odometro_agora(linha['id'], db)['odometro_m']
-    cand = atividades_na_estacao(estacao, linha['id'], odo, db)
+    cand = atividades_na_estacao(estacao, linha['id'], db=db)
     ativ_id = cand[0]['id'] if cand else None
     lote_id = cand[0]['lote_id'] if cand else None
     db.add(MODELOS['deteccao'](
@@ -1527,7 +1594,7 @@ def api_monovia_estado():
     est = odometro_agora(linha['id'], db)
     estacoes = []
     for e in linha.get('estacoes', []):
-        cs = atividades_na_estacao(e['id'], linha['id'], est['odometro_m'], db)
+        cs = atividades_na_estacao(e['id'], linha['id'], db=db)
         estacoes.append({
             'id': e['id'], 'nome': e['nome'], 'offset_m': e['offset_m'],
             'cargas': [{'atividade_id': a['id'], 'lote_id': a['lote_id'],
@@ -1650,7 +1717,7 @@ def coletar_dados_pintura(de=None, ate=None, turnos=None):
         lote = lotes.get(a.lote_id)
         d = a.to_dict()
         d['lote'] = lote.to_dict() if lote else None
-        if a.odo_ini is not None and lote:
+        if _eh_monovia(a) and lote:
             d['metricas'] = metricas_carga(a, lote)
         registros.append(d)
         t = TIPOS_LBL.get(a.tipo, a.tipo)
@@ -1672,8 +1739,7 @@ def coletar_dados_pintura(de=None, ate=None, turnos=None):
             dest[k]['pecas'] += q_carga
             dest[k]['area'] = round(dest[k]['area'] + ar_carga, 3)
             dest[k]['tempos'].append(a.minutos or 0)
-            if a.odo_ini is not None and a.odo_fim is not None:
-                dest[k]['metros'] = round(dest[k]['metros'] + max(0, a.odo_fim - a.odo_ini), 2)
+            dest[k]['metros'] = round(dest[k]['metros'] + metros_carregados(a), 2)
             if d.get('metricas', {}).get('ocupacao_pct'):
                 ocupacoes.append(d['metricas']['ocupacao_pct'])
             dia = (a.fim - fuso).date()
@@ -1691,9 +1757,8 @@ def coletar_dados_pintura(de=None, ate=None, turnos=None):
             # tempo na linha = da saída do carregamento até o início da descarga
             if lote and lote.na_linha_desde and a.inicio and a.inicio >= lote.na_linha_desde:
                 t_linha.append((a.inicio - lote.na_linha_desde).total_seconds() / 60)
-        if a.odo_ini is not None and a.odo_fim is not None:
-            metros += max(0, a.odo_fim - a.odo_ini)
-            ganchos += a.n_ganchos or 0
+        metros += metros_carregados(a)
+        ganchos += a.n_ganchos or 0
 
     Mp = MODELOS['parada']
     paradas = [p for p in _filtro_periodo(db.query(Mp), Mp.inicio, de, ate).all()
@@ -1783,8 +1848,7 @@ def resumo_por_card(card_ids=None):
             'carga_min': round(carga.minutos or 0, 1) if carga else 0,
             'carga_operadores': (CTX['_op_txt'](carga.operadores()) if carga else ''),
             'n_oper_carga': (carga.n_operadores or 0) if carga else 0,
-            'metros': (round((carga.odo_fim or 0) - (carga.odo_ini or 0), 2)
-                       if carga and carga.odo_ini is not None and carga.odo_fim is not None else 0),
+            'metros': (metros_carregados(carga) if carga else 0),
             'ganchos': (carga.n_ganchos or 0) if carga else 0,
             'pecas_carregadas': (carga.qtd_lote or 0) if carga else 0,
             'area_carregada': round((carga.area_lote or 0), 3) if carga else 0,

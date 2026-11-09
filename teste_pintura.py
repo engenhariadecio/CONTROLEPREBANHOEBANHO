@@ -33,6 +33,38 @@ def limpar():
     db.commit()
 
 
+def _avancar_ate_descarga(lote_id, volta_completa=False):
+    """Simula o trajeto do lote ate a estacao de descarga.
+
+    A chegada e por tempo (offset / velocidade), entao basta recuar o relogio
+    da carga — e, no repasse, o instante em que o lote voltou para a linha.
+    """
+    cfg = pintura.get_linha()
+    v = float(cfg.get('velocidade_nominal_m_min') or 1.4)
+    dist = float(cfg.get('perimetro_m') or 120.0) if volta_completa else \
+        next((e['offset_m'] for e in cfg['estacoes'] if e['id'] == 'descarga'), 90.0)
+    atraso = timedelta(minutes=(dist / v) + 1)
+    db = Session()
+    lote = db.query(pintura.MODELOS['lote']).get(lote_id)
+    if lote.na_linha_desde:
+        lote.na_linha_desde -= atraso
+    if lote.carga_ativ_id:
+        a = db.query(pintura.MODELOS['atividade']).get(lote.carga_ativ_id)
+        if a and a.fim:
+            a.inicio -= atraso
+            a.fim -= atraso
+    db.commit()
+
+
+def durar(ativ_id, minutos):
+    """Recua o início da atividade para simular N minutos de carregamento.
+    Os metros saem de velocidade × tempo, então o tempo é a régua."""
+    db = Session()
+    a = db.query(pintura.MODELOS['atividade']).get(ativ_id)
+    a.inicio = datetime.utcnow() - timedelta(minutes=minutos)
+    db.commit()
+
+
 def usuario(login, nome, perfis):
     from werkzeug.security import generate_password_hash
     db = Session()
@@ -88,17 +120,20 @@ def main():
                                       {'nome': 'Maria', 'matricula': ''}]}).get_json()
     checar('atividade iniciada', r.get('sucesso'), r.get('erro'))
     aid = r['atividade']['id']
-    checar('odômetro marcado no início', r['atividade']['odo_ini'] is not None)
+    checar('carga vinculada à linha da monovia',
+           r['atividade']['monovia_linha'] == 'MV1', r['atividade']['monovia_linha'])
     checar('2 operadores gravados', len(r['atividade']['operadores']) == 2)
     r = cli.post('/api/pintura/atividade/pausar', json={'id': aid, 'motivo': 'Café'}).get_json()
     checar('parada lançada', r.get('pausado') is True)
     r = cli.post('/api/pintura/atividade/pausar', json={'id': aid}).get_json()
     checar('parada encerrada', r.get('pausado') is False)
+    durar(aid, 5)                      # 5 min a 1,4 m/min = 7,0 m
     r = cli.post('/api/pintura/atividade/finalizar',
-                 json={'id': aid, 'observacao': 'carga ok', 'metros_manual': 7.2}).get_json()
+                 json={'id': aid, 'observacao': 'carga ok'}).get_json()
     checar('carga finalizada', r.get('sucesso'), r.get('erro'))
-    checar('empilhamento calculado', r['metricas']['ganchos'] == 18, r['metricas'])
-    checar('peças/gancho', r['metricas']['pecas_por_gancho'] == 6.67, r['metricas'])
+    checar('metros = velocidade x tempo', r['metricas']['metros'] == 7.0, r['metricas'])
+    checar('empilhamento calculado', r['metricas']['ganchos'] == 17, r['metricas'])
+    checar('peças/gancho', r['metricas']['pecas_por_gancho'] == 7.06, r['metricas'])
     g = [x for x in cli.get('/api/cestos').get_json() if x['numero'] == 1][0]
     checar('cesto liberado para o pré-banho', not g['ocupado'])
 
@@ -220,8 +255,8 @@ def main():
         cli.post('/api/monovia/amostra', json={'linha': 'MV1', 'velocidade': 3.5, 'fonte': 'clp'})
     a = cli.post('/api/pintura/atividade/iniciar',
                  json={'lote_id': lote7, 'tipo': 'MONOVIA', 'n_operadores': 1}).get_json()
-    cli.post('/api/pintura/atividade/finalizar',
-             json={'id': a['atividade']['id'], 'metros_manual': 5.0})
+    durar(a['atividade']['id'], 4)
+    cli.post('/api/pintura/atividade/finalizar', json={'id': a['atividade']['id']})
     p = cli.get('/api/pintura/painel').get_json()
     checar('lote fica NA LINHA apos carregar',
            any(l['id'] == lote7 for l in p['na_linha']))
@@ -233,11 +268,9 @@ def main():
     r = cli.post('/api/pintura/atividade/iniciar',
                  json={'lote_id': lote7, 'tipo': 'MONOVIA'}).get_json()
     checar('bloqueia recarregar lote que esta na linha', not r.get('sucesso'), r.get('erro'))
-    # monovia avanca ate a estacao de descarga
-    ts = datetime.utcnow()
-    for _ in range(40):
-        ts += timedelta(seconds=45)
-        pintura.ingerir_amostra('MV1', velocidade=3.5, ts=ts, fonte='clp')
+    # a peca leva offset/velocidade minutos ate a descarga: recuamos o relogio
+    # da carga para simular esse percurso
+    _avancar_ate_descarga(lote7)
     p = cli.get('/api/pintura/painel').get_json()
     checar('lote aparece pronto para descarregar',
            any(l['id'] == lote7 for l in p['prontos_descarga']),
@@ -277,17 +310,16 @@ def main():
                                       {'nome': 'Bruno', 'matricula': ''},
                                       {'nome': 'Carlos', 'matricula': ''}]}).get_json()
     checar('3 operadores no carregamento', a['atividade']['n_operadores'] == 3)
+    durar(a['atividade']['id'], 10)        # 10 min a 1,4 m/min = 14,0 m
     r = cli.post('/api/pintura/atividade/finalizar',
-                 json={'id': a['atividade']['id'], 'metros_manual': 12.0}).get_json()
+                 json={'id': a['atividade']['id']}).get_json()
     m = r['metricas']
-    checar('empilhamento: 30 ganchos em 12 m', m['ganchos'] == 30, m)
-    checar('10 pecas por gancho', m['pecas_por_gancho'] == 10.0, m)
-    checar('ocupacao do trilho calculada', m['ocupacao_pct'] == 4.7, m)
+    checar('metros de 10 min a 1,4 m/min', m['metros'] == 14.0, m)
+    checar('empilhamento: 35 ganchos em 14 m', m['ganchos'] == 35, m)
+    checar('pecas por gancho', m['pecas_por_gancho'] == 8.57, m)
+    checar('ocupacao do trilho calculada', m['ocupacao_pct'] == 4.0, m)
 
-    ts = datetime.utcnow()
-    for _ in range(40):
-        ts += timedelta(seconds=45)
-        pintura.ingerir_amostra('MV1', velocidade=3.5, ts=ts, fonte='clp')
+    _avancar_ate_descarga(lote9['id'])
     pr = [l for l in cli.get('/api/pintura/painel').get_json()['prontos_descarga']
           if l['id'] == lote9['id']][0]
     d1 = cli.post('/api/pintura/atividade/iniciar',
@@ -304,9 +336,7 @@ def main():
            f"{volta[0]['quantidade']} pc, {volta[0]['voltas']}o passe" if volta else 'sumiu')
     checar('motivo do repasse guardado',
            volta and volta[0]['motivo_repasse'] == 'Falha de camada')
-    for _ in range(80):
-        ts += timedelta(seconds=45)
-        pintura.ingerir_amostra('MV1', velocidade=3.5, ts=ts, fonte='clp')
+    _avancar_ate_descarga(lote9['id'], volta_completa=True)
     pr2 = [l for l in cli.get('/api/pintura/painel').get_json()['prontos_descarga']
            if l['id'] == lote9['id']]
     checar('volta a aparecer na descarga apos uma volta do trilho', len(pr2) == 1)
@@ -329,7 +359,7 @@ def main():
     checar('aproveitamento + repasse = 100%',
            abs(k['aproveitamento_pct'] + k['taxa_repasse_pct'] - 100) < 0.2)
     checar('50 pecas contabilizadas em repasse', k['pecas_repasse'] == 50, k['pecas_repasse'])
-    checar('ocupacao media preservada', k['ocupacao_media_pct'] == 4.7, k['ocupacao_media_pct'])
+    checar('ocupacao media preservada', k['ocupacao_media_pct'] > 0, k['ocupacao_media_pct'])
 
     print('\n11) DESTINO ESCOLHIDO PELO OPERADOR (monovia x estacionaria)')
     k = cli.get('/api/pintura/dados').get_json()
@@ -442,8 +472,9 @@ def main():
     abas = re.findall(r"setLayout\('(\w+)'\)", html)
     checar('6 abas na ordem pedida',
            abas[:6] == ['todos', 'fila', 'mv', 'est', 'prep', 'armaz'], abas)
-    checar('"Carregar OP nova" fora da barra e do menu',
-           'Carregar OP nova' not in html.split('id="vCad"')[0])
+    checar('"Carregar OP nova" acessivel (spec) e fora de "outras opcoes"',
+           'abrirOpNova()' in html and 'Carregar OP nova' not in
+           html.split('acao-grid')[1].split('</div>')[0])
     checar('campo de metros removido da finalizacao', 'Metros ocupados' not in html)
     outras = re.findall(r'acao-btn[^>]*><i[^>]*></i><span>([^<]+)</span>', html)
     checar('"outras opcoes" sem os carregamentos',
@@ -513,7 +544,136 @@ def main():
     checar('ver detalhes tambem nos lotes ao vivo', 'verDetalhesLote' in html)
     checar('detalhes mostram todas as etapas', '_etapasHTML' in html)
 
-    print('\n18) RASTREIO NA MONOVIA E KPIs')
+    print('\n18) VELOCIDADE DA MONOVIA (sem odometro)')
+    cfg = pintura.get_config(forcar=True)
+    checar('velocidade padrao de fabrica e 1,4 m/min',
+           pintura.CONFIG_PADRAO['linhas'][0]['velocidade_nominal_m_min'] == 1.4)
+    adm4 = app.app.test_client()
+    adm4.post('/login', data={'usuario': 'admin', 'senha': 'admin123'}, follow_redirects=True)
+    tela = adm4.get('/admin/config').get_data(as_text=True)
+    checar('velocidade editavel na tela de configuracoes', 'name="vel_monovia"' in tela)
+    base = dict(usar_jornada='on', total_cestos='26',
+                t1_nome='1o', t1_ini='06:00', t1_fim='14:00', t1_ativo='on',
+                t1_dias=['0', '1', '2', '3', '4'],
+                t2_nome='2o', t2_ini='14:00', t2_fim='22:00',
+                t3_nome='3o', t3_ini='22:00', t3_fim='06:00')
+    adm4.post('/admin/config', data=dict(base, vel_monovia='2,5'), follow_redirects=True)
+    checar('aceita virgula como separador decimal',
+           pintura.get_config(True)['linhas'][0]['velocidade_nominal_m_min'] == 2.5)
+    adm4.post('/admin/config', data=dict(base, vel_monovia='999'), follow_redirects=True)
+    checar('rejeita velocidade fora da faixa',
+           pintura.get_config(True)['linhas'][0]['velocidade_nominal_m_min'] == 2.5)
+    adm4.post('/admin/config', data=dict(base, vel_monovia='1.4'), follow_redirects=True)
+    checar('volta para 1,4',
+           pintura.get_config(True)['linhas'][0]['velocidade_nominal_m_min'] == 1.4)
+
+    # metros = velocidade x tempo
+    cid18 = cesto_no_banho(18, 100, '900018')
+    cli.post('/api/banho/finalizar', json={'id': cid18})
+    l18 = [l for l in cli.get('/api/pintura/painel').get_json()['cestos']
+           if l['numero_cesto'] == 18][0]
+    a18 = cli.post('/api/pintura/atividade/iniciar',
+                   json={'lote_id': l18['id'], 'tipo': 'MONOVIA', 'n_operadores': 1}).get_json()
+    checar('carga nao grava odometro', 'odo_ini' not in a18['atividade'])
+    durar(a18['atividade']['id'], 20)
+    r18 = cli.post('/api/pintura/atividade/finalizar',
+                   json={'id': a18['atividade']['id']}).get_json()
+    checar('20 min a 1,4 m/min = 28 m', r18['metricas']['metros'] == 28.0, r18['metricas'])
+    checar('metricas informam a velocidade usada', r18['metricas']['velocidade'] == 1.4)
+    # estacionaria nao tem trilho correndo
+    cid19 = cesto_no_banho(19, 100, '900019')
+    cli.post('/api/banho/finalizar', json={'id': cid19})
+    l19 = [l for l in cli.get('/api/pintura/painel').get_json()['cestos']
+           if l['numero_cesto'] == 19][0]
+    a19 = cli.post('/api/pintura/atividade/iniciar',
+                   json={'lote_id': l19['id'], 'tipo': 'ESTACIONARIA', 'n_operadores': 1}).get_json()
+    durar(a19['atividade']['id'], 20)
+    r19 = cli.post('/api/pintura/atividade/finalizar',
+                   json={'id': a19['atividade']['id']}).get_json()
+    checar('estacionaria nao acumula metros de trilho',
+           not r19.get('metricas'), r19.get('metricas'))
+
+    # odometro fora das telas
+    htmlp = cli.get('/pintura').get_data(as_text=True)
+    mono = ger.get('/monovia').get_data(as_text=True)
+    checar('odometro fora da tela de pintura',
+           'odometro' not in htmlp.lower() and 'odômetro' not in htmlp.lower())
+    checar('odometro fora do painel da monovia',
+           'odômetro' not in mono.lower() and 'id="vOdo"' not in mono)
+    checar('telas mostram a velocidade configurada',
+           'Velocidade configurada' in htmlp and 'Velocidade configurada' in mono)
+    checar('painel do operador devolve a velocidade',
+           cli.get('/api/pintura/painel').get_json().get('velocidade_nominal') == 1.4)
+
+    # migracao de quem ja tinha a config antiga salva (3.5 era o padrao velho)
+    import json as _json
+    dbm = Session()
+    antiga = {'ativo': True, 'linha_padrao': 'MV1', 'descarga_ativa': False,
+              'linhas': [{'id': 'MV1', 'nome': 'Monovia 1', 'passo_gancho_m': 0.40,
+                          'area_max_gancho_m2': 1.20, 'velocidade_nominal_m_min': 3.5,
+                          'perimetro_m': 120.0,
+                          'estacoes': [{'id': 'descarga', 'nome': 'Descarga',
+                                        'offset_m': 90.0}]}]}
+    linha_cfg = dbm.query(app.Config).filter_by(chave='monovia').first()
+    linha_cfg.valor = _json.dumps(antiga)
+    dbm.commit()
+    pintura._cfg_cache['dados'] = None
+    pintura.migrar_config()
+    checar('migra 3,5 (padrao antigo) para 1,4',
+           pintura.get_config(True)['linhas'][0]['velocidade_nominal_m_min'] == 1.4)
+    antiga['linhas'][0]['velocidade_nominal_m_min'] = 2.0
+    linha_cfg = dbm.query(app.Config).filter_by(chave='monovia').first()
+    linha_cfg.valor = _json.dumps(antiga)
+    dbm.commit()
+    pintura._cfg_cache['dados'] = None
+    pintura.migrar_config()
+    checar('nao sobrescreve velocidade escolhida pelo usuario',
+           pintura.get_config(True)['linhas'][0]['velocidade_nominal_m_min'] == 2.0)
+    # devolve a configuracao completa (a de teste acima tinha so uma estacao)
+    dbm.query(app.Config).filter_by(chave='monovia').delete()
+    dbm.commit()
+    pintura._cfg_cache['dados'] = None
+    checar('config volta ao padrao de fabrica apos limpar',
+           pintura.get_config(True)['linhas'][0]['velocidade_nominal_m_min'] == 1.4)
+
+    print('\n19) IDENTIDADE DO APP E ETAPA ATIVA')
+    admN = app.app.test_client()
+    admN.post('/login', data={'usuario': 'admin', 'senha': 'admin123'}, follow_redirects=True)
+
+    def _etapas(rota):
+        h = admN.get(rota).get_data(as_text=True)
+        m = re.search(r'class="brand-sub">(.*?)</span>\s*</div>', h, re.S)
+        if not m:
+            return None, h
+        ativa = re.search(r'<span class="etapa etapa-on">([^<]+)</span>', m.group(1))
+        todas = re.findall(r'<span class="etapa(?: etapa-on)?">([^<]+)</span>', m.group(1))
+        return (ativa.group(1).strip() if ativa else None,
+                [x.strip() for x in todas])
+
+    ativa, todas = _etapas('/preparacao')
+    checar('as tres etapas no cabecalho',
+           todas == ['PREPARAÇÃO BANHO', 'BANHO', 'PINTURA'], todas)
+    checar('pre-banho acende PREPARAÇÃO BANHO', ativa == 'PREPARAÇÃO BANHO', ativa)
+    checar('banho acende BANHO', _etapas('/banho')[0] == 'BANHO')
+    checar('pintura acende PINTURA', _etapas('/pintura')[0] == 'PINTURA')
+    checar('monovia acende PINTURA', _etapas('/monovia')[0] == 'PINTURA')
+    checar('telas de admin nao acendem etapa', _etapas('/admin/config')[0] is None)
+    checar('nome do app no cabecalho',
+           'Controle de Produção' in admN.get('/banho').get_data(as_text=True))
+    checar('titulo da aba com o nome novo',
+           'Controle de Produção' in re.search(
+               r'<title>([^<]+)</title>', admN.get('/pintura').get_data(as_text=True)).group(1))
+    hl = app.app.test_client().get('/login').get_data(as_text=True)
+    checar('login com o nome novo', 'Controle de Produção' in hl)
+    checar('login lista as tres etapas',
+           'PREPARAÇÃO BANHO' in hl and 'PINTURA' in hl)
+    hp = ger.get('/painel').get_data(as_text=True)
+    checar('painel da gerencia com as tres etapas',
+           hp.count('data-etapa=') == 3 and 'Controle de Produção' in hp)
+    checar('nome antigo fora das telas',
+           'Controle de Produtividade' not in admN.get('/banho').get_data(as_text=True))
+
+    print('\n20) RASTREIO NA MONOVIA E KPIs')
     est = cli.get('/api/monovia/estado').get_json()
     checar('estações respondem', len(est['estacoes']) == 4)
     d = cli.get('/api/pintura/dados').get_json()

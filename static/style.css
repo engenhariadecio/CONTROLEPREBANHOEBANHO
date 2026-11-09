@@ -63,7 +63,18 @@ body{
 }
 .brand-text{display:flex;flex-direction:column;line-height:1.2;}
 .brand-title{color:#fff;font-weight:800;font-size:1.08rem;letter-spacing:-.2px;}
-.brand-sub{color:rgba(255,255,255,.85);font-size:.64rem;font-weight:700;letter-spacing:.17em;text-transform:uppercase;}
+.brand-sub{color:rgba(255,255,255,.85);font-size:.64rem;font-weight:700;letter-spacing:.17em;
+  text-transform:uppercase;display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+/* As três etapas ficam sempre à vista; a da tela atual acende. Assim o operador
+   sabe onde está sem ler o conteúdo da página. */
+.brand-sub .etapa{color:rgba(255,255,255,.45);transition:.15s;}
+.brand-sub .etapa-on{color:#fff;position:relative;}
+.brand-sub .etapa-on::after{content:'';position:absolute;left:0;right:0;bottom:-4px;
+  height:2px;border-radius:2px;background:var(--brand-green,#2BA45C);}
+.brand-sub .etapa-sep{color:rgba(255,255,255,.3);font-weight:400;}
+/* tela de login: as três etapas, nenhuma acesa (ainda não se escolheu painel) */
+.login-etapas{letter-spacing:.14em;font-weight:700;font-size:.63rem;text-transform:uppercase;}
+.login-etapas span{opacity:.4;margin:0 4px;}
 .topbar-actions{display:flex;align-items:center;gap:8px;}
 .user-chip{
   display:inline-flex;align-items:center;gap:7px;
@@ -286,7 +297,9 @@ textarea.input{min-height:auto;resize:vertical;}
 
 /* ── Responsivo tablet/phone ─────────────────────────────────── */
 @media(max-width:560px){
-  .brand-sub{display:none;}
+  /* no celular o nome completo não cabe: mantém só a etapa ativa */
+  .brand-sub{gap:0;}
+  .brand-sub .etapa:not(.etapa-on),.brand-sub .etapa-sep{display:none;}
   .brand-title{font-size:.95rem;}
   .user-chip{display:none;}
   .cestos-grid{grid-template-columns:repeat(3,1fr);gap:11px;}

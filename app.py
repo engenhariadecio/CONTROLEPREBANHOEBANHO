@@ -1,6 +1,8 @@
 """
-Controle de Produtividade Banho — Pintura Eletrostática
-Fluxo: Preparação (1 ou 2 operadores) -> Preencher OPs -> Fila do banho -> Banho -> Concluído
+Controle de Produção — PREPARAÇÃO BANHO | BANHO | PINTURA
+Pintura eletrostática — Décio Indústria Metalúrgica
+
+Fluxo: Preparação -> Preencher OPs -> Fila do banho -> Banho -> Pintura -> Concluído
 
 Recursos:
 - Grade de 19 cestos com cadeado
@@ -1063,10 +1065,36 @@ def init_db():
     get_agenda(forcar=True)
     try:
         import pintura
+        pintura.migrar_config()
         if pintura.pintura_ativa():
             pintura.reparar_lotes_orfaos()
     except Exception as e:
         print(f'[pintura] reparo: {e}')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Identidade do app e etapa ativa no cabeçalho
+# ─────────────────────────────────────────────────────────────────────────────
+APP_NOME = 'Controle de Produção'
+ETAPAS_APP = [('prep', 'PREPARAÇÃO BANHO'), ('banho', 'BANHO'), ('pintura', 'PINTURA')]
+
+# Qual etapa o cabeçalho destaca em cada tela. Deduzido da ROTA, não passado em
+# cada render_template: assim uma tela nova entra no esquema sem precisar
+# lembrar de mandar a variável.
+_ETAPA_POR_ROTA = {
+    'tela_prep': 'prep',
+    'tela_banho': 'banho',
+    'pintura.tela_pintura': 'pintura',
+    'pintura.tela_monovia': 'pintura',
+}
+
+
+@app.context_processor
+def _ctx_marca():
+    etapa = _ETAPA_POR_ROTA.get(request.endpoint or '')
+    if etapa is None and (request.endpoint or '') == 'tela_prep':
+        etapa = 'prep'
+    return {'APP_NOME': APP_NOME, 'ETAPAS_APP': ETAPAS_APP, 'ETAPA_ATIVA': etapa}
 
 
 def login_required(*perfis):
@@ -2280,6 +2308,21 @@ def admin_config():
         }
         set_agenda(novo)
         msg = 'Jornada salva. O cálculo dos tempos de espera já usa os novos turnos e exceções.'
+        # ---- velocidade da monovia ----
+        if request.form.get('vel_monovia'):
+            try:
+                import pintura
+                v = float(str(request.form['vel_monovia']).replace(',', '.'))
+                if 0.1 <= v <= 60:
+                    cfgm = pintura.get_config()
+                    linhas = cfgm.get('linhas') or []
+                    if linhas:
+                        linhas[0]['velocidade_nominal_m_min'] = round(v, 2)
+                        pintura.set_config(dict(cfgm, linhas=linhas))
+                        msg += f' Velocidade da monovia: {round(v, 2)} m/min.'
+            except (ValueError, TypeError, ImportError):
+                msg += ' (Velocidade inválida — mantida a anterior.)'
+
         # ---- quantidade de cestos disponíveis ----
         if request.form.get('total_cestos'):
             try:
@@ -2289,10 +2332,18 @@ def admin_config():
                     msg += f' Cestos disponíveis: {antes} → {depois}.'
             except (ValueError, TypeError):
                 msg += ' (Quantidade de cestos inválida — mantida a anterior.)'
+    vel = 1.4
+    try:
+        import pintura
+        vel = float((pintura.get_config(forcar=True).get('linhas') or [{}])[0]
+                    .get('velocidade_nominal_m_min') or 1.4)
+    except Exception:
+        pass
     return render_template('config.html', nome=session.get('nome'),
                            cfg=get_agenda(forcar=True), msg=msg,
                            total_cestos=total_cestos(forcar=True),
-                           cestos_em_uso=_maior_cesto_em_uso())
+                           cestos_em_uso=_maior_cesto_em_uso(),
+                           vel_monovia=vel)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

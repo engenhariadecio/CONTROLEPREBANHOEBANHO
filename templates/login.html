@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
-{% block title %}Entrar — Controle Produtividade Pré-Banho e Banho{% endblock %}
+{% block title %}Entrar — Controle de Produção{% endblock %}
 {% block content %}
 <div class="login-wrap">
   <div class="login-card">
     <div class="login-logo"><img src="{{ url_for('static', filename='logo_decio.png') }}" alt="Décio" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;"></div>
-    <h1 class="login-title">Produtividade Pré-Banho e Banho</h1>
-    <p class="login-sub">Controle de produtividade</p>
+    <h1 class="login-title">Controle de Produção</h1>
+    <p class="login-sub login-etapas">PREPARAÇÃO BANHO <span>|</span> BANHO <span>|</span> PINTURA</p>
 
     {% if erro %}<div class="alert alert-err"><i class="bi bi-exclamation-triangle-fill"></i>{{ erro }}</div>{% endif %}
 

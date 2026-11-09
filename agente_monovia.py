@@ -210,7 +210,7 @@ def rodar_camera(env, args):
     # com ele depois de `--stride-seg` segundos (1 s -> ~10 px, mensurável).
     stride = max(1, int(round(fps * args.stride_seg)))
     print(f'[camera] comparando quadros a cada {args.stride_seg}s ({stride} quadros) '
-          f'-> ~{args.px_por_metro * 3.5 / 60 * args.stride_seg:.1f} px esperados a 3,5 m/min')
+          f'-> ~{args.px_por_metro * 1.4 / 60 * args.stride_seg:.1f} px esperados a 1,4 m/min')
 
     ok, frame = cap.read()
     if not ok:
@@ -425,7 +425,7 @@ def main():
     p.add_argument('--calibrar', action='store_true')
     p.add_argument('--mostrar', action='store_true')
     # simulador
-    p.add_argument('--velocidade-sim', type=float, default=3.5)
+    p.add_argument('--velocidade-sim', type=float, default=1.4)
     args = p.parse_args()
 
     env = Enviador(args.url, args.token, args.linha, args.lote)

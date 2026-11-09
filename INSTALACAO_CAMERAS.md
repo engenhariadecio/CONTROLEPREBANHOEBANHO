@@ -4,6 +4,11 @@ Guia prático de campo: o que comprar, onde montar, como calibrar e como validar
 
 ---
 
+> **Estado atual do sistema.** A telemetria está desligada: os metros de trilho
+> saem de `velocidade × tempo de carga`, com a velocidade configurada em
+> Administração (padrão **1,4 m/min**). O odômetro saiu da interface. Tudo o que
+> está abaixo continua pronto para quando você ligar o CLP, o sensor ou a câmera.
+
 ## Antes de tudo: você talvez não precise de câmera
 
 Para **velocidade e odômetro**, um sensor de proximidade contando ganchos é
@@ -76,13 +81,13 @@ que estiver na fábrica atrás e a medição vira loteria.
 
 ### O detalhe que quase estraga tudo
 
-A monovia anda ~3,5 m/min = **5,8 cm/s**. A 180 px/m, isso é 10,5 px/s — ou
-**0,42 px entre dois quadros a 25 fps**. Menos de um pixel: comparando quadros
-consecutivos, o fluxo óptico mede ruído, não movimento.
+A monovia anda ~1,4 m/min = **2,3 cm/s**. A 180 px/m, isso é 4,2 px/s — ou
+**0,17 px entre dois quadros a 25 fps**. Muito menos de um pixel: comparando
+quadros consecutivos, o fluxo óptico mede ruído, não movimento.
 
 Por isso o agente guarda um quadro de referência e só compara depois de
-`--stride-seg` segundos (padrão 1 s → ~10 px, mensurável). Se a sua linha for
-ainda mais lenta, aumente para 2 s. O cálculo usa o tempo **real** entre os
+`--stride-seg` segundos. A 1,4 m/min, 1 s dá só ~4 px: use **3 a 5 segundos**
+(`--stride-seg 4` → ~17 px, mensurável). O cálculo usa o tempo **real** entre os
 quadros, não o fps nominal, porque webcam USB entrega menos quadros do que promete
 quando a CPU aperta.
 
@@ -103,7 +108,7 @@ resolução.
 pip install requests opencv-python
 python agente_monovia.py --fonte camera \
   --camera "rtsp://usuario:senha@192.168.0.50/cam/realmonitor?channel=1&subtype=0" \
-  --px-por-metro 182 --stride-seg 1.0 --medir-area \
+  --px-por-metro 182 --stride-seg 4 --medir-area \
   --url https://SEU-APP --token SEU_TOKEN --mostrar
 ```
 

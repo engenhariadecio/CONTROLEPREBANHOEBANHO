@@ -3,11 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Painel de Acompanhamento — Controle Produtividade Pré-Banho e Banho</title>
+<title>Painel de Gerência — Controle de Produção</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <style>
+.gp-etapas{display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.gp-etapas .etapa{opacity:.45;transition:.15s;position:relative;}
+.gp-etapas .etapa.on{opacity:1;font-weight:800;}
+.gp-etapas .etapa.on::after{content:'';position:absolute;left:0;right:0;bottom:-4px;
+  height:2px;border-radius:2px;background:var(--brand-green,#2BA45C);}
+.gp-etapas .etapa-sep{opacity:.25;}
 .etapa-bloco{margin-top:16px;border-top:1px solid rgba(15,61,92,.12);padding-top:12px;}
 .etapa-item{border-left:3px solid rgba(14,154,167,.45);padding:6px 0 6px 12px;margin-bottom:10px;}
 .etapa-nome{font-weight:700;font-size:.88rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
@@ -25,7 +31,11 @@
       <div class="gp-titles">
         <span class="gp-empresa">Décio · Indústria Metalúrgica</span>
         <h1 class="gp-titulo"><i class="bi bi-speedometer2"></i>Painel de Gerência</h1>
-        <span class="gp-sub">Pré-Banho e Banho · acompanhamento em tempo real</span>
+        <span class="gp-sub gp-etapas" id="gpEtapas">
+          <span class="etapa" data-etapa="prep">PREPARAÇÃO BANHO</span><span class="etapa-sep">|</span>
+          <span class="etapa" data-etapa="banho">BANHO</span><span class="etapa-sep">|</span>
+          <span class="etapa" data-etapa="pintura">PINTURA</span>
+        </span>
       </div>
     </div>
     <div class="gp-header-right">
@@ -243,7 +253,7 @@
 
   <footer class="gp-footer">
     <img src="{{ url_for('static', filename='logo_decio.png') }}" alt="Décio">
-    <span>Décio Indústria Metalúrgica · Controle de Produtividade Pré-Banho e Banho</span>
+    <span>Décio Indústria Metalúrgica · Controle de Produção</span>
   </footer>
 </main>
 
@@ -626,6 +636,11 @@ function renderGraficosPintura(b, mv, es){
 
 function setSetor(s){
   window._setor=s;
+  // o cabeçalho acompanha o setor escolhido
+  document.querySelectorAll('#gpEtapas .etapa').forEach(e=>{
+    const k=e.dataset.etapa;
+    e.classList.toggle('on', s===k || s==='geral');
+  });
   [['setorPrep','prep'],['setorBanho','banho'],['setorPintura','pintura'],
    ['setorGeral','geral']].forEach(([id,k])=>{
     const e=document.getElementById(id); if(e)e.classList.toggle('on',s===k);

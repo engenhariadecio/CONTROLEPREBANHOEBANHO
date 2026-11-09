@@ -1,4 +1,15 @@
-# Módulo Pintura / Monovia
+# Controle de Produção — módulo Pintura / Monovia
+
+O aplicativo chama-se **Controle de Produção**, com as três etapas no cabeçalho:
+`PREPARAÇÃO BANHO | BANHO | PINTURA`. A etapa da tela aberta fica acesa (branca,
+sublinhada em verde) e as outras ficam esmaecidas — assim o operador sabe onde
+está sem ler o conteúdo. No celular só a etapa ativa aparece, por espaço.
+
+A etapa é deduzida da rota (`_ETAPA_POR_ROTA` em `app.py`), não passada tela a
+tela: uma tela nova entra no esquema sozinha. Telas de administração não acendem
+nenhuma, porque não pertencem a uma etapa. No painel da gerência, que tem
+cabeçalho próprio, a etapa acompanha o setor escolhido em Histórico & Análises.
+
 
 Extensão do sistema de pré-banho e banho. `pintura.py` é um blueprint novo; o
 `app.py` só recebeu ajustes pontuais. Desligando o módulo na configuração
@@ -18,7 +29,7 @@ O **descarregamento fica desligado** (`descarga_ativa: false`). Sem alguém
 apontando a descarga, os lotes ficariam pendurados para sempre na tela e nada
 encerraria; assim, o lote fecha no fim do carregamento e a coluna de descarga nem
 aparece. Todo o código da descarga continua no lugar — repasse, tempo de forno,
-rastreio por odômetro, KPIs. Para ligar:
+rastreio por tempo na linha, KPIs. Para ligar:
 
 ```bash
 curl -X POST https://SEU-APP/api/monovia/config \
@@ -99,14 +110,13 @@ cronômetro com paradas → observação.
 | Preparação para pintura | Isolamento/Lixa/Limpeza/Outros → operadores → cronômetro → destino (armazenar, monovia ou estacionária) | liberado se armazenar |
 | Armazenamento palete/arara | palete/arara/outro + justificativa → operadores → cronômetro | liberado, peças ficam sem cesto |
 | Retrabalho | todas ou quantidade → precisa reposicionamento? | volta ao pré-banho/banho |
-| Descarregar | aparece sozinho quando o odômetro diz que o lote chegou | — |
+| Descarregar | aparece sozinho quando o tempo de percurso se cumpre | — |
 
 ### Descarregamento
 
 Ao terminar o carregamento o lote vai para a coluna **Descarregamento**, mostrando
-quanto falta e o ETA. Quando o odômetro indica que a última peça passou pela
-estação `descarga` (`odo_fim_da_carga + offset_descarga`), ele muda para
-**pronto** e ganha o botão. O operador dá iniciar e finalizar, como no
+quanto falta e o ETA. Quando o tempo de percurso se cumpre — `offset da estação
+÷ velocidade` depois do fim da carga — ele muda para **pronto** e ganha o botão. O operador dá iniciar e finalizar, como no
 carregamento.
 
 Sem telemetria, ou na estacionária, o lote fica pronto na hora — quem decide é o
@@ -124,9 +134,9 @@ Ao descarregar, o operador informa se **alguma peça não desceu**: desceu tudo,
 parte volta ou tudo volta, com o motivo (falha de camada, escorrimento, casca de
 laranja...). As peças de repasse ficam penduradas e dão outra volta na cabine.
 
-O sistema marca o odômetro nesse instante e espera **uma volta completa do
-trilho** (`perimetro_m` na configuração) antes de a peça reaparecer na coluna de
-descarga, agora como "2º passe". Não há limite de passes.
+O sistema marca o instante e espera **uma volta completa do trilho**
+(`perimetro_m ÷ velocidade`, na configuração) antes de a peça reaparecer na
+coluna de descarga, agora como "2º passe". Não há limite de passes.
 
 Uma sutileza que vale conhecer: quando parte do lote volta, o lote encolhe. Se os
 relatórios lessem o lote na hora de fechar o mês, o carregamento apareceria com o
@@ -203,7 +213,7 @@ botões ficam lado a lado no card. Não há nada a configurar no cesto antes dis
 O painel da gerência mostra os dois separados: carregamentos, peças e minutos por
 carga de cada destino. Metros de trilho e ocupação só aparecem na monovia, porque
 a estacionária não tem trilho. A estacionária também fica pronta para descarregar
-na hora (não há odômetro para esperar).
+na hora (não há trajeto a esperar).
 
 ### No painel da gerência, ao vivo (atualiza a cada 5 s)
 
@@ -262,30 +272,43 @@ pré-banho) e o restante vira um lote sem cesto — por isso o sistema exige inf
 onde o restante foi colocado. Se a sua operação faz o contrário (retrabalho sai e
 o restante fica no cesto), me avise: é uma inversão pequena.
 
-## Rastreabilidade na monovia
+## Metros de trilho — velocidade × tempo
 
-Relógio não resolve, porque a monovia para. O que resolve é o **odômetro**, a
-integral da velocidade:
+Não há odômetro. A régua é a **velocidade da monovia**, configurável em
+Administração > Configurações (padrão **1,4 m/min**):
 
 ```
-S(t) = ∫ v dt        (metros acumulados)
+metros de trilho = velocidade (m/min) × tempo de carga (min)
 ```
 
-No início da carga grava-se `S_ini`; no fim, `S_fim`. O lote ocupa o trecho
-`[S_ini, S_fim]` do trilho. Cada estação tem um `offset_m`, e o lote está lá
-quando `S_ini + D ≤ S_agora ≤ S_fim + D`. Funciona com a linha parando ou mudando
-de ritmo, porque tudo é medido em metros.
+A monovia anda enquanto o operador carrega, então o comprimento do lote é
+exatamente quanto a linha andou nesse tempo. Com 1,4 m/min, 10 minutos de carga
+são 14 m de trilho. Daí saem os ganchos, as peças por gancho e a ocupação.
 
-**A câmera não precisa reconhecer a peça** — o sistema já sabe qual é.
-`GET /api/monovia/estado` devolve, por estação, quais lotes estão passando e em
-que ponto (%). A IA fica livre para medir e inspecionar.
+Vale só para a **monovia**; a estacionária não tem trilho correndo, então não
+acumula metros.
 
-Sem telemetria, o sistema estima pela velocidade nominal e a tela de carga abre um
-campo para o operador informar os metros ocupados.
+Pela mesma conta o sistema sabe **quando a peça chega em cada ponto da linha**:
+`minutos = distância da estação ÷ velocidade`. A 1,4 m/min, a descarga a 90 m
+fica a ~64 min do fim da carga. É isso que alimenta a coluna de descarga e o
+rastreio por câmera, quando forem ligados.
+
+**Troque a velocidade se a linha mudar de ritmo** — todos esses números dependem
+dela. O valor aceita vírgula ou ponto.
+
+Quem já tinha o módulo rodando guardava 3,5 m/min (o padrão antigo). Mudar o
+padrão no código não alcança uma configuração já gravada, então o boot faz a
+troca uma vez só, e avisa no log:
+
+```
+[pintura] velocidade da monovia: 3.5 -> 1.4 m/min (novo padrão).
+```
+
+Uma velocidade que você tenha editado na tela não é tocada.
 
 ## Empilhamento — sem precisar de câmera
 
-Do odômetro mais o que já existe (quantidade e área do `area_peso.xlsx`):
+Dos metros calculados acima mais o que já existe (quantidade e área do `area_peso.xlsx`):
 
 | Métrica | Conta |
 |---|---|
@@ -302,12 +325,12 @@ Um endpoint só, para CLP ou câmera:
 ```bash
 curl -X POST https://SEU-APP/api/monovia/amostra \
   -H 'Content-Type: application/json' -H 'X-Monovia-Token: SEU_TOKEN' \
-  -d '{"linha":"MV1","velocidade":3.5,"odometro":10234.5,"fonte":"clp"}'
+  -d '{"linha":"MV1","velocidade":1.4,"odometro":10234.5,"fonte":"clp"}'
 ```
 
-`velocidade` em m/min, `odometro` em metros — pelo menos um dos dois. Odômetro
-absoluto do encoder tem prioridade (reset é detectado sozinho); só com velocidade,
-o servidor integra.
+`velocidade` em m/min, `odometro` em metros — pelo menos um dos dois. A ingestão
+continua pronta, mas **hoje nada depende dela**: os metros saem de velocidade ×
+tempo. Ligar a telemetria depois é trocar a régua estimada por uma medida.
 
 `agente_monovia.py` roda num mini-PC na fábrica e faz isso sozinho, com buffer em
 disco para quando a rede cair:
@@ -323,7 +346,7 @@ fundo) é mais precisa e leve que rede neural, e não exige dados de treino — 
 que o agente traz pronto. Rede treinada só compensa para classificar (gancho
 vazio, defeito). Ordem sugerida: CLP primeiro, câmera como plano B, IA de
 classificação depois, com as imagens que o próprio sistema já vai rotular
-corretamente pelo odômetro.
+corretamente pelo tempo de percurso.
 
 ## Paradas da monovia
 
@@ -376,7 +399,7 @@ atividades, junto com os de `prep`. Um usuário pode ter vários acessos marcado
   "linhas": [{
     "id": "MV1", "nome": "Monovia 1",
     "passo_gancho_m": 0.40, "area_max_gancho_m2": 1.20,
-    "velocidade_nominal_m_min": 3.5,
+    "velocidade_nominal_m_min": 1.4,
     "estacoes": [
       {"id": "cam1", "nome": "Câmera", "offset_m": 12.0},
       {"id": "cabine", "nome": "Cabine", "offset_m": 25.0},
@@ -389,8 +412,9 @@ atividades, junto com os de `prep`. Um usuário pode ter vários acessos marcado
 }
 ```
 
-**Meça os `offset_m` com trena seguindo o trilho** — é o único número de que o
-rastreio depende. Token: defina `MONOVIA_TOKEN` no Railway.
+**A velocidade é o número mais importante** (editável na tela de configurações):
+dela saem os metros, os ganchos e a ocupação. Os `offset_m`, medidos com trena
+seguindo o trilho, só entram quando a descarga for ligada. Token: defina `MONOVIA_TOKEN` no Railway.
 
 ## Endpoints
 
@@ -409,7 +433,7 @@ rastreio depende. Token: defina `MONOVIA_TOKEN` no Railway.
 | `POST /api/prep/montagem/iniciar` | prep | inicia o tempo de montagem |
 | `POST /api/monovia/amostra` \| `/amostras` | token | telemetria |
 | `POST /api/monovia/deteccao` | token | evento da câmera, já vinculado ao lote |
-| `GET /api/monovia/estado` | logado ou token | velocidade, odômetro, rastreio |
+| `GET /api/monovia/estado` | logado ou token | velocidade e rastreio na linha |
 | `GET /api/monovia/paradas` | pintura, painel | paradas do período |
 | `GET /api/pintura/dados` | pintura, painel, admin | KPIs |
 | `GET /api/download/pintura` | admin | Excel do setor |
@@ -419,8 +443,7 @@ rastreio depende. Token: defina `MONOVIA_TOKEN` no Railway.
 Tabelas novas: `lotes_pintura`, `atividades_pintura`, `monovia_estado`,
 `monovia_amostras`, `monovia_paradas`, `monovia_deteccoes`. Colunas novas em
 `cards` (migração automática no boot). Com `guardar_amostra_seg = 5` são ~17 mil
-linhas/dia de telemetria; suba para 15 s se quiser enxugar — o odômetro não perde
-precisão, isso controla só o histórico gravado.
+linhas/dia de telemetria — mas só se você ligar o agente; hoje nada é gravado ali.
 
 ## Correções no código existente
 

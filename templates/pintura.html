@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
-{% block title %}Pintura — Controle de Produtividade{% endblock %}
+{% block title %}Pintura — Controle de Produção{% endblock %}
 {% block content %}
 
 <div class="mv-bar" id="mvBar">
   <div class="mv-item"><i class="bi bi-speedometer2"></i><div><span class="mv-lbl">Monovia</span><strong id="mvVel">—</strong></div></div>
-  <div class="mv-item"><i class="bi bi-rulers"></i><div><span class="mv-lbl">Odômetro</span><strong id="mvOdo">—</strong></div></div>
+  <div class="mv-item"><i class="bi bi-rulers"></i><div><span class="mv-lbl">Velocidade configurada</span><strong id="mvNom">—</strong></div></div>
+  <button class="btn btn-aqua mv-novo" onclick="abrirOpNova()"><i class="bi bi-file-earmark-plus-fill"></i>Carregar OP nova</button>
 </div>
 
 <div class="layout-sel">
@@ -373,8 +374,8 @@ async function carregar(){
   const mv=j.monovia||{};
   semTelemetria = !mv || mv.modo==='sem_dados' || mv.modo==='desatualizado';
   mvBar.classList.toggle('parado', !!(mv.parada&&!semTelemetria));
-  mvVel.textContent = semTelemetria?'sem sinal':(mv.velocidade.toFixed(2)+' m/min');
-  mvOdo.textContent = semTelemetria?'—':(mv.odometro_m.toFixed(0)+' m');
+  mvVel.textContent = semTelemetria?'sem leitura':(mv.velocidade.toFixed(2)+' m/min');
+  mvNom.textContent = (j.velocidade_nominal||1.4).toFixed(1)+' m/min';
 
   const GRUPO={MONOVIA:'Mv',ESTACIONARIA:'Est',OP_NOVA:'Mv',
                PREPARACAO:'Prep',ARMAZENAMENTO:'Arm'};
