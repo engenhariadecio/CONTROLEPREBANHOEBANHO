@@ -25,6 +25,7 @@
     </div>
   </div>
   <div class="topbar-actions">
+    <span class="wl-chip" id="wlChip" title="Verificando se a tela fica acesa…"><i class="bi bi-lightbulb"></i></span>
     <span class="user-chip"><span class="user-dot perfil-{{ session.get('perfil') }}"></span>{{ nome | default(session.get('nome')) }}</span>
     {% if session.get('perfil') == 'admin' %}
     <a href="{{ url_for('dashboard') }}" class="tb-btn" title="Dashboard"><i class="bi bi-grid-1x2-fill"></i></a>
@@ -46,7 +47,23 @@
 <main class="page {% if not session.get('usuario') %}page-bare{% endif %}">
   {% block content %}{% endblock %}
 </main>
+<script src="{{ url_for('static', filename='wakelock.js') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function(){
+  var chip=document.getElementById('wlChip');
+  if(!chip)return;
+  var TXT={ativo:'Tela travada acesa enquanto esta página estiver aberta.',
+           video:'Tela travada acesa (modo compatível).',
+           falhou:'Não consegui impedir a tela de apagar neste navegador. '
+                 +'Ajuste o tempo de suspensão nas configurações do aparelho.'};
+  function pinta(m){ chip.title = TXT[m] || 'Verificando se a tela fica acesa…'; }
+  window.addEventListener('wakelock', function(e){ pinta(e.detail.modo); });
+  setTimeout(function(){
+    pinta(document.documentElement.getAttribute('data-wakelock'));
+  }, 1500);
+})();
+</script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>

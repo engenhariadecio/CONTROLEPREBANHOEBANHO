@@ -72,6 +72,13 @@ body{
 .brand-sub .etapa-on::after{content:'';position:absolute;left:0;right:0;bottom:-4px;
   height:2px;border-radius:2px;background:var(--brand-green,#2BA45C);}
 .brand-sub .etapa-sep{color:rgba(255,255,255,.3);font-weight:400;}
+/* Indicador de "tela sempre acesa": discreto quando está tudo certo, visível
+   quando falha — é quando o operador precisa saber. */
+.wl-chip{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
+  border-radius:9px;color:rgba(255,255,255,.35);font-size:15px;transition:.2s;cursor:default;}
+html[data-wakelock="ativo"] .wl-chip,html[data-wakelock="video"] .wl-chip{
+  color:#8fe3b0;background:rgba(43,164,92,.18);}
+html[data-wakelock="falhou"] .wl-chip{color:#ffd9a0;background:rgba(214,138,60,.22);}
 /* tela de login: as três etapas, nenhuma acesa (ainda não se escolheu painel) */
 .login-etapas{letter-spacing:.14em;font-weight:700;font-size:.63rem;text-transform:uppercase;}
 .login-etapas span{opacity:.4;margin:0 4px;}

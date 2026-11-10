@@ -514,3 +514,32 @@ para Postgres e SQLite. No boot sobre um banco antigo aparece:
 ```
 
 Se você acrescentar outros estados no futuro, isso volta a se resolver sozinho.
+
+## Tela sempre acesa
+
+O tablet/TV do chão de fábrica não pode apagar enquanto o sistema está aberto.
+`static/wakelock.js` cuida disso em todas as telas (via `base.html`, e no painel
+da gerência, que tem HTML próprio).
+
+São três camadas, porque nenhuma cobre todos os aparelhos sozinha:
+
+1. **Screen Wake Lock API** — o caminho oficial. Exige **HTTPS** (no Railway já
+   é) ou `localhost`; em HTTP comum o navegador recusa.
+2. **Vigia a cada 20 s** — o sistema pode soltar o bloqueio por conta própria
+   (bateria fraca, economia de energia) sem avisar. Sem alguém conferindo, a
+   tela volta a apagar e ninguém percebe. O vigia repõe.
+3. **Vídeo mudo de 1 px em loop** — para navegadores sem a API (Safari antigo,
+   WebView). Um vídeo tocando segura a tela acesa na prática.
+
+Um ícone de lâmpada na barra do topo mostra o estado: **verde** quando a tela
+está travada acesa, **âmbar** quando não foi possível. Passando o mouse, o texto
+explica. Para diagnóstico, `window.wakeLockInfo()` no console do navegador
+devolve o modo em uso, se a API existe e se o contexto é seguro.
+
+O bloqueio só vale com a aba **visível** — essa é uma regra do navegador, não do
+sistema: ao minimizar ou trocar de aba ele cai, e volta sozinho quando a tela
+reaparece.
+
+**O que isto não resolve:** bloqueio de tela por política do Windows/Android
+(senha após X minutos) e o botão de desligar do aparelho. Se mesmo assim apagar,
+vale tirar a suspensão nas configurações de energia do próprio aparelho.
