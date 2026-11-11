@@ -87,9 +87,11 @@
       <button class="cat-tab on" data-cat="" onclick="setCategoria('')"><i class="bi bi-grid-fill"></i>Todos <span class="cat-count" id="cnt-todos">0</span></button>
       <button class="cat-tab" data-cat="PREPARANDO" onclick="setCategoria('PREPARANDO')"><i class="bi bi-hourglass-split"></i>Preparando cesto <span class="cat-count" id="cnt-PREPARANDO">0</span></button>
       <button class="cat-tab" data-cat="PREENCHER" onclick="setCategoria('PREENCHER')"><i class="bi bi-pencil-square"></i>Aguardando cadastro <span class="cat-count" id="cnt-PREENCHER">0</span></button>
+      <button class="cat-tab" data-cat="AGUARDANDO_MONTAGEM" id="tab-AGUARDANDO_MONTAGEM" style="display:none;" onclick="setCategoria('AGUARDANDO_MONTAGEM')"><i class="bi bi-arrow-repeat"></i>Aguardando montagem <span class="cat-count" id="cnt-AGUARDANDO_MONTAGEM">0</span></button>
       <button class="cat-tab" data-cat="FILA_BANHO" onclick="setCategoria('FILA_BANHO')"><i class="bi bi-list-ol"></i>Aguardando banho <span class="cat-count" id="cnt-FILA_BANHO">0</span></button>
       <button class="cat-tab" data-cat="EM_BANHO" onclick="setCategoria('EM_BANHO')"><i class="bi bi-droplet-fill"></i>Em banho <span class="cat-count" id="cnt-EM_BANHO">0</span></button>
       <button class="cat-tab" data-cat="FILA_PINTURA" onclick="setCategoria('FILA_PINTURA')"><i class="bi bi-list-ol"></i>Aguardando pintura <span class="cat-count" id="cnt-FILA_PINTURA">0</span></button>
+      <button class="cat-tab" data-cat="PREP_PINT" id="tab-PREP_PINT" style="display:none;" onclick="setCategoria('PREP_PINT')"><i class="bi bi-brush-fill"></i>Preparação p/ pintura <span class="cat-count" id="cnt-PREP_PINT">0</span></button>
       <button class="cat-tab" data-cat="CARREGANDO_PINT" onclick="setCategoria('CARREGANDO_PINT')"><i class="bi bi-palette-fill"></i>Carregando <span class="cat-count" id="cnt-CARREGANDO_PINT">0</span></button>
     </div>
     <div id="ativosWrap" class="ativos-cats">
@@ -153,7 +155,7 @@
     <p class="small muted" id="setorHint" style="margin:0 0 6px;"></p>
 
     <!-- Indicadores principais -->
-    <div class="gp-secao"><i class="bi bi-clipboard2-data-fill"></i>Quantidade de cestos</div>
+    <div class="gp-secao"><i class="bi bi-clipboard2-data-fill"></i><span id="secQtd">Quantidade de cestos</span><span class="gp-secao-tag" id="periodoTag"></span></div>
     <div class="gp-kpis">
       <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-check2-all"></i></div><div><div class="gp-kpi-val" id="kTotal">0</div><div class="gp-kpi-lbl" id="lblTotal">Concluídos</div></div></div>
       <div class="gp-kpi"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kAnd">0</div><div class="gp-kpi-lbl">Em andamento</div></div></div>
@@ -164,8 +166,8 @@
     <div class="gp-secao"><i class="bi bi-clock-fill"></i>Tempo médio (min)</div>
     <div class="gp-kpis gp-kpis-3">
       <div class="gp-kpi" id="kpiPreparo"><div class="gp-kpi-ic ic-violet"><i class="bi bi-stopwatch-fill"></i></div><div><div class="gp-kpi-val" id="kPrep">0</div><div class="gp-kpi-lbl">Preparo</div></div></div>
-      <div class="gp-kpi" id="kpiEspera"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kEspera">0</div><div class="gp-kpi-lbl">Espera (fila)</div></div></div>
-      <div class="gp-kpi" id="kpiBanho"><div class="gp-kpi-ic ic-sky"><i class="bi bi-droplet-half"></i></div><div><div class="gp-kpi-val" id="kBanho">0</div><div class="gp-kpi-lbl">Banho</div></div></div>
+      <div class="gp-kpi" id="kpiEspera"><div class="gp-kpi-ic ic-amber"><i class="bi bi-hourglass-split"></i></div><div><div class="gp-kpi-val" id="kEspera">0</div><div class="gp-kpi-lbl" id="lblEspera">Espera (fila)</div></div></div>
+      <div class="gp-kpi" id="kpiBanho"><div class="gp-kpi-ic ic-sky"><i class="bi bi-droplet-half"></i></div><div><div class="gp-kpi-val" id="kBanho">0</div><div class="gp-kpi-lbl" id="lblTempo">Banho</div></div></div>
     </div>
 
     <div id="blocoGeral" style="display:none;">
@@ -194,8 +196,8 @@
         <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-stack"></i></div><div><div class="gp-kpi-val" id="kEsPecas">0</div><div class="gp-kpi-lbl">Estacionária — peças</div></div></div>
         <div class="gp-kpi"><div class="gp-kpi-ic ic-sky"><i class="bi bi-clock-fill"></i></div><div><div class="gp-kpi-val" id="kEsTempo">0</div><div class="gp-kpi-lbl">Estacionária — min/carga</div></div></div>
       </div>
-      <div class="gp-secao"><i class="bi bi-palette-fill"></i>Monovia e aproveitamento</div>
-      <div class="gp-kpis gp-kpis-3">
+      <div class="gp-secao so-descarga"><i class="bi bi-palette-fill"></i>Monovia e aproveitamento</div>
+      <div class="gp-kpis gp-kpis-3 so-descarga">
         <div class="gp-kpi"><div class="gp-kpi-ic ic-green"><i class="bi bi-check-circle-fill"></i></div><div><div class="gp-kpi-val" id="kAprov">0%</div><div class="gp-kpi-lbl">Aproveitamento</div></div></div>
         <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-clockwise"></i></div><div><div class="gp-kpi-val" id="kRepasse">0</div><div class="gp-kpi-lbl">Peças em repasse</div></div></div>
         <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-rulers"></i></div><div><div class="gp-kpi-val" id="kOcup">0%</div><div class="gp-kpi-lbl">Ocupação do trilho</div></div></div>
@@ -209,15 +211,15 @@
     <div class="gp-kpis gp-kpis-3">
       <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-stack"></i></div><div><div class="gp-kpi-val" id="kPecas">0</div><div class="gp-kpi-lbl">Peças totais</div></div></div>
       <div class="gp-kpi"><div class="gp-kpi-ic ic-teal"><i class="bi bi-rulers"></i></div><div><div class="gp-kpi-val" id="kArea">0</div><div class="gp-kpi-lbl">Área total (m²)</div></div></div>
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-list-ol"></i></div><div><div class="gp-kpi-val" id="kTotalOps">0</div><div class="gp-kpi-lbl">OPs processadas</div></div></div>
-      <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kTaxaRetrab">0%</div><div class="gp-kpi-lbl">Taxa de retrabalho</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-blue"><i class="bi bi-list-ol"></i></div><div><div class="gp-kpi-val" id="kTotalOps">0</div><div class="gp-kpi-lbl" id="lblOps">OPs processadas</div></div></div>
+      <div class="gp-kpi"><div class="gp-kpi-ic ic-red"><i class="bi bi-arrow-repeat"></i></div><div><div class="gp-kpi-val" id="kTaxaRetrab">0%</div><div class="gp-kpi-lbl" id="lblTaxa">Taxa de retrabalho</div></div></div>
     </div>
 
     <!-- Gráficos -->
     <div class="gp-secao"><i class="bi bi-pie-chart-fill"></i>Análise gráfica</div>
     <div class="chart-grid">
-      <div class="chart-box"><h6><i class="bi bi-graph-up"></i>Cestos por dia<span class="chart-per" id="chartDiaPer"></span></h6><canvas id="chartDia" height="180"></canvas></div>
-      <div class="chart-box"><h6><i class="bi bi-bar-chart-fill"></i>Cestos por processo</h6><canvas id="chartProc" height="200"></canvas></div>
+      <div class="chart-box"><h6><i class="bi bi-graph-up"></i><span id="tChartDia">Cestos por dia</span><span class="chart-per" id="chartDiaPer"></span></h6><canvas id="chartDia" height="180"></canvas></div>
+      <div class="chart-box"><h6><i class="bi bi-bar-chart-fill"></i><span id="tChartProc">Cestos por processo</span></h6><canvas id="chartProc" height="200"></canvas></div>
     </div>
     <div class="chart-grid" style="grid-template-columns:1fr;">
       <div class="chart-box"><h6><i class="bi bi-rulers"></i>Área processada por dia (m²)</h6><canvas id="chartArea" height="170"></canvas></div>
@@ -226,7 +228,8 @@
     <div id="graficosPintura" style="display:none;">
       <div class="chart-grid">
         <div class="chart-box"><h6><i class="bi bi-signpost-split-fill"></i>Monovia × Estacionária</h6><canvas id="chartDestino" height="200"></canvas></div>
-        <div class="chart-box"><h6><i class="bi bi-check-circle-fill"></i>Aproveitamento × repasse</h6><canvas id="chartAprov" height="200"></canvas></div>
+        <div class="chart-box so-descarga"><h6><i class="bi bi-check-circle-fill"></i>Aproveitamento × repasse</h6><canvas id="chartAprov" height="200"></canvas></div>
+        <div class="chart-box sem-descarga"><h6><i class="bi bi-stack"></i>Peças por destino</h6><canvas id="chartPecasDest" height="200"></canvas></div>
       </div>
       <div class="chart-grid">
         <div class="chart-box"><h6><i class="bi bi-list-check"></i>Lançamentos por tipo</h6><canvas id="chartTipos" height="180"></canvas></div>
@@ -235,7 +238,7 @@
     </div>
 
     <!-- Tabela do setor selecionado -->
-    <div class="gp-secao"><i class="bi bi-list-ul"></i>Cestos do setor <span id="setorTabTitulo"></span></div>
+    <div class="gp-secao"><i class="bi bi-list-ul"></i><span id="setorTabRot">Cestos do setor</span>&nbsp;<span id="setorTabTitulo"></span></div>
 
     <div class="gp-card" id="wrapPrep" style="overflow:hidden;padding:0;">
       <div class="table-wrap">
@@ -243,7 +246,7 @@
           <thead><tr>
             <th>#</th><th>Cesto</th><th>OP</th><th>Código</th><th>Texto breve</th><th>Qtd</th>
             <th>Processo</th><th>Tipo</th>
-            <th>Início do processo</th><th>Fim do processo</th><th>Total (min)</th><th>Estado</th><th>Ver</th>
+            <th id="thIni">Início do processo</th><th id="thFim">Fim do processo</th><th id="thTot">Total (min)</th><th id="thEst">Estado</th><th>Ver</th>
           </tr></thead>
           <tbody id="histBodyPrep"><tr><td colspan="13" class="empty">Carregando…</td></tr></tbody>
         </table>
@@ -280,10 +283,17 @@ const ESTADO_INFO={
   PREENCHER:{t:'Aguardando cadastro',c:'#64748b',i:'pencil-square'},
   FILA_BANHO:{t:'Aguardando banho',c:'#7C5CFC',i:'list-ol'},
   EM_BANHO:{t:'Em banho',c:'#1668C0',i:'droplet-fill'},
+  AGUARDANDO_MONTAGEM:{t:'Aguardando montagem (retrabalho)',c:'#D63C3C',i:'arrow-repeat'},
   FILA_PINTURA:{t:'Aguardando pintura',c:'#D97706',i:'list-ol'},
+  PREP_PINT:{t:'Preparação para pintura',c:'#8B5CF6',i:'brush-fill'},
   CARREGANDO_PINT:{t:'Carregando na pintura',c:'#0E9AA7',i:'palette-fill'},
 };
-const ORDEM_CAT=['PREPARANDO','PREENCHER','FILA_BANHO','EM_BANHO','FILA_PINTURA','CARREGANDO_PINT'];
+const ORDEM_CAT=['PREPARANDO','PREENCHER','AGUARDANDO_MONTAGEM','FILA_BANHO','EM_BANHO',
+                 'FILA_PINTURA','PREP_PINT','CARREGANDO_PINT'];
+// categorias que só aparecem no menu quando têm alguma coisa
+const CAT_OPCIONAL=['AGUARDANDO_MONTAGEM','PREP_PINT'];
+// estado do CESTO -> categoria do painel (a pintura tem nomes próprios aqui)
+const CAT_DO_ESTADO={EM_PINTURA:'CARREGANDO_PINT',CARREGANDO:'CARREGANDO_PINT'};
 let _offset=0;
 async function _sincronizar(){
   try{const t0=Date.now();const j=await (await fetch('/api/agora')).json();const t1=Date.now();
@@ -297,6 +307,7 @@ function _esperaFila(iso){if(!iso)return 0;return tempoUtilSegundos(new Date(iso
 
 function _cardAtivoHTML(c){
   const e=ESTADO_INFO[c.estado]||{t:c.estado,c:'#888',i:'circle'};
+  const semCesto=(c.numero_cesto==='S/C');
   let cronHTML;
   if(c.estado==='EM_BANHO'&&c.banho_inicio_iso){
     cronHTML=`<div class="ativo-cron cron-el" data-tipo="corrido" data-ini="${c.banho_inicio_iso}">${_fmt(_segDe(c.banho_inicio_iso))}</div>`;
@@ -304,7 +315,7 @@ function _cardAtivoHTML(c){
     cronHTML=`<div class="ativo-cron cron-el cron-espera" data-tipo="fila" data-ini="${c.prep_fim_iso}">${_fmt(_esperaFila(c.prep_fim_iso))}</div>`;
   }else if(c.estado==='FILA_PINTURA'&&c._esperaIso){
     cronHTML=`<div class="ativo-cron cron-el cron-espera" data-tipo="fila" data-ini="${c._esperaIso}">${_fmt(_esperaFila(c._esperaIso))}</div>`;
-  }else if(c.estado==='CARREGANDO_PINT'&&c._cronIso&&!c.pausado){
+  }else if((c.estado==='CARREGANDO_PINT'||c.estado==='PREP_PINT')&&c._cronIso&&!c.pausado){
     cronHTML=`<div class="ativo-cron cron-el" data-tipo="corrido" data-ini="${c._cronIso}">${_fmt(_segDe(c._cronIso))}</div>`;
   }else if(c.estado==='PREPARANDO'&&!c.pausado&&c.prep_inicio_iso){
     cronHTML=`<div class="ativo-cron cron-el" data-tipo="corrido" data-ini="${c.prep_inicio_iso}">${_fmt(_segDe(c.prep_inicio_iso))}</div>`;
@@ -313,11 +324,12 @@ function _cardAtivoHTML(c){
   }
   return `<div class="ativo-card" style="border-left:4px solid ${e.c};">
     <div class="ativo-top">
-      <span class="ativo-cesto">Cesto ${c.numero_cesto}</span>
+      <span class="ativo-cesto">${semCesto?'Sem cesto':('Cesto '+c.numero_cesto)}</span>
       <span class="ativo-estado" style="background:${e.c}1a;color:${e.c};"><i class="bi bi-${e.i}"></i>${e.t}${c.pausado?' (pausado)':''}</span>
     </div>
     <div class="ativo-info">${(function(){var ops=((c.itens&&c.itens.length)?c.itens.map(function(it){return it.ordem;}):[c.ordem]).filter(Boolean);return ops.length>1?('OPs: '+ops.join(', ')):('OP '+(ops[0]||'—'));})()} · <span class="pill ${c.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}" style="font-size:.6rem;">${c.tipo}</span> · ${c.qtd_total||0} pç</div>
     ${c._sub?`<div class="ativo-info muted" style="font-size:.7rem;">${c._sub}</div>`:''}
+    ${semCesto&&c._origem?`<div class="ativo-info muted" style="font-size:.7rem;"><i class="bi bi-geo-alt"></i> ${c._origem}</div>`:''}
     ${cronHTML}
     ${c.lote_id
       ? `<button class="btn-detalhes btn-detalhes-block" onclick="verDetalhesLote(${c.lote_id})"><i class="bi bi-eye"></i>Ver detalhes</button>`
@@ -338,29 +350,41 @@ function _lotesComoAtivos(pt){
   // para o mesmo formato de card, para entrarem na mesma lista.
   if(!pt)return [];
   const out=[];
+  const origem=l=>l.com_cesto?'':((l.local||'Fora do cesto')+(l.numero_cesto?(' · veio do cesto '+l.numero_cesto):''));
   (pt.fila||[]).forEach(l=>out.push({...l,id:'L'+l.id,lote_id:l.id,
     estado:'FILA_PINTURA',qtd_total:l.quantidade,
-    numero_cesto:l.com_cesto?l.numero_cesto:'S/C',
+    numero_cesto:l.com_cesto?l.numero_cesto:'S/C',_origem:origem(l),
     _esperaIso:l.criado_iso}));
   (pt.carregando||[]).forEach(l=>out.push({...l,id:'L'+l.id,lote_id:l.id,
-    estado:'CARREGANDO_PINT',qtd_total:l.quantidade,
-    numero_cesto:l.com_cesto?l.numero_cesto:'S/C',
+    estado:(l.eh_carga===false)?'PREP_PINT':'CARREGANDO_PINT',qtd_total:l.quantidade,
+    numero_cesto:l.com_cesto?l.numero_cesto:'S/C',_origem:origem(l),
     pausado:l.pausado,_cronIso:l.inicio_iso,
-    _sub:(l.tipo_lbl||'')+(l.operadores_txt?' · '+l.operadores_txt:'')}));
+    _sub:(l.tipo_lbl||'')+(l.detalhe?' · '+l.detalhe:'')+(l.operadores_txt?' · '+l.operadores_txt:'')}));
   return out;
 }
 
 function pintarAtivos(){
   const wrap=document.getElementById('ativosWrap');
   if(!wrap)return;
-  const ativos=(window._ativosCache||[]).concat(_lotesComoAtivos(window._pintCache));
+  // Cada coisa UMA vez: o cesto que saiu do banho é acompanhado pelo lote da
+  // pintura. Se o lote dele está na lista, o cesto não entra de novo.
+  const lotes=_lotesComoAtivos(window._pintCache);
+  const comLote=new Set(lotes.filter(l=>l.card_id&&l.com_cesto).map(l=>l.card_id));
+  const NA_PINTURA={FILA_PINTURA:1,EM_PINTURA:1,CARREGANDO:1};
+  const cestos=(window._ativosCache||[])
+    .filter(c=>!(NA_PINTURA[c.estado]&&comLote.has(c.id)))
+    .map(c=>CAT_DO_ESTADO[c.estado]?{...c,estado:CAT_DO_ESTADO[c.estado]}:c);
+  const ativos=cestos.concat(lotes);
+  const nSem=ativos.filter(c=>c.numero_cesto==='S/C').length, nCom=ativos.length-nSem;
   const tag=document.getElementById('ativosTag');
-  if(tag)tag.textContent=ativos.length?(ativos.length+(ativos.length>1?' cestos':' cesto')):'';
+  if(tag)tag.textContent=[nCom?(nCom+(nCom>1?' cestos':' cesto')):'',
+                          nSem?(nSem+(nSem>1?' lotes sem cesto':' lote sem cesto')):''].filter(Boolean).join(' · ');
   // contadores por categoria
-  const cont={EM_BANHO:0,FILA_BANHO:0,PREPARANDO:0,PREENCHER:0,FILA_PINTURA:0,CARREGANDO_PINT:0};
-  ativos.forEach(c=>{if(cont[c.estado]!==undefined)cont[c.estado]++;});
+  const cont={};ORDEM_CAT.forEach(k=>cont[k]=0);
+  ativos.forEach(c=>{if(cont[c.estado]===undefined){c.estado=c.estado||'PREENCHER';cont[c.estado]=cont[c.estado]||0;}cont[c.estado]++;});
   const t=document.getElementById('cnt-todos'); if(t)t.textContent=ativos.length;
   Object.keys(cont).forEach(k=>{const e=document.getElementById('cnt-'+k);if(e)e.textContent=cont[k];});
+  CAT_OPCIONAL.forEach(k=>{const b=document.getElementById('tab-'+k);if(b)b.style.display=(cont[k]||_catSel===k)?'':'none';});
   if(!ativos.length){wrap.innerHTML='<div class="gp-card gp-vazio"><i class="bi bi-clipboard-check"></i>Nenhum cesto ativo no momento.</div>';return;}
   const grupos={};
   ativos.forEach(c=>{(grupos[c.estado]=grupos[c.estado]||[]).push(c);});
@@ -369,7 +393,7 @@ function pintarAtivos(){
     if(_catSel && est!==_catSel)return;
     const lista=grupos[est];
     if(!lista||!lista.length)return;
-    const e=ESTADO_INFO[est];
+    const e=ESTADO_INFO[est]||{t:est,c:'#888',i:'circle'};
     html+=`<div class="cat-bloco">
       <div class="cat-head" style="--cor:${e.c};">
         <span class="cat-dot" style="background:${e.c};"></span>
@@ -410,12 +434,19 @@ function pintarFaixaHoje(pt){
     +(pt.carregando_qtd?(' · '+pt.carregando_qtd+' carregando agora'):'');
 }
 
+function _estadoLote(l){
+  if(l.estado==='AGUARDANDO')return 'Aguardando pintura';
+  if(l.estado==='EM_ATIVIDADE')return 'Em atividade';
+  if(l.estado==='NA_LINHA')return 'Na linha';
+  return ({MONOVIA:'Carregado na monovia',ESTACIONARIA:'Carregado na estacionária',
+           RETRABALHO:'Enviado a retrabalho',CANCELADO:'Cancelado'})[l.destino]||'Finalizado';
+}
 async function verDetalhesLote(loteId){
   // Lote da pintura: busca o histórico completo (todas as etapas, operadores,
   // tempos e o caminho percorrido) direto do módulo.
   let l;
   try{ l=await (await fetch('/api/pintura/lote/'+loteId)).json(); }catch(_){ return; }
-  if(!l||l.erro)return;
+  if(!l||l.erro||!l.id)return;
   const itens=(l.itens||[]);
   const linhas=itens.map(it=>`<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td>
     <td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td>
@@ -432,7 +463,7 @@ async function verDetalhesLote(loteId){
     (l.com_cesto&&l.numero_cesto)?('Cesto '+l.numero_cesto):('Lote #'+l.id+' (sem cesto)');
   document.getElementById('detCorpo').innerHTML=`
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
-      <span class="pill pill-fila">${l.estado==='AGUARDANDO'?'Aguardando pintura':'Em atividade'}</span>
+      <span class="pill pill-fila">${_estadoLote(l)}</span>
       <span class="pill ${l.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${l.tipo}</span>
       <span class="pill pill-banho">${l.processo||'Sem processo'}</span>
     </div>
@@ -567,41 +598,59 @@ function setHistTab(qual){ /* tabela única agora — mantido por compatibilidad
 // Tabela do setor: uma linha por cesto/lote, com o processo de ponta a ponta.
 // Substitui as duas tabelas antigas (pré-banho e banho), que repetiam colunas
 // de operadores e cadastro sem mostrar o ciclo.
+const CAB_SETOR={
+  prep:   ['Início da preparação','Fim da preparação','Preparação (min)','Estado atual'],
+  banho:  ['Início do banho','Fim do banho','Banho (min)','Estado atual'],
+  pintura:['Início','Fim','Tempo (min)','Lançamento'],
+  geral:  ['Início do processo','Fim do processo','Total (min)','Estado atual'],
+};
 function renderTabelaSetor(b, setor){
   const tb=document.getElementById('histBodyPrep'); if(!tb)return;
+  const cab=CAB_SETOR[setor]||CAB_SETOR.geral;
+  ['thIni','thFim','thTot','thEst'].forEach((id,k)=>{const e=document.getElementById(id);if(e)e.textContent=cab[k];});
   const regs=(b&&b.registros)||[];
   window._registrosCache=regs;
   if(!regs.length){
     tb.innerHTML='<tr><td colspan="13" class="empty">Nenhum registro no período.</td></tr>';
     return;
   }
+  const num=v=>(v!=null&&v!=='')?v:'';
   tb.innerHTML=regs.map((r,i)=>{
+    const pint=(setor==='pintura');
     const lote=r.lote||{};
     const cesto=r.numero_cesto||lote.numero_cesto||'S/C';
-    const itens=(r.itens&&r.itens.length)?r.itens:(lote.itens||[]);
+    const itens=pint?(lote.itens||[]):((r.itens&&r.itens.length)?r.itens:[]);
     const op=itens.length>1?(itens.length+' OPs'):((itens[0]||{}).ordem||r.ordem||'—');
     const cod=itens.length>1?'—':((itens[0]||{}).material||r.material||'—');
     const txt=itens.length>1?'—':((itens[0]||{}).texto_breve||r.texto_breve||'—');
-    const qtd=r.qtd_total!=null?r.qtd_total:(lote.quantidade||0);
-    const proc=r.processo||lote.processo||'—';
-    const tipo=r.tipo||lote.tipo||'Normal';
-    // início/fim do PROCESSO — vazio enquanto não terminou
-    const ini=r.ciclo_ini||r.prep_inicio||r.inicio||'—';
-    const fim=r.ciclo_fim||r.fim||'';
-    const tot=(r.ciclo_total!=null&&r.ciclo_total!=='')?r.ciclo_total:'';
-    const etapa=r.etapa||r.estado_lbl||r.estado||'—';
-    const emCurso=!fim;
-    return `<tr data-busca="${(cesto+' '+op+' '+cod+' '+txt+' '+proc).toLowerCase()}">
+    const qtd=pint?(r.qtd_lote||lote.quantidade||0):(r.qtd_total!=null?r.qtd_total:0);
+    const proc=(pint?lote.processo:r.processo)||'—';
+    const tipo=(pint?lote.tipo:r.tipo)||'Normal';
+    // início / fim / tempo: os do SETOR; em "Todos", os do processo inteiro
+    let ini,fim,tot,etapa,emCurso;
+    if(pint){
+      ini=r.inicio; fim=r.fim; tot=num(r.minutos);
+      etapa=(r.tipo_lbl||r.tipo||'—')+(r.detalhe?(' · '+r.detalhe):''); emCurso=false;
+    }else{
+      if(setor==='prep'){ini=r.prep_inicio; fim=r.prep_fim; tot=num(r.prep_minutos);}
+      else if(setor==='banho'){ini=r.banho_inicio; fim=r.banho_fim; tot=num(r.banho_minutos);}
+      else{ini=r.ciclo_ini||r.prep_inicio; fim=r.ciclo_fim; tot=num(r.ciclo_total);}
+      etapa=r.etapa||'—'; emCurso=(r.em_curso!==undefined)?r.em_curso:!r.ciclo_fim;
+    }
+    const ver=pint?`verDetalhesLote(${r.lote_id})`:`verDetalhesHist(${r.id})`;
+    const busca=(cesto+' '+itens.map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' ')
+      +' '+(r.ordem||'')+' '+proc+' '+tipo+' '+etapa).toLowerCase().replace(/"/g,'');
+    return `<tr class="${tipo==='Retrabalho'?'retrab':''}" data-busca="${busca}">
       <td class="mono">${i+1}</td><td><strong>${cesto}</strong></td>
       <td>${op}</td><td class="mono small">${cod}</td>
       <td><span class="small">${txt}</span></td><td class="mono">${qtd}</td>
       <td><span class="small">${proc}</span></td>
       <td><span class="pill ${tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${tipo}</span></td>
-      <td class="mono small">${ini}</td>
-      <td class="mono small">${emCurso?'<span class="muted">—</span>':fim}</td>
+      <td class="mono small">${ini||'<span class="muted">—</span>'}</td>
+      <td class="mono small">${fim||'<span class="muted">—</span>'}</td>
       <td class="mono">${tot!==''?('<strong>'+tot+'</strong>'):'<span class="muted">—</span>'}</td>
       <td><span class="pill ${emCurso?'pill-fila':'pill-normal'}">${etapa}</span></td>
-      <td><button class="btn-detalhes" onclick="verDetalhesHist(${r.id})"><i class="bi bi-eye"></i></button></td>
+      <td><button class="btn-detalhes" onclick="${ver}" title="Ver detalhes"><i class="bi bi-eye"></i></button></td>
     </tr>`;}).join('');
   if(typeof aplicarBuscaHistorico==='function')aplicarBuscaHistorico();
 }
@@ -617,21 +666,29 @@ function renderGraficosPintura(b, mv, es){
   faz('chartDestino',{type:'doughnut',
     data:{labels:['Monovia','Estacionária'],
       datasets:[{data:[mv.cargas||0,es.cargas||0],backgroundColor:[AZ,AM],borderWidth:0}]},
-    options:{responsive:true,plugins:{legend:{position:'bottom'}}}});
+    options:{responsive:true,aspectRatio:1.7,cutout:'62%',plugins:{legend:{position:'bottom'}}}});
+  faz('chartPecasDest',{type:'bar',
+    data:{labels:['Monovia','Estacionária'],
+      datasets:[{data:[mv.pecas||0,es.pecas||0],backgroundColor:[AZ,AM],borderRadius:8,maxBarThickness:70}]},
+    options:{responsive:true,aspectRatio:1.7,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
   faz('chartAprov',{type:'doughnut',
     data:{labels:['Desceram OK','Repasse'],
       datasets:[{data:[b.pecas_ok||0,b.pecas_repasse||0],backgroundColor:[VD,VM],borderWidth:0}]},
-    options:{responsive:true,plugins:{legend:{position:'bottom'}}}});
+    options:{responsive:true,aspectRatio:1.7,cutout:'62%',plugins:{legend:{position:'bottom'}}}});
   const tp=b.por_tipo||{};
   faz('chartTipos',{type:'bar',
     data:{labels:Object.keys(tp),datasets:[{data:Object.values(tp),backgroundColor:AZ}]},
-    options:{responsive:true,indexAxis:'y',plugins:{legend:{display:false}},
+    options:{responsive:true,aspectRatio:1.7,indexAxis:'y',plugins:{legend:{display:false}},
       scales:{x:{beginAtZero:true,ticks:{precision:0}}}}});
   faz('chartTempos',{type:'bar',
-    data:{labels:['Espera na fila','Carregamento','Na linha','Descarga'],
-      datasets:[{data:[b.media_espera||0,b.media_tempo||0,b.media_linha||0,b.media_descarga||0],
-        backgroundColor:[AM,AZ,VD,'#7F77DD']}]},
-    options:{responsive:true,plugins:{legend:{display:false}},
+    data:b.descarga_ativa
+      ? {labels:['Espera na fila','Carga monovia','Carga estacionária','Na linha','Descarga'],
+         datasets:[{data:[b.media_espera||0,mv.media_tempo||0,es.media_tempo||0,b.media_linha||0,b.media_descarga||0],
+           backgroundColor:[AM,AZ,'#0E9AA7',VD,'#7F77DD']}]}
+      : {labels:['Espera na fila','Carga monovia','Carga estacionária'],
+         datasets:[{data:[b.media_espera||0,mv.media_tempo||0,es.media_tempo||0],
+           backgroundColor:[AM,AZ,'#0E9AA7'],maxBarThickness:70}]},
+    options:{responsive:true,aspectRatio:1.7,plugins:{legend:{display:false}},
       scales:{y:{beginAtZero:true}}}});
 }
 
@@ -687,13 +744,23 @@ window.renderSetorAtivo=function(){
   const bpint=document.getElementById('blocoPintura');
   if(bpint) bpint.style.display = pint ? '' : 'none';
   // KPIs (quantidade)
+  const desc=!!(pint&&b.descarga_ativa);
+  document.querySelectorAll('.so-descarga').forEach(e=>e.style.display=desc?'':'none');
+  document.querySelectorAll('.sem-descarga').forEach(e=>e.style.display=desc?'none':'');
+  set('secQtd',pint?'Quantidade de carregamentos':'Quantidade de cestos');
+  set('tChartDia',pint?'Carregamentos por dia':'Cestos por dia');
+  set('tChartProc',pint?'Carregamentos por processo':'Cestos por processo');
   set('kTotal',pint?(b.carregamentos||0):b.total); set('kAnd',d.em_andamento);
   document.getElementById('lblTotal').textContent =
     prep?'Preparados':(pint?'Carregamentos':(ger?'Cestos no período':'Concluídos'));
-  set('kBanhoNormal',pint?(b.descargas||0):b.normais);
-  set('kBanhoRetrab',pint?(b.na_linha_agora||0):b.retrabalhos);
-  document.getElementById('lblNormais').textContent=pint?'Descargas':'Normais';
-  document.getElementById('lblRetrab').textContent=pint?'Na linha agora':'Retrabalho';
+  set('kBanhoNormal',pint?(desc?(b.descargas||0):(b.aguardando_agora||0)):b.normais);
+  set('kBanhoRetrab',pint?(desc?(b.na_linha_agora||0):(b.total||0)):b.retrabalhos);
+  document.getElementById('lblNormais').textContent=pint?(desc?'Descargas':'Na fila agora'):'Normais';
+  document.getElementById('lblRetrab').textContent=pint?(desc?'Na linha agora':'Lançamentos no período'):'Retrabalho';
+  set('lblEspera',pint?'Espera na fila da pintura':'Espera na fila do banho');
+  set('lblTempo',pint?'Carregamento':'Banho');
+  set('lblOps',pint?'OPs carregadas':'OPs processadas');
+  set('lblTaxa',pint?(desc?'Taxa de repasse':'Envios a retrabalho'):'Taxa de retrabalho');
   // tempo médio — adapta ao setor
   // Na aba "Todos" os tempos aparecem no bloco próprio (etapa por etapa),
   // então os três cards genéricos saem de cena.
@@ -715,16 +782,17 @@ window.renderSetorAtivo=function(){
     set('kDescarga',b.media_descarga||0); set('kParadas',b.parada_min||0);
   }
   // totais e qualidade
-  set('kPecas',b.pecas); set('kArea',b.area);
-  set('kTotalOps',pint?(b.total||0):b.ops);
-  const _tx = pint ? (b.taxa_repasse_pct||0)
-            : (b.taxa_retrab!=null ? b.taxa_retrab
-              : (b.total ? Math.round(1000*(b.retrabalhos||0)/b.total)/10 : 0));
-  set('kTaxaRetrab',_tx+'%');
-  // gráficos e tabela do setor
+  set('kPecas',b.pecas||0); set('kArea',b.area||0);
+  set('kTotalOps',b.ops||0);
+  if(pint&&!desc) set('kTaxaRetrab',b.retrabalhos||0);
+  else{
+    const _tx = pint ? (b.taxa_repasse_pct||0)
+              : (b.taxa_retrab!=null ? b.taxa_retrab
+                : (b.total ? Math.round(1000*(b.retrabalhos||0)/b.total)/10 : 0));
+    set('kTaxaRetrab',_tx+'%');
+  }
+  // gráficos do setor (a tabela já foi montada acima por renderTabelaSetor)
   if(typeof renderCharts==='function') renderCharts(b);
-  if(typeof renderHistorico==='function') renderHistorico(d);
-  setHistTab(s);
   // hint
   const hint=document.getElementById('setorHint');
   if(hint&&ger) hint.innerHTML='Mostrando <strong>todo o processo</strong>: cada cesto do início da '
@@ -732,11 +800,12 @@ window.renderSetorAtivo=function(){
   else if(hint) hint.innerHTML=prep
     ? 'Mostrando o <strong>Pré-banho</strong>: cestos cuja preparação foi finalizada no período/turno (igual ao Excel pré-banho).'
     : (pint
-      ? 'Mostrando a <strong>Pintura</strong>: lançamentos finalizados no período/turno. '
-        + '"Normais/Retrabalho" viram descargas e lotes na linha; a taxa mostra o repasse.'
+      ? 'Mostrando a <strong>Pintura</strong>: carregamentos e demais lançamentos finalizados no período. '
+        + 'Cada linha da tabela é um lançamento (carga, preparação, armazenamento ou retrabalho).'
       : 'Mostrando o <strong>Banho</strong>: cestos cujo banho foi concluído no período/turno (igual ao Excel banho).');
   const tt=document.getElementById('setorTabTitulo');
   if(tt)tt.textContent=prep?'— Pré-banho':(pint?'— Pintura':(ger?'— Processo completo':'— Banho'));
+  set('setorTabRot',pint?'Lançamentos do setor':(ger?'Todos os cestos':'Cestos do setor'));
 };
 function verDetalhesHist(id){
   const a=(window._registrosCache||[]).find(x=>x.id===id);
@@ -976,7 +1045,7 @@ function limparBusca(){
   aplicarBuscaHistorico();
 }
 function aplicarBuscaHistorico(){
-  document.querySelectorAll('#histBodyPrep tr[data-busca], #histBodyBanho tr[data-busca]').forEach(tr=>{
+  document.querySelectorAll('#histBodyPrep tr[data-busca]').forEach(tr=>{
     tr.style.display=(!_termoBusca||tr.dataset.busca.includes(_termoBusca))?'':'none';
   });
 }

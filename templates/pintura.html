@@ -175,7 +175,7 @@
           <textarea id="fimObs" class="input" rows="3" placeholder="Opcional"></textarea>
         </div>
         <div style="display:flex;gap:10px;margin-top:18px;">
-          <button class="btn btn-ghost" style="flex:0 0 auto;" onclick="mostrarView('cron')"><i class="bi bi-arrow-left"></i>Voltar</button>
+          <button class="btn btn-ghost" style="flex:0 0 auto;" onclick="fecharModal()">Cancelar</button>
           <button class="btn btn-stop" style="flex:1;" onclick="confirmarFinalizar()"><i class="bi bi-check-lg"></i>Confirmar</button>
         </div>
       </div>
@@ -253,7 +253,7 @@
       <!-- VIEW: detalhes -->
       <div id="vDet" style="display:none;">
         <div id="detCorpo"></div>
-        <button class="btn btn-ghost btn-block" style="margin-top:14px;" onclick="mostrarView('menu')"><i class="bi bi-arrow-left"></i>Voltar</button>
+        <button class="btn btn-ghost btn-block" style="margin-top:14px;" id="detSair" onclick="sairDetalhes()"><i class="bi bi-arrow-left"></i>Voltar</button>
       </div>
 
     </div>
@@ -355,21 +355,31 @@ function segAtiv(a){
   if(a.pausado&&a.pausa_inicio_iso)p+=Math.floor((agoraServidor()-new Date(a.pausa_inicio_iso).getTime())/1000);
   return Math.max(0,Math.floor((agoraServidor()-new Date(a.inicio_iso).getTime())/1000)-p);
 }
+const COLS={fila:['lbF','colFila'],mv:['lbM','colMv'],est:['lbE','colEst'],
+            prep:['lbP','colPrep'],armaz:['lbAr','colArm'],desc:['lbD','colDesc']};
+let _layout='todos';
 function setLayout(m){
-  const MAP={todos:'lbT',ativ:'lbA',fila:'lbF',desc:'lbD'};
-  Object.values(MAP).forEach(id=>document.getElementById(id).classList.remove('active'));
-  if(MAP[m])document.getElementById(MAP[m]).classList.add('active');
-  colAtiv.style.display=(m==='todos'||m==='ativ')?'':'none';
-  colFila.style.display=(m==='todos'||m==='fila')?'':'none';
+  // a aba de descarga some quando o módulo está desligado: cair nela não pode deixar a tela vazia
   const temD=document.getElementById('lbD').style.display!=='none';
-  colDesc.style.display=(temD&&(m==='todos'||m==='desc'))?'':'none';
-  if(m==='todos')pintCols.style.gridTemplateColumns=temD?'1fr 1fr 1fr':'1fr 1fr';
+  if(!COLS[m]||(m==='desc'&&!temD))m='todos';
+  _layout=m;
+  document.getElementById('lbT').classList.toggle('active',m==='todos');
+  Object.entries(COLS).forEach(([k,[btn,col]])=>{
+    document.getElementById(btn).classList.toggle('active',m===k);
+    const mostra=(m==='todos'||m===k)&&(k!=='desc'||temD);
+    document.getElementById(col).style.display=mostra?'':'none';
+  });
   pintCols.style.gridTemplateColumns=(m==='todos')?'':'1fr';
 }
 
 /* ── carregar painel ── */
 async function carregar(){
-  const j=await (await fetch('/api/pintura/painel')).json();
+  let j;
+  try{
+    const r=await fetch('/api/pintura/painel');
+    if(!r.ok)return;                    // sessão caiu / servidor reiniciando: mantém a tela e tenta de novo
+    j=await r.json();
+  }catch(_){return;}
   DADOS=j;
   const mv=j.monovia||{};
   semTelemetria = !mv || mv.modo==='sem_dados' || mv.modo==='desatualizado';
@@ -396,27 +406,9 @@ async function carregar(){
   cntMv.textContent=buckets.Mv.length; cntEst.textContent=buckets.Est.length;
   cntPrep.textContent=buckets.Prep.length; cntArm.textContent=buckets.Arm.length;
 
-  const _antigo=(j.em_atividade||[]).length?j.em_atividade.map(l=>{
-    const a=l.atividade||{};
-    return `<div class="flow-card live ${a.pausado?'is-paused':''}">
-      <div class="flow-left">
-        <div class="cesto-badge ${l.numero_cesto?'':'sem'}">${l.numero_cesto||'S/C'}</div>
-        <div class="flow-info">
-          <div class="top">${a.tipo_lbl||''} ${a.detalhe?`<span class="pill pill-normal">${a.detalhe}</span>`:''}</div>
-          <div class="ln">${l.n_itens>1?('<strong>'+l.n_itens+' OPs</strong>'):('OP <strong>'+(l.ordem||'—')+'</strong>')} · ${l.quantidade} pç · ${l.area_total} m²</div>
-          <div class="ln muted" style="font-size:12px;">${a.operadores_txt||'—'}</div>
-          <div class="cron cron-banho ativ-cron" data-a='${JSON.stringify(a).replace(/'/g,"&#39;")}'>${fmtTempo(segAtiv(a))}${a.pausado?'<span class="cron-suf">pausado</span>':''}</div>
-        </div>
-      </div>
-      <div class="flow-cta-wrap">
-        <button class="btn btn-ghost flow-cta" onclick="abrirAtividade(${l.id},'pausa')"><i class="bi ${a.pausado?'bi-play-fill':'bi-pause-fill'}"></i>${a.pausado?'Retomar':'Lançar parada'}</button>
-        <button class="btn btn-stop flow-cta" onclick="abrirAtividade(${l.id},'fim')"><i class="bi bi-stop-circle-fill"></i>Finalizar</button>
-      </div>
-    </div>`;}).join(''):'';
-
   const temDesc=j.descarga_ativa!==false;
   lbD.style.display=temDesc?'':'none';
-  colDesc.style.display=temDesc?colDesc.style.display:'none';
+  setLayout(_layout);
   const prontos=temDesc?(j.prontos_descarga||[]):[], naLinha=temDesc?(j.na_linha||[]):[];
   listaDesc.innerHTML=(prontos.length||naLinha.length)
     ? prontos.map(l=>cardDescarga(l,true)).join('')+naLinha.map(l=>cardDescarga(l,false)).join('')
@@ -436,8 +428,9 @@ async function carregar(){
 function cardAtividade(l){
   const a=l.atividade||{};
   const ehCarga=(a.tipo==='MONOVIA'||a.tipo==='ESTACIONARIA'||a.tipo==='OP_NOVA');
-  const outro=(a.tipo==='ESTACIONARIA')?'MONOVIA':'ESTACIONARIA';
-  const outroLbl=(a.tipo==='ESTACIONARIA')?'monovia':'estacionária';
+  const naEst=(a.tipo==='ESTACIONARIA')||(a.tipo==='OP_NOVA'&&(a.subtipo||'')==='estacionaria');
+  const outro=naEst?'MONOVIA':'ESTACIONARIA';
+  const outroLbl=naEst?'monovia':'estacionária';
   return `<div class="flow-card live ${a.pausado?'is-paused':''}">
     <div class="flow-left">
       <div class="cesto-badge ${l.numero_cesto?'':'sem'}">${l.numero_cesto||'S/C'}</div>
@@ -460,11 +453,9 @@ function cardAtividade(l){
 async function corrigirDestino(ativId,tipo,lbl){
   if(!confirm(`Mudar o destino desta carga para ${lbl}?\n\n`
     +`O cronômetro e os operadores continuam. Use só para corrigir um engano.`))return;
-  const j=await (await fetch('/api/pintura/atividade/destino',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:ativId,tipo,motivo:'corrigido pelo operador'})})).json();
-  if(!j.sucesso){alert(j.erro||'Erro.');return;}
-  carregar();
+  const j=await postJSON('/api/pintura/atividade/destino',{id:ativId,tipo,motivo:'corrigido pelo operador'});
+  if(!j.sucesso)alert(j.erro||'Erro.');
+  await carregar();
 }
 
 function cardDescarga(l,pronto){
@@ -534,12 +525,17 @@ function mostrarView(v){
   ['vMenu','vSub','vOper','vCron','vFim','vRetrab','vCad','vDet'].forEach(id=>document.getElementById(id).style.display='none');
   document.getElementById({menu:'vMenu',sub:'vSub',oper:'vOper',cron:'vCron',fim:'vFim',retrab:'vRetrab',cad:'vCad',det:'vDet'}[v]).style.display='';
 }
-function fecharModal(){modal.classList.remove('open');loteAtual=null;ativAtual=null;carregar();}
+function limparOpNova(){_modoOpNova=false;_opNovaPendente=null;}
+function fecharModal(){
+  modal.classList.remove('open');modalMotivo.classList.remove('open');
+  loteAtual=null;ativAtual=null;_detDireto=false;limparOpNova();carregar();
+}
 modal.addEventListener('click',e=>{if(e.target.id==='modal')fecharModal();});
 
 async function abrirLote(id,detalhes){
-  const l=await (await fetch('/api/pintura/lote/'+id)).json();
-  loteAtual=l;ativAtual=null;
+  const l=await buscarLote(id);if(!l)return;
+  loteAtual=l;ativAtual=null;limparOpNova();
+  _detDireto=!!detalhes;
   mTitulo.textContent = l.numero_cesto&&l.com_cesto ? ('Cesto '+l.numero_cesto) : ('Lote #'+l.id+' (sem cesto)');
   mResumo.innerHTML=`<div><strong>${l.quantidade}</strong> peças · <strong>${l.area_total}</strong> m² · <strong>${l.peso_total}</strong> kg</div>
     <div class="small muted" style="margin-top:4px;">${l.n_itens} OP(s) · ${l.processo||'sem processo'}${l.numero_cesto&&!l.com_cesto?` · veio do cesto ${l.numero_cesto}`:''}</div>
@@ -548,19 +544,33 @@ async function abrirLote(id,detalhes){
   mostrarView(detalhes?'det':'menu');
   if(detalhes)renderDetalhes(l);
 }
+/* Lote que já saiu da tela (outro tablet finalizou, p.ex.): avisa e atualiza. */
+async function buscarLote(id){
+  try{
+    const r=await fetch('/api/pintura/lote/'+id);
+    const l=await r.json();
+    if(r.ok&&l&&l.id)return l;
+  }catch(_){}
+  alert('Este lote não está mais disponível. A lista será atualizada.');
+  carregar();return null;
+}
 
 /* Atalho: do card direto para "quem vai carregar", pulando o menu de ações.
    É o caminho de todo dia — o menu completo fica em "Outras opções". */
 async function acaoDireta(id,tipo){
-  const l=await (await fetch('/api/pintura/lote/'+id)).json();
-  loteAtual=l;ativAtual=null;acao=tipo;subSel='';
+  const l=await buscarLote(id);if(!l)return;
+  if(l.estado!=='AGUARDANDO'&&tipo!=='DESCARGA'){
+    alert('Este lote já foi iniciado em outro aparelho.');carregar();return;}
+  loteAtual=l;ativAtual=null;acao=tipo;subSel='';limparOpNova();_detDireto=false;
   subOutro.value='';subJust.value='';
   mTitulo.textContent = l.numero_cesto&&l.com_cesto ? ('Cesto '+l.numero_cesto) : ('Lote #'+l.id+' (sem cesto)');
   modal.classList.add('open');
   irParaOperadores();
 }
 
-function verDetalhes(){mostrarView('det');renderDetalhes(loteAtual);}
+let _detDireto=false;
+function verDetalhes(){_detDireto=false;mostrarView('det');renderDetalhes(loteAtual);}
+function sairDetalhes(){if(_detDireto)fecharModal();else mostrarView('menu');}
 function renderDetalhes(l){
   const itens=(l.itens||[]).map(it=>`<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td>
     <td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td>
@@ -569,6 +579,7 @@ function renderDetalhes(l){
   const hist=(l.historico||[]).map(h=>`<div class="hist-item"><b>${h.tipo_lbl}</b>${h.detalhe?' · '+h.detalhe:''}
     <div class="small">${h.inicio} → ${h.fim||'em andamento'} · <strong>${h.minutos} min</strong>${h.total_pausa_min?` · parada ${h.total_pausa_min} min`:''}</div>
     <div class="small">${h.operadores_txt||''}</div>${h.observacao?`<div class="small">Obs.: ${h.observacao}</div>`:''}</div>`).join('');
+  detSair.innerHTML=_detDireto?'<i class="bi bi-x-lg"></i>Fechar':'<i class="bi bi-arrow-left"></i>Voltar';
   detCorpo.innerHTML=`
     <div class="table-wrap"><table class="tbl">
       <thead><tr><th>OP</th><th>Código</th><th>Descrição</th><th>Qtd</th><th>Tipo</th></tr></thead>
@@ -655,11 +666,16 @@ function renderOperLista(){
 
 /* ── iniciar / cronômetro ── */
 async function iniciarAtividade(){
+  if(_modoOpNova){
+    const j=await postJSON('/api/pintura/op_nova',{..._opNovaPendente,n_operadores:nOper,operadores:_selOper});
+    if(!j.sucesso){alert(j.erro||'Erro ao iniciar.');return;}
+    fecharModal();return;
+  }
+  if(!loteAtual){fecharModal();return;}
   const body={lote_id:loteAtual.id,tipo:acao,subtipo:subSel,
     subtipo_outro:subOutro.value.trim(),justificativa:subJust.value.trim(),
     n_operadores:nOper,operadores:_selOper};
-  const j=await (await fetch('/api/pintura/atividade/iniciar',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  const j=await postJSON('/api/pintura/atividade/iniciar',body);
   if(!j.sucesso){alert(j.erro||'Erro ao iniciar.');return;}
   // Fecha e volta para a lista: o cronômetro corre no card da coluna
   // "Carregando agora", igual ao pré-banho e ao banho.
@@ -671,18 +687,19 @@ function abrirCron(){
   atualizarBotaoPausa();mostrarView('cron');
 }
 async function abrirAtividade(loteId,alvo){
-  const l=await (await fetch('/api/pintura/lote/'+loteId)).json();
-  loteAtual=l;
+  const l=await buscarLote(loteId);if(!l)return;
+  loteAtual=l;limparOpNova();_detDireto=false;
   ativAtual=(l.historico||[]).find(h=>h.estado==='EM_ANDAMENTO');
-  if(!ativAtual){carregar();return;}
+  if(!ativAtual){alert('Esta atividade já foi finalizada.');loteAtual=null;carregar();return;}
   acao=ativAtual.tipo;
-  mTitulo.textContent=l.numero_cesto&&l.com_cesto?('Cesto '+l.numero_cesto):('Lote #'+l.id);
-  if(alvo==='pausa'){                 // parada: age direto, sem abrir a tela do cronômetro
-    if(ativAtual.pausado){await enviarPausa('');carregar();return;}
-    modal.classList.add('open');abrirCron();pedirPausa();return;
+  mTitulo.textContent=l.numero_cesto&&l.com_cesto?('Cesto '+l.numero_cesto):('Lote #'+l.id+' (sem cesto)');
+  if(alvo==='pausa'){
+    // Parada pelo card: só o seletor de motivo (ou retoma direto). O modal grande não abre.
+    if(ativAtual.pausado){await enviarPausa('');return;}
+    pedirPausa();return;
   }
-  modal.classList.add('open');abrirCron();
-  if(alvo==='fim')pedirFinalizar();
+  modal.classList.add('open');
+  if(alvo==='fim')pedirFinalizar();else abrirCron();
 }
 function atualizarBotaoPausa(){
   const p=ativAtual&&ativAtual.pausado;
@@ -690,22 +707,29 @@ function atualizarBotaoPausa(){
   cronSt.textContent=p?('Parado: '+(ativAtual.pausa_motivo||'')):'';
 }
 function pedirPausa(){
+  if(!ativAtual)return;
   if(ativAtual.pausado){enviarPausa('');return;}
   outroMotivo.style.display='none';modalMotivo.classList.add('open');
 }
-function fecharMotivo(){modalMotivo.classList.remove('open');}
+function fecharMotivo(){
+  modalMotivo.classList.remove('open');
+  if(!modal.classList.contains('open')){loteAtual=null;ativAtual=null;}   // desistiu da parada pelo card
+}
 modalMotivo.addEventListener('click',e=>{if(e.target.id==='modalMotivo')fecharMotivo();});
 function escolherMotivo(m){
   if(m==='Outros'){outroMotivo.style.display='';outroMotivoTxt.value='';outroMotivoTxt.focus();return;}
-  fecharMotivo();enviarPausa(m);
+  modalMotivo.classList.remove('open');enviarPausa(m);
 }
-function confirmarOutroMotivo(){const t=outroMotivoTxt.value.trim();if(!t)return;fecharMotivo();enviarPausa(t);}
+function confirmarOutroMotivo(){const t=outroMotivoTxt.value.trim();if(!t)return;modalMotivo.classList.remove('open');enviarPausa(t);}
+outroMotivoTxt.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();confirmarOutroMotivo();}});
 async function enviarPausa(motivo){
-  const j=await (await fetch('/api/pintura/atividade/pausar',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify({id:ativAtual.id,motivo})})).json();
-  if(!j.sucesso){alert(j.erro||'Erro.');return;}
-  const l=await (await fetch('/api/pintura/lote/'+loteAtual.id)).json();
-  ativAtual=(l.historico||[]).find(h=>h.estado==='EM_ANDAMENTO')||ativAtual;
+  if(!ativAtual)return;
+  const j=await postJSON('/api/pintura/atividade/pausar',{id:ativAtual.id,motivo});
+  if(!j.sucesso){alert(j.erro||'Erro.');carregar();return;}
+  if(!modal.classList.contains('open')){     // veio do card: volta para a lista já atualizada
+    loteAtual=null;ativAtual=null;await carregar();return;
+  }
+  if(j.atividade)ativAtual=j.atividade;
   atualizarBotaoPausa();cronBig.textContent=fmtTempo(segAtiv(ativAtual));
 }
 
@@ -743,6 +767,7 @@ function setDestino(btn){
   btn.classList.add('active');destinoFim=btn.dataset.dest;
 }
 async function confirmarFinalizar(){
+  if(!ativAtual||!loteAtual){fecharModal();return;}
   if(acao==='PREPARACAO'&&!destinoFim){alert('Escolha para onde vão as peças.');return;}
   const body={id:ativAtual.id,observacao:fimObs.value.trim(),destino:destinoFim,local:fimLocal.value.trim()};
   if(acao==='DESCARGA'){
@@ -755,12 +780,11 @@ async function confirmarFinalizar(){
     if(q>0&&!rpMotivo.value){alert('Informe o motivo do repasse.');return;}
     body.qtd_repasse=q; body.motivo_repasse=rpMotivo.value;
   }
-  const j=await (await fetch('/api/pintura/atividade/finalizar',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  const j=await postJSON('/api/pintura/atividade/finalizar',body);
   if(!j.sucesso){alert(j.erro||'Erro ao finalizar.');return;}
   if(j.proxima){                       // preparação → segue direto para o carregamento
-    const l=await (await fetch('/api/pintura/lote/'+j.lote_id)).json();
-    loteAtual=l;acao=j.proxima;subSel='';subOutro.value='';subJust.value='';
+    const l=await buscarLote(j.lote_id);if(!l){fecharModal();return;}
+    loteAtual=l;ativAtual=null;acao=j.proxima;subSel='';subOutro.value='';subJust.value='';
     irParaOperadores();return;
   }
   fecharModal();
@@ -810,8 +834,7 @@ async function confirmarRetrabalho(){
   const body={lote_id:loteAtual.id,todas:rbTodas,quantidade:parseInt(rbQtd.value||'0',10),
     reposicionamento:rbRepos,motivo:rbMotivo.value.trim(),local_restante:rbLocal.value.trim()};
   if(!loteAtual.com_cesto)body.numero_cesto=parseInt(rbCesto.value||'0',10);
-  const j=await (await fetch('/api/pintura/retrabalho',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  const j=await postJSON('/api/pintura/retrabalho',body);
   if(!j.sucesso){alert(j.erro||'Erro.');return;}
   if(j.reposicionamento){
     alert(`Cesto ${j.numero_cesto} enviado ao pré-banho como AGUARDANDO MONTAGEM.`);
@@ -823,7 +846,7 @@ async function confirmarRetrabalho(){
 
 /* ── cadastro de OP (OP nova e retrabalho) ── */
 function abrirOpNova(){
-  loteAtual=null;ativAtual=null;
+  loteAtual=null;ativAtual=null;limparOpNova();_detDireto=false;
   modal.classList.add('open');
   mTitulo.textContent='Carregar OP nova';
   abrirCadastro('op_nova');
@@ -904,26 +927,35 @@ async function confirmarCadastro(){
     opAsk.style.display='';opSel.style.display='none';
     _modoOpNova=true;mostrarView('oper');return;
   }
-  const j=await (await fetch('/api/pintura/retrabalho/cadastrar',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:cadCardId,itens:cadItens,processo:cadProc.value,observacao:cadObs.value.trim()})})).json();
+  const j=await postJSON('/api/pintura/retrabalho/cadastrar',
+    {id:cadCardId,itens:cadItens,processo:cadProc.value,observacao:cadObs.value.trim()});
   if(!j.sucesso){alert(j.erro||'Erro.');return;}
   alert('Cesto enviado para a fila do banho.');
   fecharModal();
 }
 
-/* OP nova: iniciar depois de escolher operadores */
+/* OP nova: o cadastro fica guardado até escolher os operadores (ver iniciarAtividade) */
 let _opNovaPendente=null,_modoOpNova=false;
-const _iniciarOriginal=iniciarAtividade;
-iniciarAtividade=async function(){
-  if(!_modoOpNova)return _iniciarOriginal();
-  const body={..._opNovaPendente,n_operadores:nOper,operadores:_selOper};
-  const j=await (await fetch('/api/pintura/op_nova',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
-  if(!j.sucesso){alert(j.erro||'Erro.');return;}
-  _modoOpNova=false;_opNovaPendente=null;
-  fecharModal();
-};
+
+/* POST que nunca estoura: erro de rede/servidor vira {sucesso:false, erro}. */
+async function postJSON(url,body){
+  try{
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+    try{return await r.json();}catch(_){return {sucesso:false,erro:'Erro no servidor ('+r.status+').'};}
+  }catch(_){return {sucesso:false,erro:'Sem conexão com o servidor. Tente de novo.'};}
+}
+
+/* Toque repetido (tablet): enquanto uma gravação está em curso, a segunda é ignorada. */
+let _ocupado=false;
+['iniciarAtividade','confirmarFinalizar','confirmarRetrabalho','confirmarCadastro',
+ 'enviarPausa','corrigirDestino','cadAddOrdem'].forEach(n=>{
+  const f=window[n];
+  window[n]=async function(...a){
+    if(_ocupado)return;
+    _ocupado=true;
+    try{return await f.apply(this,a);}finally{_ocupado=false;}
+  };
+});
 
 /* ── boot ── */
 sincronizarRelogio().then(()=>carregarAgenda()).then(carregarOperadores).then(()=>{

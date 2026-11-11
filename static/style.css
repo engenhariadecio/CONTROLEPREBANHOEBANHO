@@ -951,3 +951,23 @@ img,canvas{max-width:100%;}
 
 /* chip do usuário que cadastrou o cesto */
 .det-oper-chip.det-oper-user{background:linear-gradient(120deg,var(--brand-green),var(--brand-blue));color:#fff;font-weight:800;}
+
+/* ── Pré-banho: cada cesto com o botão "Detalhes" logo abaixo ─────────────── */
+.cesto-cel{display:flex;flex-direction:column;gap:6px;min-width:0;}
+.cesto-cel .cesto{width:100%;}
+.cesto-det{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
+  min-height:38px;padding:6px 8px;border-radius:11px;border:1.5px solid var(--line);
+  background:#fff;color:var(--aco-500);font-weight:800;font-size:.74rem;cursor:pointer;transition:.15s;}
+.cesto-det i{font-size:.95rem;color:var(--aqua);}
+.cesto-det:hover{border-color:var(--aqua);color:var(--aco-900);}
+.cesto-det:active{transform:scale(.97);}
+/* estados da pintura e do retrabalho na grade (antes ficavam cinza, iguais a "ocupado") */
+.cesto.st-FILA_PINTURA::before,.cesto.st-EM_PINTURA::before,.cesto.st-CARREGANDO::before{background:#D97706;opacity:1;}
+.cesto.st-FILA_PINTURA .cesto-tag,.cesto.st-EM_PINTURA .cesto-tag,.cesto.st-CARREGANDO .cesto-tag{color:#B45309;}
+.cesto.st-EM_PINTURA::before,.cesto.st-CARREGANDO::before{background:#0E9AA7;}
+.cesto.st-EM_PINTURA .cesto-tag,.cesto.st-CARREGANDO .cesto-tag{color:#0E7C86;}
+.cesto.st-AGUARDANDO_MONTAGEM{background:#fff;}
+.cesto.st-AGUARDANDO_MONTAGEM::before{background:var(--red);opacity:1;}
+.cesto.st-AGUARDANDO_MONTAGEM .cesto-tag{color:var(--red);}
+.cesto.st-AGUARDANDO_MONTAGEM .cesto-num{color:var(--aco-900);}
+.tbl tr.tot td{background:#f1f6fa;border-top:2px solid var(--line);}

@@ -6,6 +6,10 @@ const ESTADOS={
   PREENCHER:{t:'Aguardando cadastro',c:'#64748b',i:'pencil-square'},
   FILA_BANHO:{t:'Aguardando banho',c:'#7C5CFC',i:'list-ol'},
   EM_BANHO:{t:'Em banho',c:'#2563EB',i:'droplet-fill'},
+  AGUARDANDO_MONTAGEM:{t:'Aguardando montagem',c:'#D63C3C',i:'arrow-repeat'},
+  FILA_PINTURA:{t:'Aguardando pintura',c:'#D97706',i:'list-ol'},
+  EM_PINTURA:{t:'Em pintura',c:'#0E9AA7',i:'palette-fill'},
+  CARREGANDO:{t:'Em pintura',c:'#0E9AA7',i:'palette-fill'},
 };
 const BRAND_GREEN='#2BA45C', BRAND_BLUE='#1668C0';
 
@@ -73,7 +77,7 @@ async function atualizar(){
   set('kTotalOps',d.total_ops!==undefined?d.total_ops:0);
   set('kMediaPecas',d.media_pecas_cesto!==undefined?d.media_pecas_cesto:0);
   set('kTaxaRetrab',(d.taxa_retrab!==undefined?d.taxa_retrab:0)+'%');
-  renderAtivos(d.ativos);
+  renderAtivos((d.ativos||[]).concat(d.ativos_pintura||[]));
   renderCharts(d);
   if(document.getElementById('tbody')) renderTabela(d.registros);
   if(document.getElementById('histBodyPrep')||document.getElementById('histBody')) renderHistorico(d);
@@ -133,14 +137,15 @@ function _opsPrepTxt(r){
 }
 function _linhaHistPrep(r){
   const busca=(r.numero_cesto+' '+((r.itens||[]).map(it=>(it.ordem||'')+' '+(it.material||'')+' '+(it.texto_breve||'')).join(' '))+' '+(r.processo||'')+' '+(r.tipo||'')+' '+_opsPrepTxt(r)+' '+(r.cadastrado_por||'')).toLowerCase();
-  const estados={PREENCHER:'Aguardando cadastro',FILA_BANHO:'Aguardando banho',EM_BANHO:'Em banho',CONCLUIDO:'Concluído'};
+  const estados={PREENCHER:'Aguardando cadastro',FILA_BANHO:'Aguardando banho',EM_BANHO:'Em banho',CONCLUIDO:'Concluído',
+    AGUARDANDO_MONTAGEM:'Aguardando montagem',FILA_PINTURA:'Aguardando pintura',EM_PINTURA:'Em pintura',CARREGANDO:'Em pintura'};
   return `<tr class="${r.tipo==='Retrabalho'?'retrab':''}" data-busca="${busca.replace(/"/g,'')}">
     <td>${r.id}</td><td><strong>${r.numero_cesto}</strong></td><td>${_opsTxt(r)}</td>
     <td>${r.material||'—'}</td><td><span class="small">${r.texto_breve||'—'}</span></td><td>${r.qtd_total}</td>
     <td>${r.processo||'—'}</td><td><span class="pill ${r.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${r.tipo}</span></td>
     <td><span class="small">${_opsPrepTxt(r)}</span></td><td><span class="small">${r.cadastrado_por||'—'}</span></td>
     <td class="mono">${r.prep_minutos}</td><td><span class="small">${r.prep_fim||'—'}</span></td>
-    <td><span class="small">${estados[r.estado]||r.estado||'—'}</span></td>
+    <td><span class="small">${r.etapa||estados[r.estado]||r.estado||'—'}</span></td>
     <td><button class="btn-ver-hist" onclick="verDetalhesHist(${r.id})"><i class="bi bi-eye"></i> Ver</button></td></tr>`;
 }
 function _linhaHistBanho(r){
@@ -190,8 +195,9 @@ function renderCharts(d){
   const _anchor=document.getElementById('chartTipo')||document.getElementById('chartProc')
               ||document.getElementById('chartDia');
   if(_anchor && _anchor.offsetParent===null && !chartProc && !chartTipo) return;
-  const labels=Object.keys(d.por_processo), data=Object.values(d.por_processo);
-  const diaL=Object.keys(d.por_dia), diaD=Object.values(d.por_dia);
+  d=d||{};
+  const labels=Object.keys(d.por_processo||{}), data=Object.values(d.por_processo||{});
+  const diaL=Object.keys(d.por_dia||{}), diaD=Object.values(d.por_dia||{});
   const baseOpts={responsive:true,maintainAspectRatio:true,aspectRatio:1.7,animation:{duration:600}};
   const doughOpts={responsive:true,maintainAspectRatio:true,aspectRatio:1.5,animation:{duration:600}};
   if(!chartTipo && !chartProc){
@@ -234,11 +240,15 @@ function renderCharts(d){
   }
   if(document.getElementById('chartArea')){
     if(!chartArea){
-      chartArea=new Chart(document.getElementById('chartArea'),{type:'line',
+      // gráfico que ocupa a largura inteira: mais baixo, senão vira uma parede
+      const _ca=document.getElementById('chartArea');
+      const _larg=_ca.parentElement&&_ca.parentElement.clientWidth>700;
+      const areaOpts={...baseOpts,aspectRatio:_larg?3.6:1.7};
+      chartArea=new Chart(_ca,{type:'line',
         data:{labels:areaL,datasets:[{label:'m²',data:areaD,borderColor:BRAND_BLUE,borderWidth:3,tension:.35,fill:true,
           pointRadius:3,pointHoverRadius:6,pointBackgroundColor:BRAND_BLUE,pointBorderColor:'#fff',pointBorderWidth:2,
           backgroundColor:c=>_grad(c.chart.ctx,c.chart.chartArea,'rgba(22,104,192,.28)','rgba(22,104,192,0)')}]},
-        options:{...baseOpts,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:_gridCfg},x:{grid:{display:false}}}}});
+        options:{...areaOpts,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:_gridCfg},x:{grid:{display:false}}}}});
     }else{chartArea.data.labels=areaL;chartArea.data.datasets[0].data=areaD;chartArea.update();}
   }
 }

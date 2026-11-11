@@ -3,13 +3,15 @@
 {% block content %}
 
 <div class="section-head">
-  <div class="section-title"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos — toque para abrir</div>
+  <div class="section-title"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos — toque no número para abrir · <i class="bi bi-eye"></i> para ver os detalhes</div>
   <div class="small muted">
     <span class="pill pill-prep">Preparando cesto</span>
     <span class="pill" style="background:#fdeaea;color:#b91c3c;">Pausado</span>
     <span class="pill" style="background:#e9ecef;color:#475569;">Aguardando cadastro</span>
     <span class="pill pill-fila">Aguardando banho</span>
     <span class="pill pill-banho">Em banho</span>
+    <span class="pill" style="background:#fdf0dc;color:#b45309;">Na pintura</span>
+    <span class="pill" style="background:#fdeaea;color:#b91c3c;">Aguardando montagem</span>
   </div>
 </div>
 
@@ -152,6 +154,20 @@
   </div>
 </div>
 
+<!-- Modal: detalhes do cesto (só leitura) -->
+<div class="modal-overlay" id="modalDet">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-head">
+      <h5><i class="bi bi-eye"></i><span id="detTitulo">Detalhes</span></h5>
+      <button class="modal-x" onclick="fecharDet()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body" id="detCorpo" style="padding:20px;"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1;" onclick="fecharDet()">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal corrigir/cancelar cesto -->
 <div class="modal-overlay" id="modalCorrigir">
   <div class="modal" style="max-width:420px;">
@@ -201,9 +217,12 @@ function segPrep(cd){
 }
 
 async function carregar(){
-  const g=await (await fetch('/api/cestos')).json();
+  let g;
+  try{const r=await fetch('/api/cestos');if(!r.ok)return;g=await r.json();}catch(_){return;}
+  if(!Array.isArray(g))return;
   document.getElementById('grade').innerHTML=g.map(c=>{
-    if(!c.ocupado) return `<button class="cesto livre" onclick="abrirLivre(${c.numero})"><span class="cesto-num">${c.numero}</span><span class="cesto-tag">Livre</span></button>`;
+    const det=`<button class="cesto-det" onclick="verDetalhesCesto(${c.numero})" aria-label="Ver detalhes do cesto ${c.numero}"><i class="bi bi-eye"></i>Detalhes</button>`;
+    if(!c.ocupado) return `<div class="cesto-cel"><button class="cesto livre" onclick="abrirLivre(${c.numero})"><span class="cesto-num">${c.numero}</span><span class="cesto-tag">Livre</span></button>${det}</div>`;
     const cd=c.card; let cron='',cls='st-'+cd.estado,rot=ROTULO[cd.estado]||cd.estado;
     if(cd.estado==='PREPARANDO'){
       cron=`<span class="cesto-mini-cron prep-cron" data-card='${JSON.stringify(cd).replace(/'/g,"&#39;")}'>${fmtTempo(segPrep(cd))}</span>`;
@@ -213,15 +232,117 @@ async function carregar(){
     }
     const badge=cd.n_itens>1?`<span class="multi-badge">${cd.n_itens} OPs</span>`:'';
     const op2=cd.n_operadores>1?`<span class="cesto-nop" title="${cd.n_operadores} operadores"><i class="bi bi-people-fill"></i>${cd.n_operadores}</span>`:'';
-    return `<button class="cesto ocupado ${cls}" onclick='abrirOcupado(${JSON.stringify(cd).replace(/'/g,"&#39;")})'>
+    return `<div class="cesto-cel"><button class="cesto ocupado ${cls}" onclick='abrirOcupado(${JSON.stringify(cd).replace(/'/g,"&#39;")})'>
       <i class="bi ${cd.pausado?'bi-pause-circle-fill':'bi-lock-fill'} cesto-lock"></i>${op2}
-      <span class="cesto-num">${cd.numero_cesto}</span><span class="cesto-tag">${rot}</span>${cron}${badge}</button>`;
+      <span class="cesto-num">${cd.numero_cesto}</span><span class="cesto-tag">${rot}</span>${cron}${badge}</button>${det}</div>`;
   }).join('');
 }
 function tick(){
   document.querySelectorAll('.cron-el[data-ini]').forEach(e=>{e.textContent=fmtTempo(Math.max(0,Math.floor((agoraServidor()-new Date(e.dataset.ini).getTime())/1000)));});
   document.querySelectorAll('.prep-cron[data-card]').forEach(e=>{try{e.textContent=fmtTempo(segPrep(JSON.parse(e.dataset.card)));}catch(_){}});
   if(modalEstado==='cron'&&cardAtual&&!cardAtual.pausado)document.getElementById('cronBig').textContent=fmtTempo(segPrep(cardAtual));
+}
+
+/* ── Ver detalhes de um cesto (só leitura) ─────────────────────────────── */
+function fecharDet(){document.getElementById('modalDet').classList.remove('open');}
+document.getElementById('modalDet').addEventListener('click',e=>{if(e.target.id==='modalDet')fecharDet();});
+function _esc(v){return String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function _detCartao(cd,titulo){
+  const itens=(cd.itens&&cd.itens.length)?cd.itens:[];
+  const linhas=itens.map(it=>{const rt=(it.tipo||'Normal')==='Retrabalho';
+    return `<tr><td><strong>${_esc(it.ordem)||'—'}</strong></td><td>${_esc(it.material)||'—'}</td>
+      <td><span class="small">${_esc(it.texto_breve)||'—'}</span></td><td class="mono">${it.quantidade||0}</td>
+      <td><span class="pill ${rt?'pill-retrab':'pill-normal'}">${it.tipo||'Normal'}</span>${rt&&it.motivo?`<br><span class="small muted">${_esc(it.motivo)}</span>`:''}</td></tr>`;}).join('');
+  const L=[];
+  const op=n=>n?`<div class="small muted">${_esc(n)}</div>`:'';
+  const emPrep=cd.estado==='PREPARANDO';
+  L.push(`<tr><td><strong>Preparação</strong>${op(cd.operadores_prep_txt||cd.operador_prep)}</td>
+    <td><span class="small">${cd.prep_inicio||'—'}</span></td>
+    <td><span class="small">${cd.prep_fim||(emPrep?(cd.pausado?'em pausa':'em andamento'):'—')}</span></td>
+    <td class="mono">${emPrep?fmtTempo(segPrep(cd)):(cd.prep_minutos||0)+' min'}</td></tr>`);
+  if(cd.total_pausa_min)
+    L.push(`<tr><td colspan="3"><span class="small muted">Paradas: ${_esc((cd.pausas&&cd.pausas.texto)||'')}</span></td>
+      <td class="mono small">${cd.total_pausa_min} min</td></tr>`);
+  if(cd.prep_fim){
+    const naFila=cd.estado==='FILA_BANHO'||cd.estado==='PREENCHER';
+    L.push(`<tr><td><span class="muted">${cd.estado==='PREENCHER'?'Aguardando cadastro':'Aguardando banho'}</span></td><td colspan="2"></td>
+      <td class="mono muted">${naFila?'em andamento':(cd.espera_min||0)+' min'}</td></tr>`);
+  }
+  if(cd.banho_inicio)
+    L.push(`<tr><td><strong>Banho</strong>${op([cd.operador_banho_inicio,cd.operador_banho_fim].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(' → '))}</td>
+      <td><span class="small">${cd.banho_inicio}</span></td>
+      <td><span class="small">${cd.banho_fim||'em andamento'}</span></td>
+      <td class="mono">${cd.banho_fim?(cd.banho_minutos||0)+' min':'—'}</td></tr>`);
+  const pa=cd.pintura_agora;
+  if(pa){
+    (pa.historico||[]).forEach(h=>L.push(`<tr><td><strong>${_esc(h.tipo_lbl)}</strong>${h.detalhe?` <span class="small muted">· ${_esc(h.detalhe)}</span>`:''}${op(h.operadores_txt)}</td>
+      <td><span class="small">${h.inicio}</span></td><td><span class="small">${h.fim}</span></td>
+      <td class="mono">${h.minutos} min</td></tr>`));
+    if(pa.atividade){const a=pa.atividade;
+      L.push(`<tr><td><strong>${_esc(a.tipo_lbl)}</strong>${a.detalhe?` <span class="small muted">· ${_esc(a.detalhe)}</span>`:''}${op(a.operadores_txt)}</td>
+        <td><span class="small">${a.inicio}</span></td><td><span class="small">${a.pausado?'em pausa':'em andamento'}</span></td>
+        <td class="mono">—</td></tr>`);}
+    else if(pa.estado==='AGUARDANDO')
+      L.push(`<tr><td><span class="muted">${_esc(pa.rotulo)}</span>${pa.local?op(pa.local):''}</td><td colspan="2"></td>
+        <td class="mono muted">${fmtTempo(pa.esperando_seg||0)}</td></tr>`);
+  }
+  if(cd.ciclo_total!=null)
+    L.push(`<tr class="tot"><td colspan="3"><strong>Total do processo</strong></td><td class="mono"><strong>${cd.ciclo_total} min</strong></td></tr>`);
+  const ops=(cd.operadores_prep||[]);
+  return `
+    ${titulo?`<div class="section-title" style="font-size:.9rem;margin:18px 0 10px;"><i class="bi bi-clock-history"></i>${titulo}</div>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <span class="pill pill-fila">${_esc(cd.etapa||ROTULO[cd.estado]||cd.estado)}${cd.pausado?' (pausado)':''}</span>
+      <span class="pill ${cd.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${cd.tipo||'Normal'}</span>
+      <span class="pill pill-banho">${_esc(cd.processo)||'Sem processo'}</span>
+    </div>
+    ${cd.motivo_retrabalho?`<div class="db-obs" style="margin-bottom:12px;"><span class="small muted"><i class="bi bi-arrow-repeat"></i> Motivo do retrabalho:</span> <strong>${_esc(cd.motivo_retrabalho)}</strong></div>`:''}
+    ${itens.length?`<div class="table-wrap"><table class="tbl">
+      <thead><tr><th>OP</th><th>Código</th><th>Descrição</th><th>Qtd</th><th>Tipo</th></tr></thead>
+      <tbody>${linhas}</tbody></table></div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;">
+      <div><span class="small muted">Total de peças</span><br><strong style="font-size:1.2rem;">${cd.qtd_total||0}</strong></div>
+      <div><span class="small muted">Área total</span><br><strong style="font-size:1.2rem;">${cd.area_total||0} m²</strong></div>
+      <div><span class="small muted">Peso total</span><br><strong style="font-size:1.2rem;">${cd.peso_total||0} kg</strong></div>
+    </div>`:'<div class="muted small" style="padding:6px 0 2px;">Nenhuma OP cadastrada neste cesto ainda.</div>'}
+    <div class="table-wrap" style="margin-top:14px;"><table class="tbl">
+      <thead><tr><th>Etapa</th><th>Início</th><th>Fim</th><th>Tempo</th></tr></thead>
+      <tbody>${L.join('')}</tbody></table></div>
+    ${ops.length?`<div style="margin-top:14px;"><span class="small muted"><i class="bi bi-people-fill"></i> Operadores da preparação (${cd.n_operadores||ops.length})</span>
+      <div class="det-oper">${ops.map(o=>`<span class="det-oper-chip">${_esc(o.nome)||'—'}${o.matricula?` <span class="mat">mat. ${_esc(o.matricula)}</span>`:''}</span>`).join('')}</div></div>`:''}
+    ${cd.cadastrado_por?`<div style="margin-top:10px;"><span class="small muted"><i class="bi bi-person-badge-fill"></i> Cadastrado por</span>
+      <div class="det-oper"><span class="det-oper-chip">${_esc(cd.cadastrado_por)}</span></div></div>`:''}
+    ${cd.observacao?`<div class="db-obs" style="margin-top:12px;"><span class="small muted">Observação:</span> ${_esc(cd.observacao)}</div>`:''}
+    ${cd.obs_banho?`<div class="db-obs" style="margin-top:8px;"><span class="small muted">Observação do banho:</span> ${_esc(cd.obs_banho)}</div>`:''}`;
+}
+let _detSeq=0;
+async function verDetalhesCesto(num){
+  const meu=++_detSeq;
+  const corpo=document.getElementById('detCorpo');
+  document.getElementById('detTitulo').textContent='Cesto '+num;
+  corpo.innerHTML='<div class="muted small">Carregando…</div>';
+  document.getElementById('modalDet').classList.add('open');
+  let j;
+  try{
+    const r=await fetch('/api/cesto/'+num+'/detalhes');
+    if(!r.ok)throw 0;
+    j=await r.json();
+  }catch(_){
+    if(meu===_detSeq)corpo.innerHTML='<div class="alert alert-info"><i class="bi bi-wifi-off"></i><span>Não foi possível carregar os detalhes. Tente de novo.</span></div>';
+    return;
+  }
+  if(meu!==_detSeq)return;                 // o operador já abriu outro cesto
+  let html='';
+  if(j.card){
+    document.getElementById('detTitulo').textContent='Cesto '+num+' — '+(j.card.etapa||ROTULO[j.card.estado]||'');
+    html=_detCartao(j.card,'');
+  }else{
+    document.getElementById('detTitulo').textContent='Cesto '+num+' — Livre';
+    html='<div class="alert alert-info"><i class="bi bi-check-circle"></i><span>Cesto livre. Toque no número para iniciar uma preparação.</span></div>';
+    html+=j.ultimo?_detCartao(j.ultimo,'Último uso deste cesto')
+                  :'<div class="muted small" style="margin-top:10px;">Este cesto ainda não tem histórico.</div>';
+  }
+  corpo.innerHTML=html;
 }
 
 let OPERADORES=[];       // [{nome,matricula}] cadastrados (perfil prep)
@@ -310,8 +431,7 @@ function abrirOcupado(cd){
   document.getElementById('mCesto').textContent=cd.numero_cesto;
   // cestos que estão na pintura não são operados aqui
   if(cd.estado==='FILA_PINTURA'||cd.estado==='EM_PINTURA'||cd.estado==='CARREGANDO'){
-    alert('Cesto '+cd.numero_cesto+' está na pintura ('+(ROTULO[cd.estado]||cd.estado)+').\n'
-      +'Ele volta a ficar livre quando o operador de pintura encerrar o lançamento.');
+    verDetalhesCesto(cd.numero_cesto);
     return;
   }
   document.getElementById('modal').classList.add('open');
@@ -437,7 +557,9 @@ async function addOrdem(){
     op=soDigitos.slice(4,-4);
     document.getElementById('addOp').value=op;
   }
-  const j=await (await fetch('/api/buscar_ordem/'+encodeURIComponent(op))).json();
+  let j;
+  try{j=await (await fetch('/api/buscar_ordem/'+encodeURIComponent(op))).json();}
+  catch(_){msg.innerHTML='<span class="txt-err">Sem conexão — não foi possível buscar a OP. Tente de novo.</span>';return;}
   if(j.encontrado){
     itens.push({ordem:j.ordem,material:j.material,texto_breve:j.texto_breve,quantidade:j.quantidade,tipo:'Normal',motivo:''});
     msg.innerHTML='<span class="txt-ok"><i class="bi bi-check-circle-fill"></i> OP encontrada — preenchida automaticamente.</span>';
@@ -464,12 +586,12 @@ async function iniciarPrep(){
   const corpo = (modalEstado==='montagem')
     ? {id:cardAtual.id, n_operadores:nOper, operadores:ops}
     : {numero_cesto:cestoSel, n_operadores:nOper, operadores:ops};
-  const j=await (await fetch(rota,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corpo)})).json();
+  const j=await postJSON(rota,corpo);
   if(j.sucesso){
     // fecha a aba do cesto assim que inicia (o cronômetro segue rodando no card)
     fecharModal();
     carregar();
-  }else alert(j.erro);
+  }else{alert(j.erro||'Não foi possível iniciar.');fecharModal();carregar();}
 }
 /* ── Pausar: retomar direto, pausar pede motivo (o modal de motivo É a confirmação) ── */
 function pedirPausa(){
@@ -498,11 +620,16 @@ function confirmarOutro(){
   enviarPausa(t); fecharMotivo();
 }
 async function enviarPausa(motivo){
+  if(!cardAtual)return;
   const body={id:cardAtual.id};
   if(motivo) body.motivo=motivo;
-  const j=await (await fetch('/api/prep/pausar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
-  if(j.sucesso){const g=await (await fetch('/api/cestos')).json();const c=g.find(x=>x.ocupado&&x.card.id===cardAtual.id);if(c){cardAtual=c.card;atualizarBotaoPausa(cardAtual.pausado);document.getElementById('cronBig').textContent=fmtTempo(segPrep(cardAtual));}carregar();}
-  else alert(j.erro);
+  const j=await postJSON('/api/prep/pausar',body);
+  if(j.sucesso){
+    let g=[];try{g=await (await fetch('/api/cestos')).json();}catch(_){}
+    const c=cardAtual&&Array.isArray(g)?g.find(x=>x.ocupado&&x.card.id===cardAtual.id):null;
+    if(c){cardAtual=c.card;atualizarBotaoPausa(cardAtual.pausado);document.getElementById('cronBig').textContent=fmtTempo(segPrep(cardAtual));}
+    carregar();
+  }else{alert(j.erro||'Não foi possível registrar a pausa.');fecharModal();carregar();}
 }
 
 /* ── Parar tempo com modal de confirmação ── */
@@ -516,8 +643,8 @@ document.getElementById('modalConfParar').addEventListener('click',e=>{if(e.targ
 
 async function pararTempo(){
   if(!cardAtual)return;
-  const j=await (await fetch('/api/prep/parar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cardAtual.id})})).json();
-  if(j.sucesso){cardAtual.estado='PREENCHER';cardAtual.prep_minutos=j.prep_minutos;cardAtual.itens=cardAtual.itens||[];abrirOcupado(cardAtual);carregar();}else alert(j.erro);
+  const j=await postJSON('/api/prep/parar',{id:cardAtual.id});
+  if(j.sucesso){cardAtual.estado='PREENCHER';cardAtual.prep_minutos=j.prep_minutos;cardAtual.itens=cardAtual.itens||[];abrirOcupado(cardAtual);carregar();}else{alert(j.erro||'Não foi possível parar o tempo.');fecharModal();carregar();}
 }
 
 async function salvar(){
@@ -533,10 +660,10 @@ async function salvar(){
     processo:document.getElementById('fProc').value,
     observacao:document.getElementById('fObs').value.trim()};
   const url=modalEstado==='preencher'?'/api/prep/finalizar':'/api/card/editar';
-  const j=await (await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json();
+  const j=await postJSON(url,payload);
   if(j.sucesso){fecharModal();carregar();}else document.getElementById('msgOrdem').innerHTML=`<span class="txt-err">${j.erro}</span>`;
 }
-document.getElementById('btnSalvar').addEventListener('click',salvar);
+document.getElementById('btnSalvar').addEventListener('click',()=>salvar());
 let _downNoOverlay=false;
 document.getElementById('modal').addEventListener('pointerdown',e=>{_downNoOverlay=(e.target.id==='modal');});
 document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal'&&_downNoOverlay)fecharModal();_downNoOverlay=false;});
@@ -555,7 +682,7 @@ async function salvarNumero(){
   const novo=document.getElementById('corrigirNumero').value;
   const msg=document.getElementById('corrigirMsg');
   try{
-    const d=await (await fetch('/api/cesto/mudar_numero',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:_corrigirId,numero_cesto:novo})})).json();
+    const d=await postJSON('/api/cesto/mudar_numero',{id:_corrigirId,numero_cesto:novo});
     if(d.sucesso){fecharCorrigir();carregar();}else{msg.textContent=d.erro||'Não foi possível alterar.';}
   }catch(e){msg.textContent='Erro ao salvar.';}
 }
@@ -563,11 +690,29 @@ async function cancelarCesto(){
   if(!confirm('Tem certeza que deseja CANCELAR este cesto? Ele será removido.'))return;
   const msg=document.getElementById('corrigirMsg');
   try{
-    const d=await (await fetch('/api/cesto/cancelar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:_corrigirId})})).json();
+    const d=await postJSON('/api/cesto/cancelar',{id:_corrigirId});
     if(d.sucesso){fecharCorrigir();carregar();}else{msg.textContent=d.erro||'Não foi possível cancelar.';}
   }catch(e){msg.textContent='Erro ao cancelar.';}
 }
 
+
+/* POST que nunca estoura: erro de rede/servidor vira {sucesso:false, erro}. */
+async function postJSON(url,body){
+  try{
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+    try{return await r.json();}catch(_){return {sucesso:false,erro:'Erro no servidor ('+r.status+').'};}
+  }catch(_){return {sucesso:false,erro:'Sem conexão com o servidor. Tente de novo.'};}
+}
+/* Toque repetido (tablet): enquanto uma gravação está em curso, a segunda é ignorada. */
+let _ocupado=false;
+['iniciarPrep','salvar','pararTempo','enviarPausa','salvarNumero','cancelarCesto','addOrdem'].forEach(n=>{
+  const f=window[n];
+  window[n]=async function(...a){
+    if(_ocupado)return;
+    _ocupado=true;
+    try{return await f.apply(this,a);}finally{_ocupado=false;}
+  };
+});
 carregarOperadores();
 sincronizarRelogio().then(()=>{carregar();setInterval(carregar,5000);setInterval(tick,1000);});
 setInterval(sincronizarRelogio,60000);

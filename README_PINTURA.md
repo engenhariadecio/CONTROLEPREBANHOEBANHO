@@ -461,8 +461,9 @@ linhas/dia de telemetria — mas só se você ligar o agente; hoje nada é grava
 python teste_pintura.py
 ```
 
-43 verificações cobrindo os seis lançamentos, retrabalho total e parcial,
-liberação do cesto, paradas, rastreio e export.
+242 verificações cobrindo os seis lançamentos, retrabalho total e parcial,
+liberação do cesto, paradas, rastreio, export, o painel da gerência e as travas
+contra cesto duplicado. Use um banco de teste (ela apaga os lotes da pintura).
 
 ## O que falta decidir
 
@@ -543,3 +544,91 @@ reaparece.
 **O que isto não resolve:** bloqueio de tela por política do Windows/Android
 (senha após X minutos) e o botão de desligar do aparelho. Se mesmo assim apagar,
 vale tirar a suspensão nas configurações de energia do próprio aparelho.
+
+## Validação completa (v17) — o que foi encontrado e corrigido
+
+Validação feita com navegador de verdade (clicando em todos os botões das cinco
+telas), com a suíte de testes e com um teste de migração em PostgreSQL rodando
+dois processos, como no Railway.
+
+### Cestos duplicados — eram sete causas
+
+Cada cesto que sai do banho vira um **lote** na fila da pintura. As duas tabelas
+(cestos e lotes) podiam se desencontrar; o sintoma era sempre cesto repetido ou
+"fantasma" na fila da pintura e no painel.
+
+| Causa | Correção |
+| --- | --- |
+| Painel da gerência mostrava o cesto **e** o lote dele (o mesmo número duas vezes, contagem inflada) | `_ativos_sem_repeticao`: cada coisa uma vez |
+| Cancelar no pré-banho um cesto que já tinha saído do banho deixava o lote na fila; preparado de novo, o número aparecia 2x | o pré-banho não cancela mais cesto que está na pintura |
+| Excluir/alterar o cesto pelo administrador (e o reset em massa) não mexia nos lotes | `reconciliar_lotes()` roda depois de cada uma dessas operações; o reset passa a incluir a pintura |
+| Dois toques simultâneos em "sair do banho" criavam dois lotes | troca de estado atômica + índice único `ux_lote_card_vivo` |
+| Dois toques simultâneos em "iniciar" abriam várias atividades no mesmo lote | troca de estado atômica (`_transicao`) |
+| Lote **já pintado** podia ser carregado de novo por um tablet com a tela velha (contava 2x no "pintado hoje") | `iniciar` só aceita lote na fila |
+| Retrabalho aceitava lote em carga ou já pintado e criava um cesto novo | `retrabalho` só aceita lote na fila |
+
+`reconciliar_lotes()` também roda no boot e **arruma o que já está no banco**:
+lote duplicado ou órfão fica `FINALIZADO` com destino `CANCELADO` (nada é
+apagado) e sai de todas as contas. O resumo aparece no log:
+`[pintura] reconciliação: {'cancelados': 2, 'duplicados': 10, ...}`.
+
+### Dois processos no servidor
+
+O Railway sobe `gunicorn --workers 2`. Três problemas vinham daí:
+
+- **inicialização em paralelo**: os dois processos criavam tabelas/índices ao
+  mesmo tempo (num banco novo um deles caía). Agora há uma trava do PostgreSQL
+  (`pg_advisory_lock`) em volta de `init_db()`;
+- **configuração**: o cache de configuração não vencia, então só o processo que
+  salvou enxergava a mudança (quantidade de cestos, velocidade, jornada). Agora
+  vence em 10 s (`_CacheCurto`) e é lido por conexão própria (`_ler_config`),
+  sem tocar na sessão do pedido em andamento;
+- **arquivos estáticos**: CSS/JS agora saem com `?v=<data do arquivo>`, para o
+  tablet não ficar com JavaScript antigo depois de uma atualização.
+
+### Tela de pintura
+
+- as abas (Fila, Carregando monovia, …) davam erro de JavaScript e não filtravam;
+- "Carregar OP nova" abandonada no meio fazia o próximo "Monovia" de um cesto
+  criar uma OP fantasma em vez de carregar o cesto;
+- "Lançar parada" pelo card abria duas janelas empilhadas;
+- OP nova na estacionária oferecia "mudar para estacionária";
+- "Voltar" dos detalhes caía no menu de ações de um lote em carga;
+- toque repetido em Iniciar/Confirmar gerava alerta de erro;
+- falha de rede deixava o botão "morto" (agora avisa).
+
+### Painel da gerência
+
+- cestos duplicados em "Cestos ativos agora" e contagem errada;
+- tabelas de Pré-banho e Banho desalinhadas (14 colunas num cabeçalho de 13) e
+  com estado cru (`FILA_PINTURA`);
+- erro de JavaScript nas abas Pintura e Todos (gráficos ficavam com dado velho);
+- o período selecionado não aparecia; gráfico de área alto demais;
+- indicadores da pintura com rótulo de banho; "Ver" da pintura abria vazio.
+
+A tabela agora é uma só, com cabeçalho por setor: início/fim/tempo **da etapa**
+em Pré-banho, Banho e Pintura, e do **processo inteiro** em Todos.
+
+### Pré-banho e banho
+
+- **Ver detalhes em cada cesto** (botão "Detalhes" abaixo de cada número):
+  OPs, peças, área, peso, todas as etapas com início/fim/tempo e operadores, e
+  onde as peças estão agora — inclusive na pintura. Cesto livre mostra o último
+  uso. Endpoint: `GET /api/cesto/<numero>/detalhes`;
+- cestos na pintura e aguardando montagem ganharam cor e legenda;
+- no banho, erro ao iniciar/finalizar era ignorado em silêncio (a janela fechava
+  como se tivesse dado certo).
+
+### Administração
+
+- a edição de cesto não tinha os estados da pintura; "Somente ativos" escondia
+  os cestos que estavam na pintura;
+- o backup não incluía a pintura (agora inclui lotes e atividades, e a
+  restauração acerta os contadores de id do PostgreSQL).
+
+### Como repetir a validação
+
+    python teste_pintura.py                       # 242 verificações
+
+A suíte roda em SQLite e em PostgreSQL (`DATABASE_URL=postgresql://...`). Use um
+banco de teste: ela apaga os lotes da pintura ao começar e ao terminar.

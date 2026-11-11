@@ -109,7 +109,9 @@ async function sincronizarRelogio(){
 function agoraServidor(){return Date.now()+servidorOffset;}
 
 async function carregar(){
-  const r=await fetch('/api/banho/fila'); const j=await r.json();
+  let j;
+  try{const r=await fetch('/api/banho/fila');if(!r.ok)return;j=await r.json();}catch(_){return;}
+  if(!j||!Array.isArray(j.em_banho))return;
   /* usa a hora do servidor (sincronizada) p/ o cronômetro bater certo */
   const agora=agoraServidor();
   ultimaFila=j.em_banho||[];
@@ -236,9 +238,11 @@ function iniciar(id, cesto){
 function fecharIniciarConf(){document.getElementById('modalIniciarConf').classList.remove('open');idParaIniciar=null;}
 async function confirmarIniciar(){
   if(!idParaIniciar) return;
-  await fetch('/api/banho/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:idParaIniciar})});
+  const j=await postJSON('/api/banho/iniciar',{id:idParaIniciar});
   fecharIniciarConf();
-  carregar();
+  // antes o erro era ignorado: a janela fechava e parecia que o banho tinha começado
+  if(!j.sucesso)alert(j.erro||'Não foi possível iniciar o banho.');
+  await carregar();
 }
 document.getElementById('modalIniciarConf').addEventListener('click',e=>{if(e.target.id==='modalIniciarConf')fecharIniciarConf();});
 
@@ -253,11 +257,30 @@ function fecharSaida(){document.getElementById('modalSaida').classList.remove('o
 async function confirmarSaida(){
   const id=document.getElementById('sId').value;
   const obs=document.getElementById('sObs').value.trim();
-  await fetch('/api/banho/finalizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,obs_banho:obs})});
-  fecharSaida();carregar();
+  const j=await postJSON('/api/banho/finalizar',{id,obs_banho:obs});
+  if(!j.sucesso){alert(j.erro||'Não foi possível registrar a saída do banho.');}
+  fecharSaida();await carregar();
 }
 document.getElementById('modalSaida').addEventListener('click',e=>{if(e.target.id==='modalSaida')fecharSaida();});
 
+
+/* POST que nunca estoura: erro de rede/servidor vira {sucesso:false, erro}. */
+async function postJSON(url,body){
+  try{
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+    try{return await r.json();}catch(_){return {sucesso:false,erro:'Erro no servidor ('+r.status+').'};}
+  }catch(_){return {sucesso:false,erro:'Sem conexão com o servidor. Tente de novo.'};}
+}
+/* Toque repetido (tablet): enquanto uma gravação está em curso, a segunda é ignorada. */
+let _ocupado=false;
+['confirmarIniciar','confirmarSaida'].forEach(n=>{
+  const f=window[n];
+  window[n]=async function(...a){
+    if(_ocupado)return;
+    _ocupado=true;
+    try{return await f.apply(this,a);}finally{_ocupado=false;}
+  };
+});
 sincronizarRelogio().then(()=>carregarAgenda()).then(()=>{carregar();setInterval(carregar,4000);setInterval(tick,1000);});
 setInterval(sincronizarRelogio,60000);
 setInterval(carregarAgenda,300000);

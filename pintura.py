@@ -44,9 +44,11 @@ import os
 import io
 import json
 import threading
+from time import monotonic as _relogio
 from datetime import datetime, timedelta
 
 from flask import Blueprint, render_template, request, jsonify, session, send_file
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import (Column, Integer, String, DateTime, Float, Text,
                         inspect, text, Index)
 
@@ -117,7 +119,31 @@ CONFIG_PADRAO = {
     '_versao': 2,
 }
 
-_cfg_cache = {'dados': None}
+class _CacheCurto(dict):
+    """Cache de configuração com validade curta (10 s).
+
+    O servidor roda com mais de um processo (gunicorn --workers 2) e cada um tem
+    a sua cópia destes caches. Sem validade, quando o administrador salvava uma
+    configuração só o processo que atendeu o pedido ficava sabendo: o outro
+    seguia com o valor antigo até o próximo deploy — e a tela alternava entre os
+    dois valores (quantidade de cestos, velocidade da monovia, jornada)."""
+    VALIDADE = 10.0
+
+    def __setitem__(self, k, v):
+        super().__setitem__(k, v)
+        self._t = _relogio()
+
+    def __getitem__(self, k):
+        if _relogio() - getattr(self, '_t', -1e9) > self.VALIDADE:
+            return None
+        return super().__getitem__(k)
+
+    def velho(self, k):
+        """Último valor conhecido, mesmo vencido (para quando o banco não responde)."""
+        return dict.get(self, k)
+
+
+_cfg_cache = _CacheCurto(dados=None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -384,27 +410,193 @@ def _migrar_tabelas_modulo(engine, insp):
                 print(f'[pintura] aviso ao criar {tabela}.{col.name}: {e}')
 
 
-def reparar_lotes_orfaos():
-    """Cesto que saiu do banho mas ficou sem lote (falha antiga de migração)
-    não apareceria na fila da pintura e ficaria preso, travando o número do
-    cesto. Aqui ele é recuperado no boot."""
-    db = _db()
-    L, Card = MODELOS['lote'], CTX['Card']
+def _transicao(db, modelo, id_, de, para):
+    """Troca de estado ATÔMICA: só passa quem ainda encontra o estado `de`.
+
+    O servidor roda com mais de um processo e os tablets mandam toque repetido.
+    Conferir o estado em Python e gravar depois deixa uma janela em que dois
+    pedidos passam juntos — foi assim que um mesmo cesto podia virar dois lotes
+    ou ser carregado duas vezes. Com o filtro dentro do UPDATE, o banco deixa
+    passar um só; o outro recebe 0 linhas e é recusado."""
+    de = de if isinstance(de, (list, tuple, set)) else [de]
+    n = db.query(modelo).filter(modelo.id == id_, modelo.estado.in_(list(de))
+                                ).update({'estado': para}, synchronize_session=False)
+    return n == 1
+
+
+def _cancelar_lote(db, lote, motivo, agora=None):
+    """Tira o lote da tela sem apagar nada: fica FINALIZADO com destino CANCELADO
+    e a atividade em curso (se houver) vira CANCELADA — fora de todas as contas."""
+    agora = agora or datetime.utcnow()
+    A = MODELOS['atividade']
+    for a in db.query(A).filter_by(lote_id=lote.id, estado='EM_ANDAMENTO').all():
+        _fechar_pausa(a, agora)
+        a.estado = 'CANCELADA'
+        a.fim = agora
+        a.observacao = ((a.observacao or '') + f' [{motivo}]').strip()
+    lote.estado = 'FINALIZADO'
+    lote.destino = 'CANCELADO'
+    lote.finalizado_em = agora
+    lote.atividade_atual_id = None
+    lote.observacao = ((lote.observacao or '') + f' [{motivo}]').strip()
+
+
+def reconciliar_lotes(db=None, commit=True):
+    """Faz lotes e cestos contarem a MESMA história. Idempotente e barato.
+
+    Cada cesto que sai do banho vira um lote na fila da pintura. As duas tabelas
+    podiam se desencontrar e o sintoma era sempre o mesmo — cesto duplicado ou
+    fantasma na fila da pintura e no painel:
+
+      1. cesto cancelado, excluído ou alterado pelo administrador (e o reset em
+         massa) apagava o cesto mas deixava o lote na fila. O número ficava livre,
+         era preparado de novo e aparecia DUAS vezes;
+      2. dois pedidos simultâneos (toque repetido, dois processos do servidor)
+         criavam dois lotes para o mesmo cesto;
+      3. cesto em estado de pintura sem lote nenhum (migração antiga) ficava
+         preso e invisível;
+      4. lote "em atividade" sem atividade aberta ficava com botões mortos.
+
+    Roda no boot e depois de qualquer operação que mexa em cestos por fora do
+    fluxo normal. Devolve um resumo do que corrigiu."""
+    db = _db(db)
+    L, A, Card = MODELOS['lote'], MODELOS['atividade'], CTX['Card']
+    agora = datetime.utcnow()
+    rel = {'cancelados': 0, 'duplicados': 0, 'recuperados': 0, 'ajustados': 0}
     try:
-        presos = db.query(Card).filter(
-            Card.estado.in_([ST_FILA_PINTURA, ST_EM_PINTURA])).all()
-        n = 0
-        for card in presos:
-            tem = db.query(L).filter(L.card_id == card.id, L.estado != 'FINALIZADO').first()
-            if not tem:
-                criar_lote_do_cesto(card, db)
-                n += 1
-        if n:
+        vivos = db.query(L).filter(L.estado != 'FINALIZADO').order_by(L.id).all()
+        ids_card = {l.card_id for l in vivos if l.card_id}
+        cards = ({c.id: c for c in db.query(Card).filter(Card.id.in_(ids_card)).all()}
+                 if ids_card else {})
+        abertas = {a.lote_id for a in db.query(A).filter_by(estado='EM_ANDAMENTO').all()}
+
+        # (1) lote ainda "no cesto" cujo cesto sumiu ou está em outra etapa
+        for l in vivos:
+            if not (l.card_id and l.com_cesto):
+                continue
+            c = cards.get(l.card_id)
+            if c is None:
+                _cancelar_lote(db, l, 'cesto excluído', agora)
+                rel['cancelados'] += 1
+            elif c.estado not in ESTADOS_PINTURA:
+                _cancelar_lote(db, l, 'cesto saiu da pintura por ajuste manual', agora)
+                rel['cancelados'] += 1
+            elif (l.numero_cesto or 0) != (c.numero_cesto or 0):
+                # o número do cesto foi trocado: fila e atividade mostram o novo
+                l.numero_cesto = c.numero_cesto
+                for a in db.query(A).filter_by(lote_id=l.id, estado='EM_ANDAMENTO').all():
+                    a.numero_cesto = c.numero_cesto
+                rel['ajustados'] += 1
+
+        # (2) mais de um lote vivo para o mesmo cesto: fica um só
+        ordem = {'EM_ATIVIDADE': 0, 'NA_LINHA': 1, 'AGUARDANDO': 2}
+        por_card = {}
+        for l in vivos:
+            if l.card_id and l.estado != 'FINALIZADO':
+                por_card.setdefault(l.card_id, []).append(l)
+        for lista in por_card.values():
+            if len(lista) < 2:
+                continue
+            lista.sort(key=lambda x: (ordem.get(x.estado, 9), x.id))
+            for extra in lista[1:]:
+                _cancelar_lote(db, extra, f'duplicado do lote #{lista[0].id}', agora)
+                rel['duplicados'] += 1
+
+        # (4a) duas atividades abertas no mesmo lote (dois "iniciar" simultâneos nas
+        #      versões antigas): fica a mais antiga, as outras são canceladas
+        por_lote = {}
+        for at in db.query(A).filter_by(estado='EM_ANDAMENTO').order_by(A.id).all():
+            por_lote.setdefault(at.lote_id, []).append(at)
+        for lista in por_lote.values():
+            for extra in lista[1:]:
+                _fechar_pausa(extra, agora)
+                extra.estado = 'CANCELADA'
+                extra.fim = agora
+                extra.observacao = ((extra.observacao or '')
+                                    + f' [duplicada da atividade #{lista[0].id}]').strip()
+                rel['duplicados'] += 1
+        for l in vivos:
+            if l.estado == 'EM_ATIVIDADE' and por_lote.get(l.id):
+                l.atividade_atual_id = por_lote[l.id][0].id
+
+        # (4) lote em atividade sem atividade aberta volta para a fila
+        for l in vivos:
+            if l.estado == 'EM_ATIVIDADE' and l.id not in abertas:
+                l.estado = 'AGUARDANDO'
+                l.atividade_atual_id = None
+                rel['ajustados'] += 1
+        db.flush()
+
+        # (3) cesto em estado de pintura sem lote vivo: recupera para a fila;
+        #     e o estado do cesto acompanha o do lote
+        vivos_por_card = {l.card_id: l for l in vivos
+                          if l.card_id and l.estado != 'FINALIZADO' and l.com_cesto}
+        for c in db.query(Card).filter(Card.estado.in_(ESTADOS_PINTURA)).all():
+            l = vivos_por_card.get(c.id)
+            if l is None:
+                criar_lote_do_cesto(c, db)
+                c.estado = ST_FILA_PINTURA
+                rel['recuperados'] += 1
+                continue
+            certo = ST_EM_PINTURA if l.estado == 'EM_ATIVIDADE' else ST_FILA_PINTURA
+            if c.estado != certo:
+                c.estado = certo
+                rel['ajustados'] += 1
+
+        if commit:
             db.commit()
-            print(f'[pintura] {n} cesto(s) sem lote recuperados para a fila da pintura.')
+        if any(rel.values()):
+            print(f'[pintura] reconciliação: {rel}')
     except Exception as e:
         db.rollback()
-        print(f'[pintura] aviso ao recuperar lotes: {e}')
+        print(f'[pintura] aviso na reconciliação: {e}')
+    return rel
+
+
+def reparar_lotes_orfaos():
+    """Nome antigo — mantido para quem já chamava."""
+    return reconciliar_lotes()
+
+
+def criar_indice_lotes():
+    """No máximo UM lote vivo por cesto, garantido pelo banco (não só pelo código).
+    É a trava definitiva contra o lote duplicado quando dois pedidos chegam juntos."""
+    engine = CTX['engine']
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_lote_card_vivo "
+                "ON lotes_pintura (card_id) "
+                "WHERE estado <> 'FINALIZADO' AND card_id IS NOT NULL"))
+    except Exception as e:
+        print(f'[pintura] aviso ao criar índice de lotes: {e}')
+
+
+def apagar_registros(db, escopo):
+    """Acompanha o reset em massa do administrador (zona de reset).
+
+    Antes o reset apagava só os cestos: os lotes continuavam na fila da pintura
+    e o histórico da pintura continuava nos relatórios — o "zero" nunca era zero.
+      concluidos -> histórico: lotes finalizados e suas atividades
+      ativos     -> o que está em andamento: lotes vivos e suas atividades
+      tudo       -> tudo
+    """
+    L, A = MODELOS['lote'], MODELOS['atividade']
+    q = db.query(L)
+    if escopo == 'concluidos':
+        q = q.filter(L.estado == 'FINALIZADO')
+    elif escopo == 'ativos':
+        q = q.filter(L.estado != 'FINALIZADO')
+    elif escopo != 'tudo':
+        return 0
+    ids = [x.id for x in q.all()]
+    if not ids:
+        return 0
+    for k in range(0, len(ids), 500):
+        parte = ids[k:k + 500]
+        db.query(A).filter(A.lote_id.in_(parte)).delete(synchronize_session=False)
+        db.query(L).filter(L.id.in_(parte)).delete(synchronize_session=False)
+    return len(ids)
 
 
 def criar_tabelas():
@@ -450,13 +642,18 @@ def get_config(forcar=False):
         return _cfg_cache['dados']
     cfg = json.loads(json.dumps(CONFIG_PADRAO))
     try:
-        row = _db().query(CTX['Config']).filter_by(chave='monovia').first()
-        if row and row.valor:
-            salvo = json.loads(row.valor)
+        # conexão própria: esta leitura acontece no meio de outros pedidos e não
+        # pode mexer na sessão deles
+        valor = CTX['_ler_config']('monovia')
+        if valor:
+            salvo = json.loads(valor)
             if isinstance(salvo, dict):
                 cfg.update(salvo)
     except Exception:
-        pass
+        velho = _cfg_cache.velho('dados')
+        if velho is not None:
+            _cfg_cache['dados'] = velho
+            return velho
     if not cfg.get('linhas'):
         cfg['linhas'] = json.loads(json.dumps(CONFIG_PADRAO['linhas']))
     _cfg_cache['dados'] = cfg
@@ -991,7 +1188,7 @@ def estado_ao_vivo():
 
     def _res(l):
         d = l.to_dict()
-        return {k: d[k] for k in ('id', 'numero_cesto', 'com_cesto', 'ordem', 'itens',
+        return {k: d[k] for k in ('id', 'card_id', 'numero_cesto', 'com_cesto', 'ordem', 'itens',
                                   'n_itens', 'quantidade', 'area_total', 'peso_total',
                                   'processo', 'tipo', 'criado_iso', 'esperando_seg', 'local')}
 
@@ -1082,6 +1279,16 @@ def api_ativ_iniciar():
     if tipo != TIPO_DESCARGA and lote.estado == 'NA_LINHA':
         return jsonify({'sucesso': False,
                         'erro': 'Lote na linha — só é possível descarregar.'}), 400
+    if lote.estado == 'FINALIZADO':
+        # tela desatualizada em outro tablet: sem isto o lote já pintado era
+        # carregado de novo e contava duas vezes no "pintado hoje"
+        return jsonify({'sucesso': False,
+                        'erro': 'Este lote já foi finalizado. Atualize a tela.'}), 400
+    estado_de = 'NA_LINHA' if tipo == TIPO_DESCARGA else 'AGUARDANDO'
+    if not _transicao(db, L, lote.id, estado_de, 'EM_ATIVIDADE'):
+        db.rollback()
+        return jsonify({'sucesso': False,
+                        'erro': 'Este lote acabou de ser iniciado em outro aparelho.'}), 409
 
     try:
         n_op = int(d.get('n_operadores', 1))
@@ -1168,7 +1375,7 @@ def api_ativ_pausar():
         ativ.pausa_inicio = agora
         ativ.pausa_motivo = motivo[:60]
     db.commit()
-    return jsonify({'sucesso': True, 'pausado': bool(ativ.pausado)})
+    return jsonify({'sucesso': True, 'pausado': bool(ativ.pausado), 'atividade': ativ.to_dict()})
 
 
 @bp.route('/api/pintura/atividade/finalizar', methods=['POST'])
@@ -1180,7 +1387,13 @@ def api_ativ_finalizar():
     ativ = db.query(A).get(int(d.get('id', 0)))
     if not ativ or ativ.estado != 'EM_ANDAMENTO':
         return jsonify({'sucesso': False, 'erro': 'Atividade não está em andamento.'}), 404
+    if not _transicao(db, A, ativ.id, 'EM_ANDAMENTO', 'FINALIZADA'):
+        db.rollback()
+        return jsonify({'sucesso': False, 'erro': 'Atividade já foi finalizada.'}), 409
     lote = db.query(L).get(ativ.lote_id)
+    if not lote:
+        db.rollback()
+        return jsonify({'sucesso': False, 'erro': 'Lote não encontrado.'}), 404
     agora = datetime.utcnow()
     _fechar_pausa(ativ, agora)
     ativ.fim = agora
@@ -1274,6 +1487,11 @@ def api_ativ_finalizar():
             _liberar_cesto(db, lote, 'Peças armazenadas: ' + onde)
         elif destino in (TIPO_MONOVIA, TIPO_ESTACIONARIA):
             proxima = destino          # a tela abre o modal do carregamento em seguida
+        if lote.com_cesto and lote.card_id:
+            # voltou a esperar: o cesto acompanha (senão o painel o mostraria "em pintura")
+            card = db.query(CTX['Card']).get(lote.card_id)
+            if card and card.estado == ST_EM_PINTURA:
+                card.estado = ST_FILA_PINTURA
 
     db.commit()
     return jsonify({'sucesso': True, 'minutos': ativ.minutos, 'metricas': metricas,
@@ -1382,6 +1600,12 @@ def api_retrabalho():
     lote = db.query(L).get(int(d.get('lote_id') or 0))
     if not lote:
         return jsonify({'sucesso': False, 'erro': 'Lote não encontrado.'}), 404
+    if lote.estado != 'AGUARDANDO':
+        # sem isto um lote em carga ou já pintado gerava um cesto novo de retrabalho
+        return jsonify({'sucesso': False,
+                        'erro': ('Finalize a atividade em andamento antes de mandar para retrabalho.'
+                                 if lote.estado == 'EM_ATIVIDADE' else
+                                 'Este lote não está mais na fila. Atualize a tela.')}), 400
     itens = lote.itens()
     total = sum(int(i.get('quantidade') or 0) for i in itens)
     todas = bool(d.get('todas'))
@@ -1405,7 +1629,7 @@ def api_retrabalho():
 
     # nº do cesto: o mesmo de origem (as peças estão nele). Se o lote já estava sem
     # cesto (palete/arara), o operador precisa informar um número livre.
-    numero = lote.numero_cesto or 0
+    numero = (lote.numero_cesto or 0) if lote.com_cesto else 0
     if d.get('numero_cesto'):
         try:
             numero = int(d['numero_cesto'])
@@ -1414,6 +1638,17 @@ def api_retrabalho():
     if not numero:
         return jsonify({'sucesso': False,
                         'erro': 'Informe o número do cesto para o retrabalho.'}), 400
+    try:
+        limite = int(CTX['total_cestos']())
+    except Exception:
+        limite = 0
+    if limite and not (1 <= numero <= limite):
+        return jsonify({'sucesso': False,
+                        'erro': f'O número do cesto deve ser entre 1 e {limite}.'}), 400
+    if not _transicao(db, L, lote.id, 'AGUARDANDO', 'FINALIZADO'):
+        db.rollback()
+        return jsonify({'sucesso': False,
+                        'erro': 'Este lote acabou de ser usado em outro aparelho.'}), 409
 
     # o cesto antigo sai dos ativos antes de o novo entrar (índice único por número)
     antigo = db.query(Card).get(lote.card_id) if lote.card_id else None
@@ -1422,6 +1657,7 @@ def api_retrabalho():
         db.flush()
     if db.query(Card).filter(Card.numero_cesto == numero,
                              Card.estado.in_(CTX['ESTADOS_ATIVOS'])).first():
+        db.rollback()
         return jsonify({'sucesso': False, 'erro': f'O cesto {numero} está em uso.'}), 400
 
     agora = datetime.utcnow()
@@ -1442,7 +1678,11 @@ def api_retrabalho():
         novo.prep_fim = agora
         novo.prep_minutos = 0
     db.add(novo)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:               # o banco recusou: o número foi ocupado neste instante
+        db.rollback()
+        return jsonify({'sucesso': False, 'erro': f'O cesto {numero} está em uso.'}), 400
 
     # registro da decisão (sem cronômetro)
     db.add(A(lote_id=lote.id, card_id=lote.card_id, numero_cesto=lote.numero_cesto or 0,
@@ -1487,6 +1727,11 @@ def api_retrabalho_cadastrar():
     card = db.query(Card).get(int(d.get('id', 0)))
     if not card:
         return jsonify({'sucesso': False, 'erro': 'Cesto não encontrado.'}), 404
+    if card.estado != CTX['ST_PREENCHER']:
+        # toque repetido ou tela velha: o cesto já seguiu adiante e não pode
+        # ser puxado de volta para a fila do banho
+        return jsonify({'sucesso': False,
+                        'erro': 'Este cesto já foi cadastrado. Atualize a tela.'}), 400
     itens = _norm_itens(d.get('itens'))
     if not itens:
         return jsonify({'sucesso': False, 'erro': 'Cadastre ao menos uma OP.'}), 400
@@ -1700,7 +1945,8 @@ def coletar_dados_pintura(de=None, ate=None, turnos=None):
              and (not turnos or CTX['turno_num'](a.fim) in turnos)]
     lotes = {l.id: l for l in db.query(L).all()} if lista else {}
 
-    por_tipo, por_dia, area_dia = {}, {}, {}
+    por_tipo, por_dia, area_dia, por_proc = {}, {}, {}, {}
+    n_ops = 0
     pecas = area = 0.0
     metros = 0.0
     ganchos = 0
@@ -1745,6 +1991,9 @@ def coletar_dados_pintura(de=None, ate=None, turnos=None):
             dia = (a.fim - fuso).date()
             por_dia[dia] = por_dia.get(dia, 0) + 1
             area_dia[dia] = round(area_dia.get(dia, 0) + ar_carga, 3)
+            pr = (lote.processo if lote and lote.processo else 'Sem processo')
+            por_proc[pr] = por_proc.get(pr, 0) + 1
+            n_ops += len(lote.itens()) if lote else 0
             if lote and lote.criado_em and a.inicio and a.inicio >= lote.criado_em:
                 esperas.append(CTX['tempo_util_segundos'](lote.criado_em, a.inicio) / 60)
         if a.tipo == TIPO_DESCARGA:
@@ -1802,12 +2051,47 @@ def coletar_dados_pintura(de=None, ate=None, turnos=None):
         'media_linha': round(sum(t_linha) / len(t_linha), 1) if t_linha else 0,
         'aguardando_agora': db.query(L).filter(L.estado == 'AGUARDANDO').count(),
         'na_linha_agora': db.query(L).filter(L.estado == 'NA_LINHA').count(),
-        'por_tipo': por_tipo,
+        'por_tipo': por_tipo, 'por_processo': por_proc, 'ops': n_ops,
+        'retrabalhos': sum(1 for a in lista if a.tipo == TIPO_RETRABALHO),
+        'descarga_ativa': descarga_ativa(),
         'n_paradas': len(paradas), 'parada_min': round(parada_seg / 60, 1),
         'parada_media_min': round(parada_seg / 60 / len(paradas), 1) if paradas else 0,
         'por_dia': {d.strftime('%d/%m'): por_dia[d] for d in dias},
         'area_por_dia': {d.strftime('%d/%m'): area_dia[d] for d in dias},
         'registros': registros[:300],
+    }
+
+
+def situacao_do_cesto(card_id, db=None):
+    """Onde estão AGORA as peças de um cesto, do ponto de vista da pintura.
+    Usado no "Ver detalhes" do pré-banho. None se o cesto nunca chegou à pintura."""
+    db = _db(db)
+    L, A = MODELOS['lote'], MODELOS['atividade']
+    lotes = [l for l in db.query(L).filter(L.card_id == card_id).order_by(L.id.desc()).all()
+             if (l.destino or '') != 'CANCELADO']
+    if not lotes:
+        return None
+    lote = next((l for l in lotes if l.estado != 'FINALIZADO'), lotes[0])
+    ld = lote.to_dict()
+    ativ = (db.query(A).filter_by(lote_id=lote.id, estado='EM_ANDAMENTO').first()
+            if lote.estado == 'EM_ATIVIDADE' else None)
+    feitas = db.query(A).filter_by(lote_id=lote.id, estado='FINALIZADA').order_by(A.id).all()
+    if lote.estado == 'AGUARDANDO':
+        rot = 'Na fila da pintura' if lote.com_cesto else 'Peças aguardando pintura fora do cesto'
+    elif lote.estado == 'EM_ATIVIDADE':
+        rot = TIPOS_LBL.get(ativ.tipo, 'Em atividade') if ativ else 'Em atividade'
+    elif lote.estado == 'NA_LINHA':
+        rot = 'Na linha de pintura'
+    else:
+        rot = {TIPO_MONOVIA: 'Carregado na monovia', TIPO_ESTACIONARIA: 'Carregado na estacionária',
+               'RETRABALHO': 'Enviado a retrabalho'}.get(lote.destino or '', 'Finalizado')
+    return {
+        'lote_id': lote.id, 'estado': lote.estado, 'rotulo': rot,
+        'com_cesto': bool(lote.com_cesto), 'local': lote.local or '',
+        'quantidade': ld['quantidade'], 'esperando_seg': ld['esperando_seg'],
+        'criado_iso': ld['criado_iso'],
+        'atividade': ativ.to_dict() if ativ else None,
+        'historico': [a.to_dict() for a in feitas],
     }
 
 
@@ -1823,7 +2107,8 @@ def resumo_por_card(card_ids=None):
     q = db.query(L).filter(L.card_id.isnot(None))
     if card_ids:
         q = q.filter(L.card_id.in_(list(card_ids)))
-    lotes = q.all()
+    # lote cancelado (duplicado / cesto excluído) não conta a história de ninguém
+    lotes = [l for l in q.order_by(L.id).all() if (l.destino or '') != 'CANCELADO']
     if not lotes:
         return {}
     ids = [l.id for l in lotes]
@@ -1868,6 +2153,9 @@ def resumo_por_card(card_ids=None):
             'voltas': lote.voltas or 1,
             'local': lote.local or '',
             'lote_criado': lote.criado_em,
+            # onde as peças estão agora (o cesto pode já ter sido liberado)
+            'lote_id': lote.id, 'lote_estado': lote.estado,
+            'lote_destino': lote.destino or '', 'lote_com_cesto': bool(lote.com_cesto),
         }
         # se o cesto gerou mais de um lote, fica o mais completo (com carga)
         if prev and not d['carga_ini'] and prev.get('carga_ini'):

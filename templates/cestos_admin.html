@@ -30,6 +30,9 @@
           <option value="PREENCHER">Aguardando cadastro</option>
           <option value="FILA_BANHO">Aguardando banho</option>
           <option value="EM_BANHO">Em banho</option>
+          <option value="FILA_PINTURA">Aguardando pintura</option>
+          <option value="EM_PINTURA">Em pintura</option>
+          <option value="AGUARDANDO_MONTAGEM">Aguardando montagem (retrabalho)</option>
           <option value="CONCLUIDO">Concluídos</option>
         </select>
       </div>
@@ -62,15 +65,15 @@
     </p>
     <div class="reset-grid">
       <div class="reset-item">
-        <div><strong>Resetar histórico</strong><div class="small muted">Apaga todos os cestos CONCLUÍDOS. Mantém os que estão em andamento.</div></div>
+        <div><strong>Resetar histórico</strong><div class="small muted">Apaga todos os cestos CONCLUÍDOS e o histórico da pintura. Mantém o que está em andamento.</div></div>
         <button class="btn btn-stop btn-sm" onclick="abrirReset('concluidos')"><i class="bi bi-clock-history"></i>Apagar concluídos</button>
       </div>
       <div class="reset-item">
-        <div><strong>Limpar cestos ativos</strong><div class="small muted">Apaga os cestos em andamento (preparando, fila, em banho). Mantém o histórico.</div></div>
+        <div><strong>Limpar cestos ativos</strong><div class="small muted">Apaga os cestos em andamento (preparando, fila, em banho) e a fila da pintura. Mantém o histórico.</div></div>
         <button class="btn btn-stop btn-sm" onclick="abrirReset('ativos')"><i class="bi bi-grid-3x3-gap"></i>Apagar ativos</button>
       </div>
       <div class="reset-item reset-item-total">
-        <div><strong>Zerar tudo</strong><div class="small muted">Apaga <strong>TODOS</strong> os cestos (ativos e histórico). Recomeça do zero.</div></div>
+        <div><strong>Zerar tudo</strong><div class="small muted">Apaga <strong>TODOS</strong> os cestos e todos os registros da pintura (ativos e histórico). Recomeça do zero.</div></div>
         <button class="btn btn-danger btn-sm" onclick="abrirReset('tudo')"><i class="bi bi-trash3-fill"></i>Apagar tudo</button>
       </div>
     </div>
@@ -95,6 +98,9 @@
             <option value="PREENCHER">Preenchendo</option>
             <option value="FILA_BANHO">Fila do banho</option>
             <option value="EM_BANHO">Em banho</option>
+            <option value="FILA_PINTURA">Aguardando pintura</option>
+            <option value="EM_PINTURA">Em pintura</option>
+            <option value="AGUARDANDO_MONTAGEM">Aguardando montagem (retrabalho)</option>
             <option value="CONCLUIDO">Concluído</option>
           </select></div>
         <div class="field" style="margin:0;"><label class="label">Processo</label>
@@ -230,9 +236,12 @@ function renderLogs(logs,doCesto){
 document.getElementById('modalLog').addEventListener('click',e=>{if(e.target.id==='modalLog')fecharLog();});
 </script>
 <script>
-const ESTADO_LBL={PREPARANDO:'Preparando cesto',PREENCHER:'Aguardando cadastro',FILA_BANHO:'Aguardando banho',EM_BANHO:'Em banho',CONCLUIDO:'Concluído'};
-const ESTADO_PILL={PREPARANDO:'pill-prep',PREENCHER:'pill-normal',FILA_BANHO:'pill-fila',EM_BANHO:'pill-banho',CONCLUIDO:'pill-normal'};
-const ATIVOS=['PREPARANDO','PREENCHER','FILA_BANHO','EM_BANHO'];
+const ESTADO_LBL={PREPARANDO:'Preparando cesto',PREENCHER:'Aguardando cadastro',FILA_BANHO:'Aguardando banho',EM_BANHO:'Em banho',CONCLUIDO:'Concluído',
+  FILA_PINTURA:'Aguardando pintura',EM_PINTURA:'Em pintura',CARREGANDO:'Em pintura',AGUARDANDO_MONTAGEM:'Aguardando montagem'};
+const ESTADO_PILL={PREPARANDO:'pill-prep',PREENCHER:'pill-normal',FILA_BANHO:'pill-fila',EM_BANHO:'pill-banho',CONCLUIDO:'pill-normal',
+  FILA_PINTURA:'pill-fila',EM_PINTURA:'pill-banho',CARREGANDO:'pill-banho',AGUARDANDO_MONTAGEM:'pill-retrab'};
+// todos os estados em que o cesto está ocupado — inclusive na pintura
+const ATIVOS=['PREPARANDO','PREENCHER','FILA_BANHO','EM_BANHO','FILA_PINTURA','EM_PINTURA','CARREGANDO','AGUARDANDO_MONTAGEM'];
 
 async function carregar(){
   try{
@@ -374,9 +383,9 @@ async function excluir(id,fromModal){
 /* ── Reset em massa ── */
 let _resetEscopo=null;
 const RESET_TXT={
-  concluidos:'Isto vai apagar TODOS os cestos concluídos (o histórico). Os cestos em andamento serão mantidos.',
-  ativos:'Isto vai apagar todos os cestos em andamento (preparando, fila e em banho). O histórico será mantido.',
-  tudo:'Isto vai apagar TODOS os cestos — ativos e histórico. O sistema recomeça do zero.'
+  concluidos:'Isto vai apagar TODOS os cestos concluídos e o histórico da pintura. O que está em andamento será mantido.',
+  ativos:'Isto vai apagar todos os cestos em andamento (preparando, fila e em banho) e tudo o que está na fila ou em carga na pintura. O histórico será mantido.',
+  tudo:'Isto vai apagar TODOS os cestos e TODOS os registros da pintura — ativos e histórico. O sistema recomeça do zero.'
 };
 function abrirReset(escopo){
   _resetEscopo=escopo;
@@ -393,7 +402,7 @@ async function confirmarReset(){
   if(conf!=='APAGAR'){document.getElementById('resetMsg').textContent='Digite APAGAR para confirmar.';return;}
   try{
     const d=await (await fetch('/api/admin/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({escopo:_resetEscopo,confirmacao:'APAGAR'})})).json();
-    if(d.sucesso){fecharReset();carregar();alert(d.apagados+' cesto(s) apagado(s).');}
+    if(d.sucesso){fecharReset();carregar();alert(d.apagados+' cesto(s) apagado(s)'+(d.lotes_pintura?' e '+d.lotes_pintura+' lote(s) da pintura':'')+'.');}
     else document.getElementById('resetMsg').textContent=d.erro||'Não foi possível apagar.';
   }catch(e){document.getElementById('resetMsg').textContent='Erro ao apagar.';}
 }

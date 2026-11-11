@@ -22,6 +22,7 @@ import io
 import csv
 import json
 import threading
+from time import monotonic as _relogio
 from datetime import datetime, timedelta, time as dtime, date as ddate
 from functools import wraps
 
@@ -276,7 +277,43 @@ Session = scoped_session(sessionmaker(bind=engine))
 Base = declarative_base()
 
 TOTAL_CESTOS_PADRAO = 20
-_cestos_cache = {'n': None}
+class _CacheCurto(dict):
+    """Cache de configuração com validade curta (10 s).
+
+    O servidor roda com mais de um processo (gunicorn --workers 2) e cada um tem
+    a sua cópia destes caches. Sem validade, quando o administrador salvava uma
+    configuração só o processo que atendeu o pedido ficava sabendo: o outro
+    seguia com o valor antigo até o próximo deploy — e a tela alternava entre os
+    dois valores (quantidade de cestos, velocidade da monovia, jornada)."""
+    VALIDADE = 10.0
+
+    def __setitem__(self, k, v):
+        super().__setitem__(k, v)
+        self._t = _relogio()
+
+    def __getitem__(self, k):
+        if _relogio() - getattr(self, '_t', -1e9) > self.VALIDADE:
+            return None
+        return super().__getitem__(k)
+
+    def velho(self, k):
+        """Último valor conhecido, mesmo vencido (para quando o banco não responde)."""
+        return dict.get(self, k)
+
+
+def _ler_config(chave):
+    """Lê uma configuração por uma conexão PRÓPRIA, fora da sessão do pedido.
+
+    Estas leituras acontecem no meio de outros pedidos (calcular tempo de espera
+    consulta a jornada, por exemplo). Usar a sessão do pedido — e fechá-la, como
+    era feito — descartaria o que o pedido ainda não gravou. Levanta exceção se
+    o banco não responder; quem chama decide o que fazer."""
+    with engine.connect() as conn:
+        return conn.execute(text('SELECT valor FROM config WHERE chave = :c'),
+                            {'c': chave}).scalar()
+
+
+_cestos_cache = _CacheCurto(n=None)
 
 
 def total_cestos(forcar=False):
@@ -285,14 +322,15 @@ def total_cestos(forcar=False):
         return _cestos_cache['n']
     n = TOTAL_CESTOS_PADRAO
     try:
-        db = Session()
-        row = db.query(Config).filter_by(chave='total_cestos').first()
-        if row and row.valor:
-            v = int(row.valor)
+        valor = _ler_config('total_cestos')
+        if valor:
+            v = int(valor)
             if 1 <= v <= 200:
                 n = v
     except Exception:
-        pass
+        # banco fora do ar por um instante: fica o último valor conhecido, em vez
+        # de a grade encolher para o padrão
+        n = _cestos_cache.velho('n') or n
     _cestos_cache['n'] = n
     return n
 
@@ -402,7 +440,7 @@ AGENDA_PADRAO = {
     'dias_extra': [], 'dias_folga': [],
 }
 
-_agenda_cache = {'dados': None}
+_agenda_cache = _CacheCurto(dados=None)
 
 
 def get_agenda(forcar=False):
@@ -410,20 +448,20 @@ def get_agenda(forcar=False):
     if _agenda_cache['dados'] is not None and not forcar:
         return _agenda_cache['dados']
     cfg = dict(AGENDA_PADRAO)
-    db = Session()
     try:
-        row = db.query(Config).filter_by(chave='agenda').first()
-        if row and row.valor:
+        valor = _ler_config('agenda')
+        if valor:
             try:
-                salvo = json.loads(row.valor)
+                salvo = json.loads(valor)
                 if isinstance(salvo, dict):
                     cfg.update(salvo)
             except (ValueError, TypeError):
                 pass
     except Exception:
-        pass
-    finally:
-        db.close()
+        velho = _agenda_cache.velho('dados')
+        if velho is not None:
+            _agenda_cache['dados'] = velho
+            return velho
     if not cfg.get('turnos'):
         cfg['turnos'] = [dict(t) for t in AGENDA_PADRAO['turnos']]
     cfg['excecoes'] = list(cfg.get('excecoes') or [])
@@ -1066,8 +1104,8 @@ def init_db():
     try:
         import pintura
         pintura.migrar_config()
-        if pintura.pintura_ativa():
-            pintura.reparar_lotes_orfaos()
+        pintura.reconciliar_lotes()
+        pintura.criar_indice_lotes()
     except Exception as e:
         print(f'[pintura] reparo: {e}')
 
@@ -1087,6 +1125,22 @@ _ETAPA_POR_ROTA = {
     'pintura.tela_pintura': 'pintura',
     'pintura.tela_monovia': 'pintura',
 }
+
+
+@app.url_defaults
+def _versao_estaticos(endpoint, values):
+    """Acrescenta ?v=<data do arquivo> aos arquivos estáticos (CSS/JS).
+
+    Os tablets da fábrica ficam com a página aberta o dia inteiro e guardam o
+    CSS/JS antigo em cache. Depois de uma atualização, o HTML novo passava a
+    rodar com o JavaScript velho — botões que "não funcionam" até alguém limpar
+    o cache. Com a versão no endereço, arquivo alterado é sempre baixado de novo."""
+    if endpoint == 'static' and values.get('filename') and 'v' not in values:
+        try:
+            values['v'] = int(os.path.getmtime(
+                os.path.join(app.static_folder, values['filename'])))
+        except OSError:
+            pass
 
 
 @app.context_processor
@@ -1407,6 +1461,48 @@ def api_cestos():
         db.close()
 
 
+def _detalhe_cesto(c):
+    """Tudo sobre um cesto, para o "Ver detalhes" do pré-banho: cadastro, tempos
+    de cada etapa e onde as peças estão agora (inclusive na pintura)."""
+    pt, sit = {}, None
+    if _pintura_ativa():
+        try:
+            import pintura
+            pt = pintura.resumo_por_card([c.id]).get(c.id, {})
+            sit = pintura.situacao_do_cesto(c.id)
+        except Exception as e:
+            print(f'[pintura] detalhes do cesto: {e}')
+    tm = _tempos_do_ciclo(c, pt)
+    fim = (pt.get('descarga_fim') or pt.get('carga_fim') or
+           (c.banho_fim if not _pintura_ativa() else None))
+    d = c.to_dict()
+    d.update(etapa=_etapa_atual(c, pt),
+             espera_pintura_min=tm['espera_pintura'],
+             ciclo_total=tm['total_processo'] if (fim and tm['total_processo']) else None,
+             ciclo_trabalho=tm['total_trabalho'],
+             pintura_agora=sit)
+    return d
+
+
+@app.route('/api/cesto/<int:numero>/detalhes')
+@login_required('prep', 'banho', 'pintura')
+def api_cesto_detalhes(numero):
+    """Detalhes de UM cesto da grade: o que está nele agora e o último uso."""
+    db = Session()
+    try:
+        ativo = (db.query(Card).filter(Card.numero_cesto == numero,
+                                       Card.estado.in_(ESTADOS_ATIVOS))
+                 .order_by(Card.id.desc()).first())
+        ultimo = (db.query(Card).filter(Card.numero_cesto == numero,
+                                        Card.estado == ST_CONCLUIDO)
+                  .order_by(Card.id.desc()).first())
+        return jsonify({'numero': numero, 'ocupado': bool(ativo),
+                        'card': _detalhe_cesto(ativo) if ativo else None,
+                        'ultimo': _detalhe_cesto(ultimo) if ultimo else None})
+    finally:
+        db.close()
+
+
 @app.route('/api/agora')
 def api_agora():
     """Hora atual do servidor (UTC ISO) — p/ sincronizar cronômetros e começar do 0:00."""
@@ -1451,6 +1547,13 @@ def api_admin_backup():
             'usuarios': [full(u, Usuario) for u in db.query(Usuario).all()],
             'config': [full(c, Config) for c in db.query(Config).all()],
         }
+        try:                       # registros da pintura (lotes e atividades)
+            import pintura
+            ML, MA = pintura.MODELOS['lote'], pintura.MODELOS['atividade']
+            dados['pintura_lotes'] = [full(x, ML) for x in db.query(ML).all()]
+            dados['pintura_atividades'] = [full(x, MA) for x in db.query(MA).all()]
+        except Exception as e:
+            print(f'[backup] pintura fora do backup: {e}')
         buf = io.BytesIO(json.dumps(dados, ensure_ascii=False, indent=2).encode('utf-8'))
         buf.seek(0)
         stamp = datetime.now().strftime('%Y%m%d_%H%M')
@@ -1459,6 +1562,22 @@ def api_admin_backup():
                          mimetype='application/json')
     finally:
         db.close()
+
+
+def _ajustar_sequencias(tabelas):
+    """Depois de restaurar registros COM o id original, o contador de ids do
+    PostgreSQL continua onde estava. Sem acertar, o próximo cesto criado tentaria
+    reutilizar um id já existente e daria erro. (SQLite não precisa.)"""
+    if not DATABASE_URL.startswith('postgresql'):
+        return
+    for t in tabelas:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    f"SELECT setval(pg_get_serial_sequence('{t}', 'id'), "
+                    f"GREATEST((SELECT COALESCE(MAX(id), 0) FROM {t}), 1))"))
+        except Exception as e:
+            print(f'[restaurar] sequência de {t}: {e}')
 
 
 @app.route('/api/admin/restaurar', methods=['POST'])
@@ -1504,9 +1623,31 @@ def api_admin_restaurar():
             if not row:
                 row = Config(chave=ch); db.add(row)
             row.valor = cf.get('valor', '')
+        # registros da pintura (backups novos trazem; os antigos, não)
+        rl = 0
+        tabelas = ['cards', 'usuarios']
+        try:
+            import pintura
+            for chave, modelo in (('pintura_lotes', pintura.MODELOS['lote']),
+                                  ('pintura_atividades', pintura.MODELOS['atividade'])):
+                tabelas.append(modelo.__tablename__)
+                tem = {x.id for x in db.query(modelo.id).all()}
+                for reg in dados.get(chave, []) or []:
+                    if reg.get('id') and reg['id'] not in tem:
+                        novo = modelo(); set_cols(novo, modelo, reg); db.add(novo)
+                        rl += 1 if chave == 'pintura_lotes' else 0
+        except Exception as e:
+            print(f'[restaurar] pintura não restaurada: {e}')
         db.commit()
+        _ajustar_sequencias(tabelas)
         _agenda_cache['dados'] = None
-        return jsonify({'sucesso': True, 'cards': rc, 'usuarios': ru})
+        try:
+            import pintura
+            pintura._cfg_cache['dados'] = None
+        except Exception:
+            pass
+        _reconciliar_pintura(db)
+        return jsonify({'sucesso': True, 'cards': rc, 'usuarios': ru, 'lotes_pintura': rl})
     except Exception as e:
         db.rollback()
         return jsonify({'sucesso': False, 'erro': str(e)}), 500
@@ -1541,6 +1682,7 @@ def api_cesto_mudar_numero():
         except IntegrityError:
             db.rollback()
             return jsonify({'sucesso': False, 'erro': f'O cesto {novo} já está em uso.'}), 400
+        _reconciliar_pintura(db)       # o lote da pintura passa a mostrar o número novo
         return jsonify({'sucesso': True})
     finally:
         db.close()
@@ -1557,8 +1699,13 @@ def api_cesto_cancelar():
             return jsonify({'sucesso': False, 'erro': 'Cesto não encontrado.'}), 404
         if card.estado == ST_CONCLUIDO:
             return jsonify({'sucesso': False, 'erro': 'Não é possível cancelar um cesto concluído.'}), 400
+        if card.estado in (ST_FILA_PINTURA, ST_EM_PINTURA, ST_CARREGANDO):
+            # o cesto já é da pintura: cancelar daqui apagaria o que saiu do banho
+            return jsonify({'sucesso': False,
+                            'erro': 'Este cesto já está na pintura e não pode ser cancelado aqui.'}), 400
         db.delete(card)
         db.commit()
+        _reconciliar_pintura(db)
         return jsonify({'sucesso': True})
     finally:
         db.close()
@@ -1883,6 +2030,18 @@ def api_card_editar():
         db.close()
 
 
+def _reconciliar_pintura(db):
+    """Depois de mexer num cesto por fora do fluxo normal (cancelar, excluir,
+    ajuste do administrador), realinha os lotes da pintura. Sem isto o lote do
+    cesto apagado continuava na fila da pintura e o mesmo número aparecia duas
+    vezes quando o cesto era preparado de novo."""
+    try:
+        import pintura
+        pintura.reconciliar_lotes(db)
+    except Exception as e:
+        print(f'[pintura] reconciliação indisponível: {e}')
+
+
 def _pintura_ativa():
     """Módulo de pintura ligado? (config 'monovia' -> ativo). Import tardio para
     não criar dependência circular com pintura.py."""
@@ -1936,6 +2095,15 @@ def api_banho_finalizar():
         card = db.query(Card).get(int(d.get('id', 0)))
         if not card or card.estado != ST_EM_BANHO:
             return jsonify({'sucesso': False, 'erro': 'Card não está em banho.'}), 404
+        ativa = _pintura_ativa()
+        destino = ST_FILA_PINTURA if ativa else ST_CONCLUIDO
+        # Troca de estado dentro do UPDATE: de dois toques simultâneos em
+        # "finalizar banho" só um passa. Antes os dois passavam e o cesto
+        # virava dois lotes na fila da pintura.
+        if db.query(Card).filter(Card.id == card.id, Card.estado == ST_EM_BANHO).update(
+                {'estado': destino}, synchronize_session=False) != 1:
+            db.rollback()
+            return jsonify({'sucesso': False, 'erro': 'Card não está em banho.'}), 404
         card.banho_fim = datetime.utcnow()
         card.banho_minutos = round((card.banho_fim - card.banho_inicio).total_seconds() / 60, 1)
         card.obs_banho = (d.get('obs_banho') or '').strip()
@@ -1944,8 +2112,7 @@ def api_banho_finalizar():
         card.oper_banho_fim_mat = session.get('usuario', '')
         # Com o módulo de pintura ativo o cesto NÃO volta para o pré-banho:
         # fica AGUARDANDO PINTURA e as peças viram um lote.
-        ativa = _pintura_ativa()
-        card.estado = ST_FILA_PINTURA if ativa else ST_CONCLUIDO
+        card.estado = destino
         minutos, estado = card.banho_minutos, card.estado
         # Fecha o banho PRIMEIRO. Se a criação do lote falhar (schema
         # desatualizado, por exemplo), o operador não pode ficar preso sem
@@ -1981,7 +2148,49 @@ def _etapa_atual(c, pt):
         return 'Descarregado'
     if pt.get('carga_fim'):
         return (pt.get('destino') or 'Carregado').replace('Carregar ', 'Na ')
+    # o cesto já foi liberado, mas as peças dele ainda não foram pintadas
+    if pt.get('lote_destino') == 'RETRABALHO':
+        return 'Enviado a retrabalho'
+    if pt.get('lote_estado') == 'EM_ATIVIDADE':
+        return 'Em atividade na pintura'
+    if pt.get('lote_estado') == 'AGUARDANDO':
+        return 'Aguardando pintura (fora do cesto)'
     return 'Concluído'
+
+
+def _ativos_sem_repeticao(db):
+    """Cestos ativos para os painéis — cada coisa UMA vez.
+
+    Devolve (cestos, lotes_vivos). Com a pintura ligada, o cesto que saiu do banho
+    passa a ser acompanhado pelo LOTE (fila da pintura / em carga). Os painéis
+    mostravam os dois — o cesto em "Aguardando pintura" e o lote dele logo ao
+    lado — e o mesmo número aparecia duplicado, com a contagem inflada."""
+    brutos = db.query(Card).filter(Card.estado.in_(ESTADOS_ATIVOS)).order_by(Card.id.desc()).all()
+    vistos, cestos = set(), []
+    for c in brutos:
+        if c.numero_cesto in vistos:
+            continue
+        vistos.add(c.numero_cesto)
+        cestos.append(c)
+    lotes_vivos = []
+    if _pintura_ativa():
+        try:
+            import pintura
+            ML = pintura.MODELOS['lote']
+            vivos = db.query(ML).filter(ML.estado.in_(['AGUARDANDO', 'EM_ATIVIDADE'])).all()
+            com_lote = {l.card_id for l in vivos if l.card_id and l.com_cesto}
+            lotes_vivos = [{'lote_id': l.id, 'numero_cesto': (l.numero_cesto if l.com_cesto else 'S/C'),
+                            'estado': ST_EM_PINTURA if l.estado == 'EM_ATIVIDADE' else ST_FILA_PINTURA,
+                            'ordem': (l.itens()[0].get('ordem') if l.itens() else '')}
+                           for l in vivos]
+            # só sai da lista o cesto que REALMENTE tem lote: um cesto de pintura
+            # sem lote (não deveria existir) continua visível em vez de sumir
+            cestos = [c for c in cestos
+                      if not (c.estado in (ST_FILA_PINTURA, ST_EM_PINTURA, ST_CARREGANDO)
+                              and c.id in com_lote)]
+        except Exception as e:
+            print(f'[pintura] ativos: {e}')
+    return cestos, lotes_vivos
 
 
 def _coletar_dados(de=None, ate=None, turnos=None):
@@ -2030,6 +2239,37 @@ def _coletar_dados(de=None, ate=None, turnos=None):
                        if c.banho_fim and _no_periodo(c.banho_fim)
                        and (not turnos or turno_banho(c) in turnos)]
 
+        # resumo da pintura por cesto: usado no bloco geral E nas tabelas de cada
+        # setor (o estado atual do cesto e o "Ver" precisam do ciclo inteiro)
+        try:
+            import pintura as _pg
+            pint_card = (_pg.resumo_por_card() if _pg.pintura_ativa() else {})
+        except Exception:
+            pint_card = {}
+        pint_on = _pintura_ativa()
+
+        def _fmt_local(dt):
+            return (dt - timedelta(hours=FUSO_LOCAL_HORAS)).strftime('%d/%m/%Y %H:%M:%S') if dt else ''
+
+        def _registro(c):
+            """Cesto + o ciclo de ponta a ponta (mesmos campos em todos os setores)."""
+            pt = pint_card.get(c.id, {})
+            tm = _tempos_do_ciclo(c, pt)
+            # o total só faz sentido para quem chegou ao fim da última etapa apontada
+            fim = (pt.get('descarga_fim') or pt.get('carga_fim') or
+                   (c.banho_fim if not pint_on else None))
+            d = c.to_dict()
+            d.update(ciclo_ini=d['prep_inicio'], ciclo_fim=_fmt_local(fim),
+                     ciclo_total=tm['total_processo'] if (fim and tm['total_processo']) else None,
+                     ciclo_trabalho=tm['total_trabalho'],
+                     espera_pintura_min=tm['espera_pintura'],
+                     etapa=_etapa_atual(c, pt),
+                     em_curso=(c.estado != ST_CONCLUIDO
+                               or pt.get('lote_estado') in ('AGUARDANDO', 'EM_ATIVIDADE')),
+                     pintura=pt and {k: (v.isoformat() + 'Z' if hasattr(v, 'isoformat') else v)
+                                     for k, v in pt.items()} or None)
+            return d, pt, tm, bool(fim)
+
         def _metricas(lista, setor):
             n = len(lista)
             dds = [c.to_dict() for c in lista]
@@ -2066,7 +2306,7 @@ def _coletar_dados(de=None, ate=None, turnos=None):
 
             def _fmt(dic):
                 return {d.strftime('%d/%m'): dic[d] for d in dias_ord if d in dic}
-            registros = [c.to_dict() for c in
+            registros = [_registro(c)[0] for c in
                          sorted(lista, key=lambda x: (data_fn(x) or datetime.min), reverse=True)[:300]]
             return {
                 'total': n, 'normais': normais, 'retrabalhos': retrab,
@@ -2082,31 +2322,20 @@ def _coletar_dados(de=None, ate=None, turnos=None):
         prep_b = _metricas(prep_lista, 'prep')
         banho_b = _metricas(banho_lista, 'banho')
 
-        # cestos ativos (dedup por número)
-        ativos_raw = db.query(Card).filter(Card.estado.in_(ESTADOS_ATIVOS)).order_by(Card.id.desc()).all()
-        ativos, _vistos = [], set()
-        for c in ativos_raw:
-            if c.numero_cesto in _vistos:
-                continue
-            _vistos.add(c.numero_cesto)
-            ativos.append(c)
+        # cestos ativos: cada coisa uma vez (cesto OU o lote dele na pintura)
+        ativos, lotes_vivos = _ativos_sem_repeticao(db)
 
         # ── bloco GERAL: o processo inteiro, cesto a cesto ───────────────────
         # Junta as etapas de todos os setores para responder "quanto tempo um
         # cesto leva do começo ao fim, e onde ele passa esse tempo".
-        try:
-            import pintura as _pg
-            pint_card = (_pg.resumo_por_card() if _pg.pintura_ativa() else {})
-        except Exception:
-            pint_card = {}
-
         geral_cards = [c for c in prep_todos if c.prep_inicio and _no_periodo(c.prep_inicio)
                        and (not turnos or turno_prep(c) in turnos)]
+        geral_cards.sort(key=lambda x: x.prep_inicio, reverse=True)
         m_prep, m_ag_banho, m_banho, m_ag_pint, m_mv, m_est, m_total = [], [], [], [], [], [], []
         geral_regs = []
+        g_proc, g_dia, g_area_dia = {}, {}, {}
         for c in geral_cards:
-            pt = pint_card.get(c.id, {})
-            tm = _tempos_do_ciclo(c, pt)
+            d, pt, tm, finalizado = _registro(c)
             if c.prep_minutos:
                 m_prep.append(c.prep_minutos)
             if tm['espera_banho']:
@@ -2117,23 +2346,15 @@ def _coletar_dados(de=None, ate=None, turnos=None):
                 m_ag_pint.append(tm['espera_pintura'])
             if pt.get('carga_min'):
                 (m_mv if pt.get('destino') == 'Carregar monovia' else m_est).append(pt['carga_min'])
-            # o total só faz sentido para quem chegou ao fim da etapa apontada
-            finalizado = bool(pt.get('carga_fim')) or (not _pintura_ativa() and c.banho_fim)
             if finalizado and tm['total_processo']:
                 m_total.append(tm['total_processo'])
-            d = c.to_dict()
-            d.update(ciclo_ini=d['prep_inicio'],
-                     ciclo_fim=((pt.get('descarga_fim') or pt.get('carga_fim') or
-                                 (c.banho_fim if not _pintura_ativa() else None)) and
-                                ((pt.get('descarga_fim') or pt.get('carga_fim') or c.banho_fim)
-                                 - timedelta(hours=FUSO_LOCAL_HORAS)
-                                 ).strftime('%d/%m/%Y %H:%M:%S')) or '',
-                     ciclo_total=tm['total_processo'] if finalizado else None,
-                     ciclo_trabalho=tm['total_trabalho'],
-                     etapa=_etapa_atual(c, pt),
-                     pintura=pt and {k: (v.isoformat() + 'Z' if hasattr(v, 'isoformat') else v)
-                                     for k, v in pt.items()} or None)
             geral_regs.append(d)
+            p = c.processo or 'Sem processo'
+            g_proc[p] = g_proc.get(p, 0) + 1
+            dia = (c.prep_inicio - timedelta(hours=FUSO_LOCAL_HORAS)).date()
+            g_dia[dia] = g_dia.get(dia, 0) + 1
+            g_area_dia[dia] = round(g_area_dia.get(dia, 0) + d['area_total'], 3)
+        g_dias = sorted(g_dia)
 
         def _med(v):
             return round(sum(v) / len(v), 1) if v else 0
@@ -2149,7 +2370,10 @@ def _coletar_dados(de=None, ate=None, turnos=None):
             'media_banho': _med(m_banho), 'media_ag_pintura': _med(m_ag_pint),
             'media_carga_monovia': _med(m_mv), 'media_carga_estacionaria': _med(m_est),
             'media_total': _med(m_total), 'concluidos_total': len(m_total),
-            'registros': geral_regs,
+            'por_processo': g_proc,
+            'por_dia': {x.strftime('%d/%m'): g_dia[x] for x in g_dias},
+            'area_por_dia': {x.strftime('%d/%m'): g_area_dia[x] for x in g_dias},
+            'registros': geral_regs[:300],
         }
 
         # ── bloco do setor PINTURA (se o módulo estiver ativo) ──
@@ -2163,7 +2387,8 @@ def _coletar_dados(de=None, ate=None, turnos=None):
 
         return {
             'ativos': [c.to_dict() for c in ativos],
-            'em_andamento': len(ativos),
+            'ativos_pintura': lotes_vivos,          # lotes vivos da pintura (fila e em carga)
+            'em_andamento': len(ativos) + len(lotes_vivos),
             'prep': prep_b,
             'banho': banho_b,
             'pintura': pintura_b,
@@ -2231,13 +2456,8 @@ def api_painel_ativos():
     Evita recalcular todo o histórico e as médias a cada atualização."""
     db = Session()
     try:
-        brutos = db.query(Card).filter(Card.estado.in_(ESTADOS_ATIVOS)).order_by(Card.id.desc()).all()
-        vistos, ativos = set(), []
-        for c in brutos:
-            if c.numero_cesto in vistos:
-                continue
-            vistos.add(c.numero_cesto)
-            ativos.append(c.to_dict())
+        cestos, _ = _ativos_sem_repeticao(db)
+        ativos = [c.to_dict() for c in cestos]
         pint = None
         try:
             import pintura
@@ -2550,6 +2770,7 @@ def api_admin_card_salvar():
             return jsonify({'sucesso': False,
                             'erro': f'Já existe outro cesto ATIVO com o número {card.numero_cesto}. '
                                     f'Mude o número ou o estado.'}), 400
+        _reconciliar_pintura(db)
         return jsonify({'sucesso': True})
     finally:
         db.close()
@@ -2569,6 +2790,7 @@ def api_admin_card_excluir():
                        'excluir', session.get('nome', ''))
         db.delete(card)
         db.commit()
+        _reconciliar_pintura(db)
         return jsonify({'sucesso': True})
     finally:
         db.close()
@@ -2593,8 +2815,15 @@ def api_admin_reset():
             n = db.query(Card).delete(synchronize_session=False)
         else:
             return jsonify({'sucesso': False, 'erro': 'Escopo inválido.'}), 400
+        lotes = 0
+        try:                       # a pintura acompanha o reset (senão o "zero" não é zero)
+            import pintura
+            lotes = pintura.apagar_registros(db, escopo)
+        except Exception as e:
+            print(f'[pintura] reset: {e}')
         db.commit()
-        return jsonify({'sucesso': True, 'apagados': int(n or 0)})
+        _reconciliar_pintura(db)
+        return jsonify({'sucesso': True, 'apagados': int(n or 0), 'lotes_pintura': int(lotes or 0)})
     except Exception as e:
         db.rollback()
         return jsonify({'sucesso': False, 'erro': str(e)}), 500
@@ -2984,7 +3213,8 @@ try:
         ST_AG_MONTAGEM=ST_AG_MONTAGEM, ST_PREENCHER=ST_PREENCHER,
         ST_FILA_BANHO=ST_FILA_BANHO, PROCESSOS=PROCESSOS, Usuario=Usuario,
         _area_peso_do_codigo=_area_peso_do_codigo, _op_txt=_op_txt,
-        _pausas_resumo=_pausas_resumo,
+        _pausas_resumo=_pausas_resumo, total_cestos=total_cestos,
+        _ler_config=_ler_config,
     )
     app.register_blueprint(pintura.bp)
     print('[pintura] módulo registrado.')
@@ -2992,7 +3222,38 @@ except Exception as _e:
     print(f'[pintura] NÃO registrado: {_e}')
 
 
-init_db()
+def _iniciar_com_trava():
+    """Roda a inicialização do banco UM processo por vez.
+
+    O servidor sobe com dois processos (gunicorn --workers 2) e os dois executam
+    este arquivo ao mesmo tempo. Sem trava eles disputavam a criação de tabelas,
+    colunas e índices — num banco novo um dos processos morria com "duplicate
+    key ... pg_type" e o deploy só firmava na segunda tentativa — e, pior, os
+    dois podiam "recuperar" o mesmo cesto ao mesmo tempo, criando lote duplicado.
+    A trava é do próprio PostgreSQL (advisory lock): o segundo processo espera o
+    primeiro terminar e encontra tudo pronto. No SQLite (uso local) não precisa."""
+    if not DATABASE_URL.startswith('postgresql'):
+        init_db()
+        return
+    conn = None
+    try:
+        conn = engine.connect()
+        conn.execute(text('SELECT pg_advisory_lock(727401)'))
+    except Exception as e:
+        print(f'[boot] sem trava de inicialização ({e}) — seguindo assim mesmo.')
+    try:
+        init_db()
+    finally:
+        if conn is not None:
+            try:
+                conn.execute(text('SELECT pg_advisory_unlock(727401)'))
+                conn.commit()
+            except Exception:
+                pass
+            conn.close()
+
+
+_iniciar_com_trava()
 _garantir_secret_key()
 
 if __name__ == '__main__':
