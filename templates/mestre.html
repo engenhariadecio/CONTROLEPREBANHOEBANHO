@@ -20,8 +20,62 @@
       <span id="restaurarMsg" class="small muted"></span>
     </div>
     <p class="small muted" style="margin:12px 0 0;">
-      O backup salva todos os cestos e usuários num arquivo no seu computador. A importação <strong>só adiciona</strong> o que não existe — nunca apaga nada. Faça backup antes de qualquer mudança grande.
+      O backup salva todos os cestos e usuários num arquivo no seu computador. A importação <strong>só adiciona</strong> o que não existe — nunca apaga nem corrige nada. Faça backup antes de qualquer mudança grande.
     </p>
+
+    <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn-ghost" onclick="abrirSubst()"><i class="bi bi-calendar-range"></i>Atualizar um período pelo backup</button>
+      </div>
+      <p class="small muted" style="margin:10px 0 0;">
+        Atualiza o histórico de <strong>um período</strong> com o que está no arquivo: cesto com a <strong>mesma data e hora</strong> fica como no arquivo, cesto que <strong>não existia</strong> é adicionado e <strong>o que já existe é mantido</strong>. Fora do período nada muda e cesto em andamento não é tocado. O sistema mostra tudo o que vai mudar antes de aplicar.
+      </p>
+    </div>
+  </div>
+
+  <!-- Modal: substituir um período -->
+  <div class="modal-overlay" id="modalSubst">
+    <div class="modal" style="max-width:760px;">
+      <div class="modal-head">
+        <h5><i class="bi bi-calendar-range"></i>Atualizar um período pelo backup</h5>
+        <button class="modal-x" onclick="fecharSubst()"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label class="label" for="sbArq">1. Arquivo de backup (.json)</label>
+          <input type="file" id="sbArq" accept=".json,application/json" class="input" onchange="sbArquivoMudou()">
+        </div>
+        <div class="field">
+          <label class="label">2. Período a atualizar (pelo início da preparação)</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div><span class="small muted">De</span><input type="datetime-local" id="sbDe" class="input" onchange="sbLimpar()"></div>
+            <div><span class="small muted">Até</span><input type="datetime-local" id="sbAte" class="input" onchange="sbLimpar()"></div>
+          </div>
+          <div class="hint">Se o arquivo já trouxer o período, ele é preenchido sozinho ao simular.</div>
+        </div>
+        <div class="alert alert-info" style="margin-bottom:12px;"><i class="bi bi-info-circle"></i><span>
+          <strong>Mesma data e hora</strong> (mesmo cesto, com início ou fim da preparação ou do banho iguais): fica como no arquivo.
+          <strong>Não existe no sistema</strong>: é adicionado. <strong>Só existe no sistema</strong>: fica como está.</span></div>
+        <details style="margin-bottom:12px;">
+          <summary class="small muted" style="cursor:pointer;">Opção avançada (para desfazer uma atualização)</summary>
+          <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;cursor:pointer;">
+            <input type="checkbox" id="sbRemover" onchange="sbLimpar()" style="margin-top:3px;">
+            <span class="small">Também <strong>remover</strong> do período os cestos concluídos que <strong>não estão no arquivo</strong>. Use só para desfazer, com o arquivo <em>backup_ANTES_da_substituicao</em>: assim o período volta a ficar exatamente como estava.</span>
+          </label>
+        </details>
+        <button class="btn btn-primary btn-block" id="sbSimular" onclick="sbSimular()"><i class="bi bi-search"></i>Simular (não altera nada)</button>
+        <div id="sbMsg" class="hint" style="min-height:18px;margin-top:8px;"></div>
+        <div id="sbResumo" style="display:none;margin-top:6px;"></div>
+        <div id="sbAplicarBox" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);">
+          <div class="alert alert-info" style="margin-bottom:12px;"><i class="bi bi-shield-check"></i><span>Antes de aplicar, o sistema baixa sozinho um <strong>backup de como está agora</strong>. Para desfazer, use esse arquivo aqui mesmo, no mesmo período, marcando a opção avançada.</span></div>
+          <label class="label" for="sbConf">3. Para aplicar, digite <strong>SUBSTITUIR</strong></label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <input type="text" id="sbConf" class="input" style="flex:1;min-width:160px;" autocomplete="off" placeholder="SUBSTITUIR" oninput="sbAplicar.disabled=this.value.trim().toUpperCase()!=='SUBSTITUIR'">
+            <button class="btn btn-stop" id="sbAplicar" disabled onclick="sbAplicarAgora()"><i class="bi bi-check2-circle"></i>Aplicar</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="panel panel-pad" style="margin-bottom:20px;">
@@ -143,5 +197,109 @@ async function restaurarBackup(input){
   input.value='';
 }
 carregarDbStatus();
+
+/* ── Substituir um período pelo backup: simula, mostra, e só então aplica ── */
+let _sbEsperado='', _sbOcupado=false;
+const _sbEsc=v=>String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function abrirSubst(){sbArq.value='';sbDe.value='';sbAte.value='';sbRemover.checked=false;sbLimpar();document.getElementById('modalSubst').classList.add('open');}
+function fecharSubst(){document.getElementById('modalSubst').classList.remove('open');}
+function sbLimpar(){_sbEsperado='';sbResumo.style.display='none';sbResumo.innerHTML='';sbAplicarBox.style.display='none';sbConf.value='';sbAplicar.disabled=true;sbMsg.textContent='';sbMsg.style.color='';}
+function sbArquivoMudou(){sbDe.value='';sbAte.value='';sbLimpar();}
+function _sbForm(extra){
+  const fd=new FormData();fd.append('arquivo',sbArq.files[0]);
+  if(sbDe.value)fd.append('de',sbDe.value);
+  if(sbAte.value)fd.append('ate',sbAte.value);
+  if(sbRemover.checked)fd.append('remover','1');
+  Object.entries(extra||{}).forEach(([k,v])=>fd.append(k,v));
+  return fd;
+}
+async function _sbPost(fd){
+  try{
+    const r=await fetch('/api/admin/substituir_periodo',{method:'POST',body:fd});
+    try{return await r.json();}catch(_){return {sucesso:false,erro:'Erro no servidor ('+r.status+'). Nada foi alterado.'};}
+  }catch(_){return {sucesso:false,erro:'Sem conexão com o servidor. Nada foi alterado.'};}
+}
+function _sbTabela(titulo,cor,linhas,total,comCampos){
+  if(!total)return '';
+  const corpo=linhas.map(l=>`<tr><td class="mono small">${_sbEsc(l.id)||'novo'}</td><td><strong>${_sbEsc(l.cesto)}</strong></td>
+      <td class="mono small">${_sbEsc(l.inicio)}</td><td>${_sbEsc(l.op)||'—'}</td><td class="mono">${l.pecas}</td>
+      ${comCampos?`<td><span class="small">${_sbEsc(l.campos)}</span></td>`:''}</tr>`).join('');
+  return `<details style="margin-top:10px;"><summary style="cursor:pointer;font-weight:800;color:${cor};">${titulo} — ${total}${total>linhas.length?` (mostrando os ${linhas.length} primeiros)`:''}</summary>
+    <div class="table-wrap" style="margin-top:8px;max-height:260px;overflow:auto;"><table class="tbl">
+      <thead><tr><th>ID</th><th>Cesto</th><th>Início prep</th><th>OP</th><th>Peças</th>${comCampos?'<th>O que muda</th>':''}</tr></thead>
+      <tbody>${corpo}</tbody></table></div></details>`;
+}
+function _sbMostrar(d,aplicado){
+  const k=(n,rot,cor)=>`<div style="flex:1;min-width:120px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;">
+      <div style="font-size:1.5rem;font-weight:800;color:${cor};">${n}</div><div class="small muted">${rot}</div></div>`;
+  sbResumo.style.display='';
+  sbResumo.innerHTML=`
+    <div class="alert ${aplicado?'alert-info':'alert-info'}" style="margin-bottom:12px;"><i class="bi ${aplicado?'bi-check-circle-fill':'bi-info-circle'}"></i><span>
+      ${aplicado?'<strong>Atualização aplicada.</strong> ':'<strong>Simulação</strong> — nada foi alterado ainda. '}
+      Período: <strong>${_sbEsc(d.periodo.de)}</strong> até <strong>${_sbEsc(d.periodo.ate)}</strong>.
+      No sistema: ${d.banco_no_periodo} cestos neste período · no arquivo: ${d.arquivo_no_periodo}.</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      ${k(d.substituidos,aplicado?'substituídos':'serão substituídos','#1668C0')}
+      ${k(d.adicionados,aplicado?'adicionados':'serão adicionados','#1E9E57')}
+      ${d.remover_ausentes?k(d.removidos,aplicado?'removidos':'serão removidos','#D6473F'):k(d.so_sistema,'só no sistema — mantidos','#B5730B')}
+      ${k(d.iguais,'já estão iguais','#64748b')}
+    </div>
+    <div class="small muted" style="margin-top:10px;">
+      <i class="bi bi-lock-fill"></i> Fora do período: <strong>${d.banco_fora}</strong> cestos do sistema — não são tocados.
+      ${d.mantidos?` · <strong>${d.mantidos}</strong> cesto(s) em andamento dentro do período também ficam como estão.`:''}
+      ${d.arquivo_em_andamento?` · ${d.arquivo_em_andamento} cesto(s) do arquivo neste período não estão concluídos e foram ignorados.`:''}
+    </div>
+    ${d.campos&&d.campos.length?`<div class="small" style="margin-top:10px;"><strong>O que muda nos substituídos:</strong> ${d.campos.map(c=>_sbEsc(c[0])+' ('+c[1]+')').join(' · ')}</div>`:''}
+    ${_sbTabela(aplicado?'Substituídos (mesma data e hora)':'Serão substituídos (mesma data e hora)','#1668C0',d.ex_substituidos,d.substituidos,true)}
+    ${_sbTabela(aplicado?'Adicionados':'Serão adicionados','#1E9E57',d.ex_adicionados,d.adicionados,false)}
+    ${_sbTabela(aplicado?'Removidos':'Serão removidos (não estão no arquivo)','#D6473F',d.ex_removidos,d.removidos,false)}
+    ${_sbTabela('Só no sistema — ficam como estão','#B5730B',d.ex_so_sistema||[],d.so_sistema||0,false)}
+    ${_sbTabela('Em andamento (mantidos)','#B5730B',d.ex_mantidos,d.mantidos,false)}`;
+}
+async function sbSimular(){
+  if(_sbOcupado)return;
+  if(!sbArq.files||!sbArq.files[0]){sbMsg.style.color='#D6473F';sbMsg.textContent='Escolha o arquivo de backup.';return;}
+  _sbOcupado=true;sbLimpar();sbMsg.textContent='Simulando…';
+  const d=await _sbPost(_sbForm());
+  _sbOcupado=false;
+  if(!d.sucesso){sbMsg.style.color='#D6473F';sbMsg.textContent=d.erro||'Não foi possível simular.';return;}
+  sbMsg.textContent='';
+  sbDe.value=d.periodo.de_iso;sbAte.value=d.periodo.ate_iso;       // o período que foi realmente usado
+  _sbEsperado=[d.substituidos,d.adicionados,d.removidos,d.mantidos,d.so_sistema].join('/');
+  _sbMostrar(d,false);
+  const temOQueFazer=d.substituidos+d.adicionados+d.removidos>0;
+  sbAplicarBox.style.display=temOQueFazer?'':'none';
+  if(!temOQueFazer){sbMsg.style.color='#1E9E57';sbMsg.textContent='Não há nada para substituir nem adicionar neste período.';}
+}
+async function sbAplicarAgora(){
+  if(_sbOcupado||sbConf.value.trim().toUpperCase()!=='SUBSTITUIR')return;
+  _sbOcupado=true;sbAplicar.disabled=true;
+  sbMsg.style.color='';sbMsg.textContent='Baixando o backup de segurança…';
+  try{                                   // ponto de restauração: como o sistema está AGORA
+    const r=await fetch('/api/admin/backup');
+    if(!r.ok)throw 0;
+    const b=await r.blob();
+    const a=document.createElement('a');
+    const t=new Date(),p=n=>String(n).padStart(2,'0');
+    a.href=URL.createObjectURL(b);
+    a.download=`backup_ANTES_da_substituicao_${t.getFullYear()}${p(t.getMonth()+1)}${p(t.getDate())}_${p(t.getHours())}${p(t.getMinutes())}.json`;
+    document.body.appendChild(a);a.click();a.remove();
+  }catch(_){
+    _sbOcupado=false;sbAplicar.disabled=false;
+    sbMsg.style.color='#D6473F';sbMsg.textContent='Não foi possível baixar o backup de segurança. Nada foi alterado.';return;
+  }
+  sbMsg.textContent='Aplicando…';
+  const d=await _sbPost(_sbForm({confirmacao:'SUBSTITUIR',esperado:_sbEsperado}));
+  _sbOcupado=false;
+  if(!d.sucesso){
+    sbMsg.style.color='#D6473F';sbMsg.textContent=d.erro||'Não foi possível aplicar. Nada foi alterado.';
+    if(d.mudou){_sbEsperado=[d.substituidos,d.adicionados,d.removidos,d.mantidos,d.so_sistema].join('/');_sbMostrar(d,false);sbAplicar.disabled=false;}
+    else sbAplicar.disabled=false;
+    return;
+  }
+  sbMsg.style.color='#1E9E57';sbMsg.textContent='Pronto. O backup de segurança ficou na sua pasta de downloads.';
+  _sbMostrar(d,true);sbAplicarBox.style.display='none';
+  carregarDbStatus();
+}
 </script>
 {% endblock %}

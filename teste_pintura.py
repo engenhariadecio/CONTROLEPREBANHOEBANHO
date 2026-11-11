@@ -1087,6 +1087,159 @@ def main():
     checar('backup inclui o registro de velocidade', len(bk.get('monovia_velocidade_log') or []) >= 2)
     checar('velocidade volta ao valor inicial ao fim do teste', pintura.velocidade_atual() == vel0)
 
+    print('\n27) ATUALIZAR UM PERIODO PELO BACKUP (mesma data e hora substitui; o resto fica)')
+    import json as _js
+
+    def _card_hist(numero, ini, ordem, qtd, estado=None):
+        dbx = Session()
+        c = Card(estado=estado or app.ST_CONCLUIDO, numero_cesto=numero, processo='ALUMÍNIO',
+                 ordem=ordem, material='300123', texto_breve='PECA', quantidade=qtd, observacao='T:teste',
+                 itens_json=_js.dumps([{'ordem': ordem, 'material': '300123', 'texto_breve': 'PECA',
+                                        'quantidade': qtd, 'tipo': 'Normal', 'motivo': ''}]),
+                 operador_prep='Op', n_operadores=1, prep_inicio=ini, prep_fim=ini + _td(minutes=30),
+                 prep_minutos=30.0, banho_inicio=ini + _td(minutes=40),
+                 banho_fim=(None if estado else ini + _td(minutes=100)), banho_minutos=(0 if estado else 60.0),
+                 criado_em=ini)
+        dbx.add(c)
+        dbx.commit()
+        return c.id
+
+    def _linha(cid):
+        dbx = Session()
+        c = dbx.query(Card).get(cid)
+        return None if c is None else {col.name: app._serial_val(getattr(c, col.name)) for col in Card.__table__.columns}
+
+    # periodo de teste bem longe dos dados reais: 01/01/2020 (hora local)
+    # REGRA: mesma data e hora -> fica como no arquivo; nao existe -> adiciona; o resto -> fica.
+    U = lambda h, d=1: datetime(2020, 1, d, h + 3, 0, 0)             # local -> UTC
+    sA = _card_hist(7001, U(8), '930001', 10)        # mesma data/hora (3 de 4) -> substituido
+    sB = _card_hist(7002, U(9), '930002', 20)        # nao esta no arquivo -> FICA
+    sC = _card_hist(7003, U(8, 2), '930003', 30)     # FORA do periodo -> intocado
+    sD = _card_hist(livres(1)[0], U(10), '930004', 40, estado=app.ST_EM_BANHO)   # em andamento -> intocado
+    sF = _card_hist(7006, U(12), '930006', 60)       # mesma data/hora, id diferente no arquivo -> e o mesmo
+    sG = _card_hist(7007, U(13), '930007', 70)       # mesmo id e mesmo cesto no arquivo, mas OUTRA data/hora
+    sH = _card_hist(7008, U(16), '930008', 80)       # mesmas 4 datas, numero do cesto corrigido no arquivo
+    sI = _card_hist(7010, U(17), '930010', 90)       # so UMA data igual (inicio da preparacao)
+    ids_teste = [sA, sB, sC, sD, sF, sG, sH, sI]
+    antes = {i: _linha(i) for i in ids_teste}
+    its = lambda o, q, t='PECA': _js.dumps([{'ordem': o, 'material': '300123', 'texto_breve': t,
+                                             'quantidade': q, 'tipo': 'Normal', 'motivo': ''}])
+    fA = _linha(sA); fA.update(quantidade=11, texto_breve='PECA CORRIGIDA', prep_inicio='2020-01-01T10:45:00Z',
+                               itens_json=its('930001', 11, 'PECA CORRIGIDA'))
+    fC = _linha(sC); fC.update(quantidade=999)                         # mudado no arquivo, mas fora do periodo
+    fD = _linha(sD); fD.update(estado='CONCLUIDO', quantidade=999)     # em andamento no banco
+    # novo, com id que ja e de outro; tem inicio e fim de BANHO iguais aos do sB (mesmo banho),
+    # mas e outro cesto: duas datas iguais em cesto diferente NAO casam
+    fE = _linha(sB); fE.update(id=sC, numero_cesto=7005, ordem='930005', quantidade=50,
+                               prep_inicio='2020-01-01T14:00:00Z', prep_fim='2020-01-01T14:30:00Z',
+                               itens_json=its('930005', 50))
+    fF = _linha(sF); fF.update(id=987654)                              # mesmo registro, numero interno diferente
+    fG = _linha(sG); fG.update(quantidade=71, itens_json=its('930007', 71),      # mesmo id, nenhuma data igual
+                               prep_inicio='2020-01-01T18:00:00Z', prep_fim='2020-01-01T18:20:00Z',
+                               banho_inicio='2020-01-01T18:25:00Z', banho_fim='2020-01-01T18:50:00Z')
+    fH = _linha(sH); fH.update(numero_cesto=7009)
+    fI = _linha(sI); fI.update(quantidade=91, itens_json=its('930010', 91), prep_fim='2020-01-01T20:10:00Z',
+                               banho_inicio='2020-01-01T20:15:00Z', banho_fim='2020-01-01T20:55:00Z')
+    arq = {'versao': 2, 'cards': [fA, fC, fD, fE, fF, fG, fH, fI], 'usuarios': [], 'config': [],
+           'substituicao': {'de': '2020-01-01T00:00:00', 'ate': '2020-01-01T23:59:00'}}
+
+    def _envia(dados, **form):
+        return adm4.post('/api/admin/substituir_periodo', content_type='multipart/form-data',
+                         data=dict(form, arquivo=(io.BytesIO(_js.dumps(dados).encode()), 'b.json')))
+    CH = ('substituidos', 'adicionados', 'removidos', 'iguais', 'mantidos', 'so_sistema')
+    quadro = lambda d: tuple(d[k] for k in CH)
+    total0 = Session().query(Card).count()
+    r = _envia(arq)
+    sim = r.get_json()
+    checar('simula usando o periodo que vem no arquivo', r.status_code == 200 and sim.get('simulacao')
+           and sim['periodo']['de'] == '01/01/2020 00:00' and sim['periodo']['ate'] == '01/01/2020 23:59', sim)
+    checar('simulacao: 3 substituidos, 2 adicionados, NENHUM removido, 1 igual, 1 em andamento, 2 so no sistema',
+           quadro(sim) == (3, 2, 0, 1, 1, 2), dict(zip(CH, quadro(sim))))
+    exA = [e for e in sim['ex_substituidos'] if e['id'] == sA]
+    checar('simulacao diz o que muda em nomes legiveis',
+           exA and 'Início Prep' in exA[0]['campos'] and 'Peças' in exA[0]['campos'], sim['ex_substituidos'])
+    checar('simulacao lista o que so existe no sistema (e vai ficar)',
+           sorted(e['id'] for e in sim['ex_so_sistema']) == sorted([sB, sG]), sim['ex_so_sistema'])
+    checar('simulacao nao altera nada', _linha(sA)['quantidade'] == 10 and _linha(sB) is not None
+           and Session().query(Card).count() == total0)
+    checar('sem confirmar "SUBSTITUIR" nao aplica', _envia(arq, confirmacao='sim').get_json().get('simulacao') is True
+           and _linha(sA)['quantidade'] == 10)
+    r = _envia(arq, confirmacao='SUBSTITUIR', esperado='9/9/9/9/9')
+    checar('quadro diferente do simulado: nao aplica', r.status_code == 409 and _linha(sA)['quantidade'] == 10)
+    seguranca = _js.loads(adm4.get('/api/admin/backup').data)          # como a tela faz antes de aplicar
+    r = _envia(arq, confirmacao='SUBSTITUIR', esperado='3/2/0/1/2')
+    checar('aplica', r.status_code == 200 and r.get_json().get('aplicado'), r.get_json())
+    la = _linha(sA)
+    checar('mesma data e hora: substituido no lugar (mesmo id)', la['quantidade'] == 11 and la['texto_breve'] == 'PECA CORRIGIDA'
+           and la['prep_inicio'] == '2020-01-01T10:45:00Z')
+    checar('registro que NAO esta no arquivo foi MANTIDO, igualzinho', _linha(sB) == antes[sB])
+    checar('FORA do periodo: intocado, mesmo estando diferente no arquivo', _linha(sC) == antes[sC])
+    checar('cesto EM ANDAMENTO dentro do periodo: intocado', _linha(sD) == antes[sD])
+    novoE = Session().query(Card).filter(Card.ordem == '930005').all()
+    checar('registro que faltava foi adicionado, com numero interno novo (o do arquivo ja era de outro)',
+           len(novoE) == 1 and novoE[0].id != sC and novoE[0].numero_cesto == 7005 and novoE[0].estado == app.ST_CONCLUIDO)
+    checar('duas datas de banho iguais em OUTRO cesto nao casam (o sB nao virou o 7005)', _linha(sB)['numero_cesto'] == 7002)
+    checar('mesma data e hora e o mesmo registro, mesmo com outro id: nao duplicou',
+           Session().query(Card).filter(Card.ordem == '930006').count() == 1 and _linha(sF) == antes[sF])
+    doisG = Session().query(Card).filter(Card.ordem == '930007').order_by(Card.id).all()
+    checar('mesmo ID mas data e hora diferentes: NAO substitui — o do sistema fica e o do arquivo entra',
+           len(doisG) == 2 and doisG[0].id == sG and _linha(sG) == antes[sG] and doisG[1].quantidade == 71
+           and doisG[1].id != sG, [(c.id, c.quantidade) for c in doisG])
+    lh = _linha(sH)
+    checar('numero do cesto corrigido no arquivo (4 datas iguais): substitui, nao duplica',
+           lh['numero_cesto'] == 7009 and Session().query(Card).filter(Card.ordem == '930008').count() == 1, lh['numero_cesto'])
+    li = _linha(sI)
+    checar('uma unica data e hora igual no mesmo cesto ja basta para substituir',
+           li['quantidade'] == 91 and li['prep_fim'] == '2020-01-01T20:10:00Z'
+           and Session().query(Card).filter(Card.ordem == '930010').count() == 1, li)
+    checar('total de cestos: +2 adicionados, nenhum removido', Session().query(Card).count() == total0 + 2)
+    sim2 = _envia(arq).get_json()
+    checar('repetir com o mesmo arquivo: nada a fazer', quadro(sim2) == (0, 0, 0, 6, 1, 2), dict(zip(CH, quadro(sim2))))
+    lg = Session().query(app.CardLog).filter_by(acao='substituir_periodo').order_by(app.CardLog.id.desc()).first()
+    checar('auditoria registra a atualizacao', lg is not None and '3 substituídos' in lg.mudancas_json
+           and '0 removidos' in lg.mudancas_json, lg.mudancas_json if lg else None)
+    # planilha em ordem de data (os adicionados tem numero interno alto, mas sao de 2020)
+    wbo = load_workbook(io.BytesIO(adm4.get('/api/download/geral?de=2020-01-01&ate=2020-01-02').data))['Geral']
+    ordens = [l[2] for l in wbo.iter_rows(min_row=2, values_only=True) if isinstance(l[0], int)]
+    checar('planilha geral sai em ordem de data, nao de numero interno',
+           ordens == ['930001', '930002', '930005', '930006', '930007', '930007', '930008', '930010', '930003'], ordens)
+    # desfazer: o backup de seguranca + a opcao de remover o que nao esta no arquivo
+    P = dict(de='2020-01-01T00:00', ate='2020-01-01T23:59')
+    simd = _envia(seguranca, remover='1', **P).get_json()
+    checar('desfazer (simulacao): volta os 3, tira os 2 adicionados', quadro(simd) == (3, 0, 2, 3, 1, 0), dict(zip(CH, quadro(simd))))
+    checar('sem a opcao de remover, o backup de seguranca nao tira nada',
+           quadro(_envia(seguranca, **P).get_json()) == (3, 0, 0, 3, 1, 2))
+    r = _envia(seguranca, remover='1', confirmacao='SUBSTITUIR', esperado='3/0/2/1/0', **P)
+    checar('desfazer aplica', r.status_code == 200 and r.get_json().get('aplicado'), r.get_json())
+    checar('depois de desfazer, tudo esta exatamente como antes',
+           all(_linha(i) == antes[i] for i in ids_teste) and Session().query(Card).count() == total0
+           and Session().query(Card).filter(Card.ordem == '930005').count() == 0,
+           [i for i in ids_teste if _linha(i) != antes[i]])
+    # recusas
+    semp = dict(arq); semp.pop('substituicao')
+    r = _envia(semp)
+    checar('arquivo sem periodo e sem de/ate informados: pede o periodo', r.status_code == 400 and r.get_json().get('precisa_periodo'))
+    r = _envia(semp, de='2020-01-01T00:00', ate='2019-12-31T00:00')
+    checar('periodo invertido e recusado', r.status_code == 400)
+    r = adm4.post('/api/admin/substituir_periodo', content_type='multipart/form-data',
+                  data={'arquivo': (io.BytesIO(b'isso nao e json'), 'x.json')})
+    checar('arquivo invalido e recusado', r.status_code == 400)
+    r = _envia({'versao': 2, 'cards': []}, remover='1', confirmacao='SUBSTITUIR', **P)
+    checar('arquivo sem cestos no periodo nao apaga o periodo, nem com a opcao de remover',
+           r.status_code == 400 and _linha(sA) is not None and Session().query(Card).count() == total0)
+    r = ger.post('/api/admin/substituir_periodo', content_type='multipart/form-data',
+                 data={'arquivo': (io.BytesIO(_js.dumps(arq).encode()), 'b.json'), 'confirmacao': 'SUBSTITUIR'})
+    checar('so o administrador atualiza periodo', r.status_code in (302, 401, 403))
+    hm = adm4.get('/admin/mestre').get_data(as_text=True)
+    checar('tela: simular antes, backup de seguranca, confirmacao digitada e remocao so por opcao',
+           'abrirSubst()' in hm and 'Simular (não altera nada)' in hm and 'backup_ANTES_da_substituicao_' in hm
+           and "!=='SUBSTITUIR'" in hm and 'id="sbRemover"' in hm and 'o que já existe é mantido' in hm)
+    dbx = Session()
+    dbx.query(Card).filter(Card.ordem.in_(['930005', '930007'])).update({'observacao': 'T:teste'}, synchronize_session=False)
+    dbx.query(app.CardLog).filter(app.CardLog.acao == 'substituir_periodo', app.CardLog.card_id == 0,
+                                  app.CardLog.mudancas_json.like('%01/01/2020%')).delete(synchronize_session=False)
+    dbx.commit()
+
     print('\n' + '=' * 62)
     print(f'  {len(OK)} verificações OK · {len(FALHA)} falhas')
     if FALHA:

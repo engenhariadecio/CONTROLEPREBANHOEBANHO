@@ -461,7 +461,7 @@ linhas/dia de telemetria — mas só se você ligar o agente; hoje nada é grava
 python teste_pintura.py
 ```
 
-281 verificações cobrindo os seis lançamentos, retrabalho total e parcial,
+304 verificações cobrindo os seis lançamentos, retrabalho total e parcial,
 liberação do cesto, paradas, rastreio, export, o painel da gerência e as travas
 contra cesto duplicado. Use um banco de teste (ela apaga os lotes da pintura).
 
@@ -628,7 +628,7 @@ em Pré-banho, Banho e Pintura, e do **processo inteiro** em Todos.
 
 ### Como repetir a validação
 
-    python teste_pintura.py                       # 281 verificações
+    python teste_pintura.py                       # 304 verificações
 
 A suíte roda em SQLite e em PostgreSQL (`DATABASE_URL=postgresql://...`). Use um
 banco de teste: ela apaga os lotes da pintura ao começar e ao terminar.
@@ -683,3 +683,59 @@ Endpoints: `GET/POST /api/pintura/velocidade` (perfil pintura) e
 | **Excel geral** | coluna "Velocidade monovia (m/min)" por cesto + as duas abas |
 | Excel pintura | coluna "Velocidade monovia (m/min)" + as duas abas |
 | Painel da gerência | **nada** — nem velocidade, nem quem alterou |
+
+## v20 — atualizar um período pelo backup (mesma data e hora substitui; o resto fica)
+
+A importação comum (**Importar backup**) só adiciona o que não existe. Para corrigir
+um trecho do histórico com uma versão ajustada existe
+**Lista mestra → Segurança dos dados → Atualizar um período pelo backup**.
+
+A regra, dentro do período (pelo **início da preparação**, data e hora locais):
+
+| Situação | O que acontece |
+| --- | --- |
+| Cesto com a **mesma data e hora** no sistema e no arquivo | fica como no arquivo (mesmo número interno) |
+| Cesto do arquivo que **não existe** no sistema | é adicionado |
+| Cesto do sistema que **não está** no arquivo | **é mantido** como está |
+| Cesto igual | fica como está |
+| Cesto **em andamento** (não concluído) | nunca é tocado |
+| Qualquer cesto **fora do período** | nunca é tocado |
+
+Nada é removido. Usuários, configuração e registros da pintura não são alterados.
+
+**Como o sistema reconhece "mesma data e hora":** mesmo número de cesto e pelo
+menos uma data/hora igual, ao segundo, entre início da preparação, fim da
+preparação, início do banho e fim do banho. Casa primeiro quem tem mais datas
+iguais; o número interno só desempata. Último recurso, para quando o número do
+cesto foi corrigido no arquivo: 3 ou mais datas iguais sem olhar o cesto.
+O número interno sozinho **nunca** faz um registro substituir outro — registro do
+arquivo sem data e hora igual é registro novo. Repetir a operação com o mesmo
+arquivo não muda nada.
+
+> Consequência: se o mesmo cesto foi lançado no sistema com um horário e está no
+> arquivo com outro, o do sistema fica **e** o do arquivo entra — as peças contam
+> em dobro até um dos dois ser excluído em Manutenção de cestos.
+
+Passos na tela:
+
+1. escolher o arquivo `.json`;
+2. conferir o período (se o arquivo trouxer `substituicao: {de, ate}`, ele é
+   preenchido sozinho) e clicar em **Simular** — nada é alterado; aparecem os
+   totais e as listas do que será substituído, adicionado e do que só existe no
+   sistema (mantido);
+3. digitar `SUBSTITUIR` e aplicar. Antes de gravar, o navegador baixa um
+   `backup_ANTES_da_substituicao_<data>.json` com o estado atual.
+
+**Para desfazer:** na mesma tela, escolher o `backup_ANTES_...json`, o mesmo
+período, abrir **Opção avançada** e marcar "remover do período os cestos que não
+estão no arquivo". Só com essa opção marcada algo é removido; com ela, o período
+volta a ficar exatamente como estava.
+
+A operação fica registrada em Manutenção de cestos → Ver alterações. As planilhas
+(pré-banho, banho, geral) saem em ordem de data do início da preparação, porque um
+cesto adicionado tem número interno alto mas pertence a uma data antiga.
+
+Endpoint: `POST /api/admin/substituir_periodo` (administrador; `arquivo`, `de`,
+`ate`; sem `confirmacao=SUBSTITUIR` apenas simula; `remover=1` liga a remoção dos
+ausentes; `esperado="subst/adic/remov/andamento/so_sistema"` trava a aplicação se
+o quadro mudou desde a simulação).

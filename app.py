@@ -1659,6 +1659,321 @@ def api_admin_restaurar():
         db.close()
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SUBSTITUIR UM PERÍODO pelo conteúdo de um backup
+# ─────────────────────────────────────────────────────────────────────────────
+# A importação comum só ADICIONA o que não existe. Esta atualiza o histórico de um
+# período com o que está no arquivo:
+#   • cesto com a MESMA DATA E HORA no sistema e no arquivo -> fica como no arquivo;
+#   • cesto do arquivo que não existe no sistema            -> é adicionado;
+#   • cesto do sistema que não está no arquivo              -> é MANTIDO
+#     (só sai se o administrador marcar, de propósito, a opção de remover).
+# Fora do período nada é tocado, e cesto em andamento nunca é tocado.
+# Sempre se simula antes.
+_ROTULO_COL = {
+    'numero_cesto': 'Cesto', 'itens_json': 'OPs do cesto', 'processo': 'Processo', 'tipo': 'Tipo',
+    'motivo_retrabalho': 'Motivo do retrabalho', 'quantidade': 'Peças', 'ordem': 'OP',
+    'material': 'Código', 'texto_breve': 'Texto breve', 'observacao': 'Observação Prep',
+    'obs_banho': 'Observação Banho', 'operadores_prep_json': 'Operadores da prep',
+    'operador_prep': 'Operador Prep', 'n_operadores': 'Nº oper.', 'prep_inicio': 'Início Prep',
+    'prep_fim': 'Fim Prep', 'prep_minutos': 'Tempo prep', 'pausas_json': 'Paradas',
+    'banho_inicio': 'Início Banho', 'banho_fim': 'Final Banho', 'banho_minutos': 'Tempo banho',
+    'operador_banho_inicio': 'Operador Banho Início', 'operador_banho_fim': 'Operador Banho Fim',
+    'estado': 'Estado',
+}
+_COLS_JSON = ('itens_json', 'operadores_prep_json', 'pausas_json')
+# colunas que só acompanham outra (matrícula do operador, cópia antiga do nome...)
+_COLS_INTERNAS = ('operador_banho', 'oper_banho_ini_mat', 'oper_banho_fim_mat', 'pausa_acumulada_seg',
+                  'operador_prep2', 'criado_em', 'cadastrado_por')
+
+
+def _valor_do_arquivo(col, val):
+    """Converte o valor que veio do JSON para o tipo da coluna."""
+    if isinstance(col.type, DateTime):
+        if not val:
+            return None
+        try:
+            return datetime.fromisoformat(str(val).replace('Z', ''))
+        except (ValueError, TypeError):
+            return None
+    return val
+
+
+def _iguais(col, a, b):
+    """Dois valores da mesma coluna dizem a mesma coisa? (None, '' e 0 se equivalem)"""
+    if isinstance(col.type, DateTime):
+        return a == b
+    if isinstance(col.type, (Integer, Float)):
+        try:
+            return abs(float(a or 0) - float(b or 0)) < 1e-6
+        except (TypeError, ValueError):
+            return a == b
+    if col.name in _COLS_JSON:
+        try:                                 # compara o conteúdo, não os espaços do texto
+            return json.loads(a or 'null') == json.loads(b or 'null')
+        except (ValueError, TypeError):
+            pass
+    return (a or '') == (b or '')
+
+
+def _periodo_local(texto):
+    """'2026-11-09T08:00' (hora local) -> datetime UTC; None se vazio/ inválido."""
+    if not texto:
+        return None
+    try:
+        return datetime.fromisoformat(str(texto).strip()[:19]) + timedelta(hours=FUSO_LOCAL_HORAS)
+    except (ValueError, TypeError):
+        return None
+
+
+def _plano_substituicao(db, dados, de, ate, remover_ausentes=False):
+    """Compara o período [de, ate] (UTC, pelo início da preparação) do banco com o
+    do arquivo e devolve o que precisa acontecer — sem alterar nada."""
+    cols = [c for c in Card.__table__.columns if c.name != 'id']
+
+    def dentro(dt):
+        return dt is not None and de <= dt <= ate
+
+    arq_fora = arq_andamento = 0
+    arquivo = []
+    for cd in dados.get('cards', []) or []:
+        ini = _valor_do_arquivo(Card.__table__.columns['prep_inicio'], cd.get('prep_inicio'))
+        if not dentro(ini):
+            arq_fora += 1
+        elif cd.get('estado') != ST_CONCLUIDO:
+            arq_andamento += 1               # histórico é só o que está concluído
+        else:
+            arquivo.append(cd)
+    banco = db.query(Card).filter(Card.prep_inicio >= de, Card.prep_inicio <= ate).all()
+    banco_id = {c.id: c for c in banco}
+    todos_ids = {i for (i,) in db.query(Card.id).all()}
+    total_banco = len(todos_ids)
+    maior_id = max(todos_ids) if todos_ids else 0
+
+    plano = {'atualizar': [], 'inserir': [], 'remover': [], 'manter': [], 'so_sistema': [], 'iguais': 0,
+             'arquivo_no_periodo': len(arquivo), 'arquivo_fora': arq_fora,
+             'arquivo_em_andamento': arq_andamento, 'banco_no_periodo': len(banco),
+             'banco_fora': total_banco - len(banco)}
+    def comparar(atual, cd):
+        if atual.estado != ST_CONCLUIDO:
+            plano['manter'].append(atual)            # em andamento: não se mexe
+            return
+        difs = [c.name for c in cols if c.name in cd
+                and not _iguais(c, getattr(atual, c.name), _valor_do_arquivo(c, cd[c.name]))]
+        if difs:
+            plano['atualizar'].append((atual, cd, difs))
+        else:
+            plano['iguais'] += 1
+
+    # Quem é quem: "mesma data e hora". Dois registros são o mesmo cesto quando têm o
+    # mesmo número de cesto e pelo menos uma data/hora igual (ao segundo) entre início
+    # e fim da preparação, início e fim do banho. Quanto mais datas iguais, mais forte
+    # o casamento; o número interno (id) só desempata. Último recurso, para o caso de o
+    # número do cesto ter sido corrigido no arquivo: 3 ou mais datas iguais, sem olhar o
+    # cesto. Registro do arquivo sem data/hora igual a um do sistema é registro NOVO —
+    # nunca substitui outro.
+    DATAS = ('prep_inicio', 'prep_fim', 'banho_inicio', 'banho_fim')
+    tcols = Card.__table__.columns
+
+    def marcas_banco(c):
+        return [(int(c.numero_cesto or 0), n, getattr(c, n).replace(microsecond=0))
+                for n in DATAS if getattr(c, n)]
+
+    def marcas_arq(cd):
+        out = []
+        for n in DATAS:
+            v = _valor_do_arquivo(tcols[n], cd.get(n))
+            if v:
+                out.append((int(cd.get('numero_cesto') or 0), n, v.replace(microsecond=0)))
+        return out
+
+    indice = {}
+    for c in banco:
+        for m in marcas_banco(c):
+            indice.setdefault(m, []).append(c)
+            indice.setdefault(m[1:], []).append(c)          # a mesma marca, sem o cesto
+    usados, pares = set(), {}
+    pendentes = list(range(len(arquivo)))
+    # primeiro os casamentos mais fortes; por último, 3+ datas iguais sem olhar o cesto
+    for minimo, com_cesto in ((4, True), (3, True), (2, True), (1, True), (3, False)):
+        resto = []
+        for k in pendentes:
+            cd = arquivo[k]
+            votos = {}
+            for m in marcas_arq(cd):
+                for c in indice.get(m if com_cesto else m[1:], ()):
+                    if c.id not in usados:
+                        votos[c.id] = votos.get(c.id, 0) + 1
+            bons = [i for i, n in votos.items() if n >= minimo]
+            if bons:
+                esc = cd.get('id') if cd.get('id') in bons else min(bons)
+                usados.add(esc)
+                pares[k] = banco_id[esc]
+            else:
+                resto.append(k)
+        pendentes = resto
+    for k, cd in enumerate(arquivo):
+        if k in pares:
+            comparar(pares[k], cd)
+            continue
+        # Registro novo. O id do arquivo só é reaproveitado se for um "buraco" (livre e
+        # abaixo do maior id do banco). Id ocupado, acima do contador ou ausente: o banco
+        # dá um número novo — assim não se toca em nenhum outro registro nem se disputa
+        # número com um cesto que esteja sendo criado neste instante.
+        cid = cd.get('id')
+        livre = (isinstance(cid, int) and cid not in todos_ids and cid not in usados
+                 and cid <= maior_id)
+        if livre:
+            usados.add(cid)
+        plano['inserir'].append((cd, cid if livre else None))
+    # o que está no sistema e não está no arquivo: FICA (a não ser que mandem remover)
+    for c in banco:
+        if c.id in usados:
+            continue
+        if c.estado != ST_CONCLUIDO:
+            plano['manter'].append(c)
+        elif remover_ausentes:
+            plano['remover'].append(c)
+        else:
+            plano['so_sistema'].append(c)
+    return plano
+
+
+def _resumo_plano(plano, de, ate, limite=60):
+    def loc(dt):
+        return (dt - timedelta(hours=FUSO_LOCAL_HORAS)).strftime('%d/%m/%Y %H:%M') if dt else ''
+
+    def linha_card(c):
+        return {'id': c.id, 'cesto': c.numero_cesto, 'inicio': loc(c.prep_inicio),
+                'op': c.ordem or '', 'pecas': c.quantidade or 0, 'estado': c.estado}
+
+    def linha_arq(cd, cid=None):
+        # o número interno só aparece se for mesmo o que o registro vai receber;
+        # senão o banco dá um novo (a tela mostra "novo")
+        ini = _valor_do_arquivo(Card.__table__.columns['prep_inicio'], cd.get('prep_inicio'))
+        return {'id': cid or '', 'cesto': cd.get('numero_cesto'), 'inicio': loc(ini),
+                'op': cd.get('ordem') or '', 'pecas': cd.get('quantidade') or 0}
+    def rotulos(difs):
+        # nomes legíveis, sem repetir e sem as colunas internas que acompanham outra
+        vistos = []
+        for d in difs:
+            if d in _COLS_INTERNAS:
+                continue
+            r = _ROTULO_COL.get(d, d)
+            if r not in vistos:
+                vistos.append(r)
+        return vistos or ['Dados internos']
+    campos = {}
+    for _a, _cd, difs in plano['atualizar']:
+        for r in rotulos(difs):
+            campos[r] = campos.get(r, 0) + 1
+    return {
+        'periodo': {'de': loc(de), 'ate': loc(ate),
+                    'de_iso': (de - timedelta(hours=FUSO_LOCAL_HORAS)).isoformat()[:16],
+                    'ate_iso': (ate - timedelta(hours=FUSO_LOCAL_HORAS)).isoformat()[:16]},
+        'banco_no_periodo': plano['banco_no_periodo'], 'banco_fora': plano['banco_fora'],
+        'arquivo_no_periodo': plano['arquivo_no_periodo'], 'arquivo_fora': plano['arquivo_fora'],
+        'arquivo_em_andamento': plano['arquivo_em_andamento'],
+        'iguais': plano['iguais'], 'substituidos': len(plano['atualizar']),
+        'adicionados': len(plano['inserir']), 'removidos': len(plano['remover']),
+        'mantidos': len(plano['manter']), 'so_sistema': len(plano['so_sistema']),
+        'campos': sorted(campos.items(), key=lambda x: -x[1]),
+        'ex_substituidos': [dict(linha_card(a), campos=', '.join(rotulos(difs)))
+                            for a, _cd, difs in plano['atualizar'][:limite]],
+        'ex_adicionados': [linha_arq(cd, cid) for cd, cid in plano['inserir'][:limite]],
+        'ex_removidos': [linha_card(c) for c in plano['remover'][:limite]],
+        'ex_mantidos': [linha_card(c) for c in plano['manter'][:limite]],
+        'ex_so_sistema': [linha_card(c) for c in plano['so_sistema'][:limite]],
+    }
+
+
+@app.route('/api/admin/substituir_periodo', methods=['POST'])
+@login_required('admin')
+def api_admin_substituir_periodo():
+    """Atualiza o histórico de um período com o conteúdo de um backup: substitui os
+    cestos de mesma data e hora, adiciona os que faltam e mantém o resto.
+
+    Sem `confirmacao=SUBSTITUIR` só simula e devolve o que mudaria.
+    `remover=1` também tira do período o que não está no arquivo (usado para desfazer)."""
+    f = request.files.get('arquivo')
+    if not f or not f.filename:
+        return jsonify({'sucesso': False, 'erro': 'Envie o arquivo de backup (.json).'}), 400
+    try:
+        dados = json.loads(f.stream.read().decode('utf-8-sig', errors='replace'))
+        assert isinstance(dados, dict) and isinstance(dados.get('cards'), list)
+    except Exception:
+        return jsonify({'sucesso': False,
+                        'erro': 'Arquivo inválido: não é um backup deste sistema.'}), 400
+    sug = dados.get('substituicao') if isinstance(dados.get('substituicao'), dict) else {}
+    de = _periodo_local(request.form.get('de') or sug.get('de'))
+    ate = _periodo_local(request.form.get('ate') or sug.get('ate'))
+    if not de or not ate:
+        return jsonify({'sucesso': False, 'precisa_periodo': True,
+                        'erro': 'Informe o período (de / até) que será substituído.'}), 400
+    if ate < de:
+        return jsonify({'sucesso': False, 'erro': 'O fim do período é anterior ao início.'}), 400
+    aplicar = (request.form.get('confirmacao') or '').strip().upper() == 'SUBSTITUIR'
+    # por padrão NADA é removido; só com a opção marcada de propósito na tela
+    remover = (request.form.get('remover') or '') in ('1', 'true', 'on', 'sim')
+    db = Session()
+    try:
+        plano = _plano_substituicao(db, dados, de, ate, remover_ausentes=remover)
+        resumo = _resumo_plano(plano, de, ate)
+        resumo['remover_ausentes'] = remover
+        if not aplicar:
+            return jsonify({'sucesso': True, 'simulacao': True, **resumo})
+        if not plano['arquivo_no_periodo']:
+            return jsonify({'sucesso': False,
+                            'erro': 'O arquivo não tem nenhum cesto concluído neste período. '
+                                    'Nada foi alterado.'}), 400
+        # quem simulou tem de ser o mesmo quadro que será aplicado: se o banco
+        # mudou entre a simulação e o "aplicar", refaz a simulação em vez de gravar
+        esperado = request.form.get('esperado') or ''
+        agora_ = (f"{resumo['substituidos']}/{resumo['adicionados']}/{resumo['removidos']}/"
+                  f"{resumo['mantidos']}/{resumo['so_sistema']}")
+        if esperado and esperado != agora_:
+            return jsonify({'sucesso': False, 'mudou': True, **resumo,
+                            'erro': 'Os dados do sistema mudaram desde a simulação. '
+                                    'Confira o novo resumo e aplique de novo.'}), 409
+        cols = {c.name: c for c in Card.__table__.columns if c.name != 'id'}
+        for atual, cd, difs in plano['atualizar']:
+            for nome in difs:
+                setattr(atual, nome, _valor_do_arquivo(cols[nome], cd[nome]))
+        for c in plano['remover']:
+            db.delete(c)
+        for cd, cid in plano['inserir']:
+            novo = Card()
+            for nome, col in cols.items():
+                if nome in cd:
+                    setattr(novo, nome, _valor_do_arquivo(col, cd[nome]))
+            novo.estado = ST_CONCLUIDO
+            if novo.numero_cesto is None:
+                novo.numero_cesto = 0
+            if cid:
+                novo.id = cid
+            db.add(novo)
+        db.add(CardLog(card_id=0, numero_cesto=0, usuario=session.get('nome', ''),
+                       acao='substituir_periodo',
+                       mudancas_json=json.dumps([{
+                           'campo': 'Período substituído',
+                           'de': f"{resumo['periodo']['de']} → {resumo['periodo']['ate']}",
+                           'para': (f"{resumo['substituidos']} substituídos, {resumo['adicionados']} adicionados, "
+                                    f"{resumo['removidos']} removidos, {resumo['so_sistema']} mantidos sem par, "
+                                    f"{resumo['iguais']} iguais (arquivo: {f.filename})")}], ensure_ascii=False)))
+        db.commit()
+        _ajustar_sequencias(['cards'])
+        _reconciliar_pintura(db)
+        print(f"[substituir_periodo] {resumo['periodo']['de']} → {resumo['periodo']['ate']}: "
+              f"{resumo['substituidos']} substituídos, {resumo['adicionados']} adicionados, "
+              f"{resumo['removidos']} removidos — por {session.get('nome', '')}")
+        return jsonify({'sucesso': True, 'aplicado': True, **resumo})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'sucesso': False, 'erro': f'Nada foi alterado. Erro: {e}'}), 500
+    finally:
+        db.close()
+
+
 @app.route('/api/cesto/mudar_numero', methods=['POST'])
 @login_required('prep', 'banho')
 def api_cesto_mudar_numero():
@@ -2925,6 +3240,9 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
             base = db.query(Card).filter(Card.banho_fim.isnot(None)).order_by(Card.id).all()
             cards = [c for c in base if _no_periodo(c.banho_fim)
                      and (not turnos or turno_banho(c) in turnos)]
+        # ordem do tempo, não do número interno: cesto que entrou depois por
+        # substituição de período tem número alto mas pertence a uma data antiga
+        cards.sort(key=lambda c: (c.prep_inicio or c.criado_em or datetime.min, c.id))
         # resumo da pintura por cesto (uma consulta só, para o relatório inteiro)
         pint_por_card = {}
         if tipo == 'geral':

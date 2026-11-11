@@ -194,7 +194,7 @@ let CARDS=[];
 let edItens=[];
 
 /* ── Histórico de alterações (auditoria) ── */
-const _ACAO_TXT={editar:'Edição',excluir:'Exclusão'};
+const _ACAO_TXT={editar:'Edição',excluir:'Exclusão',substituir_periodo:'Atualização de período pelo backup'};
 async function abrirLog(cardId,numero){
   const m=document.getElementById('modalLog');
   document.getElementById('logTitulo').textContent=cardId?('Alterações do cesto '+numero):'Todas as alterações';
@@ -225,7 +225,7 @@ function renderLogs(logs,doCesto){
     return `<div class="log-entry">
       <div class="log-head">
         <span class="pill" style="background:${cor}1a;color:${cor};">${_ACAO_TXT[l.acao]||l.acao}</span>
-        ${doCesto?'':`<strong>Cesto ${l.numero_cesto}</strong>`}
+        ${(doCesto||l.acao==='substituir_periodo')?'':`<strong>Cesto ${l.numero_cesto}</strong>`}
         <span class="small muted"><i class="bi bi-calendar3"></i> ${l.quando}</span>
         <span class="small muted"><i class="bi bi-person"></i> ${l.usuario}</span>
       </div>
