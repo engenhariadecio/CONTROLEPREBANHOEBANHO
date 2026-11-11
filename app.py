@@ -1106,6 +1106,7 @@ def init_db():
         pintura.migrar_config()
         pintura.reconciliar_lotes()
         pintura.criar_indice_lotes()
+        pintura.congelar_velocidades()
     except Exception as e:
         print(f'[pintura] reparo: {e}')
 
@@ -1552,6 +1553,8 @@ def api_admin_backup():
             ML, MA = pintura.MODELOS['lote'], pintura.MODELOS['atividade']
             dados['pintura_lotes'] = [full(x, ML) for x in db.query(ML).all()]
             dados['pintura_atividades'] = [full(x, MA) for x in db.query(MA).all()]
+            MV = pintura.MODELOS['vel_log']
+            dados['monovia_velocidade_log'] = [full(x, MV) for x in db.query(MV).all()]
         except Exception as e:
             print(f'[backup] pintura fora do backup: {e}')
         buf = io.BytesIO(json.dumps(dados, ensure_ascii=False, indent=2).encode('utf-8'))
@@ -1629,7 +1632,8 @@ def api_admin_restaurar():
         try:
             import pintura
             for chave, modelo in (('pintura_lotes', pintura.MODELOS['lote']),
-                                  ('pintura_atividades', pintura.MODELOS['atividade'])):
+                                  ('pintura_atividades', pintura.MODELOS['atividade']),
+                                  ('monovia_velocidade_log', pintura.MODELOS['vel_log'])):
                 tabelas.append(modelo.__tablename__)
                 tem = {x.id for x in db.query(modelo.id).all()}
                 for reg in dados.get(chave, []) or []:
@@ -2532,14 +2536,13 @@ def admin_config():
         if request.form.get('vel_monovia'):
             try:
                 import pintura
-                v = float(str(request.form['vel_monovia']).replace(',', '.'))
-                if 0.1 <= v <= 60:
-                    cfgm = pintura.get_config()
-                    linhas = cfgm.get('linhas') or []
-                    if linhas:
-                        linhas[0]['velocidade_nominal_m_min'] = round(v, 2)
-                        pintura.set_config(dict(cfgm, linhas=linhas))
-                        msg += f' Velocidade da monovia: {round(v, 2)} m/min.'
+                v = round(float(str(request.form['vel_monovia']).replace(',', '.')), 2)
+                if abs(v - pintura.velocidade_atual()) >= 0.005:      # só registra se mudou
+                    ok, erro, _reg = pintura.alterar_velocidade(
+                        v, session.get('nome') or 'Administrador',
+                        session.get('usuario', ''), 'Administrador')
+                    msg += (f' Velocidade da monovia: {v:g} m/min.' if ok
+                            else f' (Velocidade não alterada: {erro})')
             except (ValueError, TypeError, ImportError):
                 msg += ' (Velocidade inválida — mantida a anterior.)'
 
@@ -2976,7 +2979,7 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
                        'Início Carga - Data', 'Início Carga - Hora',
                        'Fim Carga - Data', 'Fim Carga - Hora', 'Tempo carga (min)',
                        'Outras atividades (min)', 'Detalhe outras atividades',
-                       'Metros monovia', 'Ganchos', 'Peças/gancho',
+                       'Velocidade monovia (m/min)', 'Metros monovia', 'Ganchos', 'Peças/gancho',
                        'Tempo na linha/forno (min)',
                        'Operadores descarga', 'Nº oper. descarga',
                        'Início Descarga - Data', 'Início Descarga - Hora',
@@ -2991,7 +2994,7 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
                        'Turno pré-banho', 'Turno banho', 'Motivo retrab.']
             larg = [6, 7, 14, 14, 30, 7, 14, 14, 22, 12, 18, 9, 16, 14, 16, 14, 13, 14,
                     20, 20, 16, 14, 16, 14, 16, 14, 16,
-                    18, 20, 26, 12, 16, 14, 16, 14, 14, 16, 30, 14, 9, 12, 18,
+                    18, 20, 26, 12, 16, 14, 16, 14, 14, 16, 30, 14, 14, 9, 12, 18,
                     24, 14, 16, 14, 16, 14, 15, 8, 11, 10, 22,
                     18, 18, 18, 18, 18, 28, 28, 28, 12, 12, 18]
 
@@ -3060,7 +3063,7 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
                         _d(pt.get('carga_ini')), _h(pt.get('carga_ini')),
                         _d(pt.get('carga_fim')), _h(pt.get('carga_fim')),
                         pt.get('carga_min', ''), pt.get('outras_min', ''), pt.get('outras', ''),
-                        pt.get('metros', ''), ganchos or '',
+                        pt.get('velocidade', ''), pt.get('metros', ''), ganchos or '',
                         (round(pt.get('pecas_carregadas', 0) / ganchos, 2) if ganchos else ''),
                         tm['na_linha'] or '',
                         pt.get('descarga_operadores', ''), pt.get('n_oper_desc', ''),
@@ -3093,6 +3096,12 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
         for i, w in enumerate(larg, 1):
             ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
         ws.freeze_panes = 'A2'
+        if tipo == 'geral':
+            try:                    # registro de velocidade da monovia: só na planilha geral
+                import pintura
+                pintura.planilha_velocidade(wb, de, ate)
+            except Exception as e:
+                print(f'[excel] registro de velocidade fora da planilha: {e}')
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)

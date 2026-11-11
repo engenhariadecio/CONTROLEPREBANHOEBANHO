@@ -461,7 +461,7 @@ linhas/dia de telemetria — mas só se você ligar o agente; hoje nada é grava
 python teste_pintura.py
 ```
 
-242 verificações cobrindo os seis lançamentos, retrabalho total e parcial,
+281 verificações cobrindo os seis lançamentos, retrabalho total e parcial,
 liberação do cesto, paradas, rastreio, export, o painel da gerência e as travas
 contra cesto duplicado. Use um banco de teste (ela apaga os lotes da pintura).
 
@@ -628,7 +628,58 @@ em Pré-banho, Banho e Pintura, e do **processo inteiro** em Todos.
 
 ### Como repetir a validação
 
-    python teste_pintura.py                       # 242 verificações
+    python teste_pintura.py                       # 281 verificações
 
 A suíte roda em SQLite e em PostgreSQL (`DATABASE_URL=postgresql://...`). Use um
 banco de teste: ela apaga os lotes da pintura ao começar e ao terminar.
+
+## v18 — quadrados na pintura e registro de velocidade
+
+### Pré-banho
+
+O olho de detalhes fica **dentro do quadrado**, no canto superior esquerdo (onde
+ficava o selo com a quantidade de operadores). O botão "Detalhes" de baixo saiu.
+Tocar no olho abre os detalhes; tocar no resto do quadrado abre o cesto.
+
+### Pintura em quadrados
+
+A tela mostra os cestos em quadrados, iguais aos do pré-banho, em cinco seções:
+Aguardando pintura, Carregando monovia, Carregando estacionária, Preparação para
+pintura e Armazenamento. Cada quadrado traz o número (ou `S/C`), a situação, a
+OP, as peças e o tempo. As abas de cima filtram por seção.
+
+- **tocar num cesto da fila** abre a janela para destinar: Monovia e
+  Estacionária em destaque; Preparação, Palete, Arara e Retrabalho logo abaixo;
+- **tocar num cesto em atividade** abre o cronômetro: Lançar parada/Retomar,
+  Finalizar, Mudar para monovia/estacionária e Ver detalhes;
+- o **olho** abre só os detalhes e o histórico.
+
+O módulo de descarga (desligado) continua em cards.
+
+### Velocidade da monovia
+
+- o campo "Monovia — sem leitura" saiu. Fica a **velocidade configurada**, com o
+  botão **Alterar**, que pede a nova velocidade e **o nome de quem está
+  alterando**. A barra mostra quem fez a última alteração e quando;
+- cada alteração (pela produção ou pelo administrador) vai para a tabela
+  `monovia_velocidade_log`: data, hora, quem, login, de quanto para quanto;
+- cada carga na monovia grava a velocidade do **instante em que começou**
+  (`atividades_pintura.vel_m_min`). Trocar a velocidade no meio **não** muda a
+  carga em andamento: os metros dela continuam `tempo × velocidade do início`;
+- ao trocar uma carga de estacionária para monovia no meio, vale a velocidade
+  que estava configurada quando a carga começou (pelo histórico);
+- na primeira subida, as cargas antigas recebem a velocidade vigente
+  (`congelar_velocidades`), para que alterações futuras não mudem o passado.
+
+Endpoints: `GET/POST /api/pintura/velocidade` (perfil pintura) e
+`GET /api/download/velocidade` (só administrador).
+
+### Onde o registro aparece
+
+| Lugar | O que mostra |
+| --- | --- |
+| Dashboard do administrador → **Excel velocidade monovia** | abas "Alterações de velocidade" e "Velocidade por cesto" |
+| Administrador → Monovia | últimas alterações + botão de baixar |
+| **Excel geral** | coluna "Velocidade monovia (m/min)" por cesto + as duas abas |
+| Excel pintura | coluna "Velocidade monovia (m/min)" + as duas abas |
+| Painel da gerência | **nada** — nem velocidade, nem quem alterou |

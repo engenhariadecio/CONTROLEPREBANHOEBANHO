@@ -34,6 +34,21 @@
   </table></div>
 </div>
 
+{% set eh_admin = 'admin' in (session.get('perfis') or [session.get('perfil')]) %}
+{% if eh_admin %}{# o registro de velocidade é só do administrador #}
+<div class="panel" style="margin-top:16px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+    <div class="section-title" style="margin:0;"><i class="bi bi-speedometer2"></i>Registro de velocidade da monovia</div>
+    <a href="/api/download/velocidade" class="btn btn-brand btn-sm"><i class="bi bi-file-earmark-excel"></i>Baixar registro (Excel)</a>
+  </div>
+  <div class="hint" style="margin-bottom:10px;">Cada alteração feita pela produção ou pelo administrador. A planilha traz também a velocidade de cada cesto carregado na monovia.</div>
+  <div class="table-wrap"><table class="tbl">
+    <thead><tr><th>Data</th><th>Hora</th><th>Quem alterou</th><th>Onde</th><th>De (m/min)</th><th>Para (m/min)</th></tr></thead>
+    <tbody id="tbVel"><tr><td colspan="6" class="muted small">Carregando…</td></tr></tbody>
+  </table></div>
+</div>
+{% endif %}
+
 <!-- Modal justificar parada -->
 <div class="modal-overlay" id="modalPar">
   <div class="modal" style="max-width:440px;">
@@ -94,13 +109,26 @@
 {% block extra_js %}
 <script>
 let chart=null, hist=[];
+function fmtVel(v){return Number(v).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:2});}
+function esc(v){return String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+async function carregarVelocidades(){
+  if(!document.getElementById('tbVel'))return;      // só o administrador tem o painel
+  let j;
+  try{const r=await fetch('/api/pintura/velocidade');if(!r.ok)return;j=await r.json();}catch(_){return;}
+  const l=j.alteracoes||[];
+  tbVel.innerHTML=l.length?l.map(a=>`<tr><td class="mono small">${a.data}</td><td class="mono small">${a.hora}</td>
+      <td><strong>${esc(a.nome)||'—'}</strong></td><td><span class="small">${esc(a.origem)||'—'}</span></td>
+      <td class="mono">${fmtVel(a.de)}</td><td class="mono"><strong>${fmtVel(a.para)}</strong></td></tr>`).join('')
+    :'<tr><td colspan="6" class="muted small">Nenhuma alteração registrada. Velocidade atual: '+fmtVel(j.velocidade)+' m/min.</td></tr>';
+}
+carregarVelocidades();setInterval(carregarVelocidades,15000);
 
 async function atualizar(){
   const j=await (await fetch('/api/monovia/estado')).json();
   mvNome.textContent=j.nome?('— '+j.nome):'';
   const off = j.modo==='sem_dados'||j.modo==='desatualizado';
   vVel.textContent = off?'—':(j.velocidade??0).toFixed(2);
-  vNom.textContent = (j.velocidade_nominal??1.4).toFixed(1);
+  vNom.textContent = fmtVel(j.velocidade_nominal??1.4);
   vSit.textContent = off?'SEM SINAL':(j.parada?'PARADA':'RODANDO');
   vSitSub.textContent = j.parada_atual?('há '+Math.floor(j.parada_atual.segundos/60)+' min'):'';
   vIdade.textContent = j.idade_seg==null?'—':(j.idade_seg<90?Math.round(j.idade_seg)+'s':Math.round(j.idade_seg/60)+'min');

@@ -3,8 +3,15 @@
 {% block content %}
 
 <div class="mv-bar" id="mvBar">
-  <div class="mv-item"><i class="bi bi-speedometer2"></i><div><span class="mv-lbl">Monovia</span><strong id="mvVel">—</strong></div></div>
-  <div class="mv-item"><i class="bi bi-rulers"></i><div><span class="mv-lbl">Velocidade configurada</span><strong id="mvNom">—</strong></div></div>
+  <div class="mv-item mv-vel">
+    <i class="bi bi-speedometer2"></i>
+    <div>
+      <span class="mv-lbl">Velocidade configurada da monovia</span>
+      <strong id="mvNom">—</strong>
+      <span class="mv-quem" id="mvQuem"></span>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="mvAlterar" onclick="abrirVelocidade()"><i class="bi bi-pencil-fill"></i>Alterar</button>
+  </div>
   <button class="btn btn-aqua mv-novo" onclick="abrirOpNova()"><i class="bi bi-file-earmark-plus-fill"></i>Carregar OP nova</button>
 </div>
 
@@ -20,28 +27,28 @@
 
 <div class="pint-cols" id="pintCols">
   <div id="colFila">
-    <div class="section-title" style="margin-bottom:6px;"><i class="bi bi-list-ol"></i>Fila de espera da pintura</div>
-    <p class="hint" style="margin:0 0 12px;">Cestos que saíram do banho. Escolha se vai para a <strong>monovia</strong> ou para a <strong>estacionária</strong>.</p>
-    <div id="listaFila" class="flow-list"><div class="muted small">Carregando…</div></div>
+    <div class="section-title pint-sec"><i class="bi bi-list-ol"></i>Aguardando pintura</div>
+    <p class="hint" style="margin:0 0 12px;">Cestos que saíram do banho. Toque no cesto para enviar à <strong>monovia</strong> ou à <strong>estacionária</strong> · <i class="bi bi-eye-fill"></i> para ver os detalhes.</p>
+    <div id="listaFila" class="cestos-grid pint"><div class="muted small">Carregando…</div></div>
   </div>
   <div id="colMv">
-    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-arrow-left-right"></i>Carregando monovia</div>
-    <div id="listaMv" class="flow-list"><div class="muted small">Carregando…</div></div>
+    <div class="section-title pint-sec"><i class="bi bi-arrow-left-right"></i>Carregando monovia</div>
+    <div id="listaMv" class="cestos-grid pint"><div class="muted small">Carregando…</div></div>
   </div>
   <div id="colEst">
-    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-house-gear-fill"></i>Carregando estacionária</div>
-    <div id="listaEst" class="flow-list"><div class="muted small">Carregando…</div></div>
+    <div class="section-title pint-sec"><i class="bi bi-house-gear-fill"></i>Carregando estacionária</div>
+    <div id="listaEst" class="cestos-grid pint"><div class="muted small">Carregando…</div></div>
   </div>
   <div id="colPrep">
-    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-brush-fill"></i>Preparação para pintura</div>
-    <div id="listaPrep" class="flow-list"><div class="muted small">Carregando…</div></div>
+    <div class="section-title pint-sec"><i class="bi bi-brush-fill"></i>Preparação para pintura</div>
+    <div id="listaPrep" class="cestos-grid pint"><div class="muted small">Carregando…</div></div>
   </div>
   <div id="colArm">
-    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-box2-fill"></i>Armazenamento</div>
-    <div id="listaArm" class="flow-list"><div class="muted small">Carregando…</div></div>
+    <div class="section-title pint-sec"><i class="bi bi-box2-fill"></i>Armazenamento</div>
+    <div id="listaArm" class="cestos-grid pint"><div class="muted small">Carregando…</div></div>
   </div>
   <div id="colDesc">
-    <div class="section-title" style="margin-bottom:14px;"><i class="bi bi-box-arrow-down"></i>Descarregamento</div>
+    <div class="section-title pint-sec"><i class="bi bi-box-arrow-down"></i>Descarregamento</div>
     <div id="listaDesc" class="flow-list"><div class="muted small">Carregando…</div></div>
   </div>
 </div>
@@ -58,7 +65,12 @@
       <!-- VIEW: menu de ações -->
       <div id="vMenu" style="display:none;">
         <div id="mResumo" class="lote-resumo"></div>
-        <label class="label" style="margin-top:14px;">O que será feito com estas peças?</label>
+        <label class="label" style="margin-top:14px;">Enviar para</label>
+        <div class="dest-grid">
+          <button class="btn btn-aqua dest-btn" id="btnMonovia" onclick="escolherAcao('MONOVIA')"><i class="bi bi-arrow-left-right"></i>Monovia</button>
+          <button class="btn btn-ghost dest-btn" id="btnEstacionaria" onclick="escolherAcao('ESTACIONARIA')"><i class="bi bi-house-gear-fill"></i>Estacionária</button>
+        </div>
+        <label class="label" style="margin-top:18px;">Outras opções</label>
         <div class="acao-grid">
           <button class="acao-btn" onclick="escolherAcao('PREPARACAO')"><i class="bi bi-brush-fill"></i><span>Preparação para pintura</span></button>
           <button class="acao-btn" onclick="armazenar('Palete')"><i class="bi bi-box2-fill"></i><span>Armazenamento palete</span></button>
@@ -103,6 +115,7 @@
             <button class="btn btn-aqua" onclick="iniciarAtividade()"><i class="bi bi-play-fill"></i>Iniciar agora</button>
           </div>
           <p class="hint" style="margin-top:12px;">Ao iniciar agora, a atividade fica no seu nome.</p>
+          <button class="btn btn-ghost btn-sm btn-block" style="margin-top:6px;" onclick="voltarDoOper()"><i class="bi bi-arrow-left"></i>Voltar</button>
         </div>
         <div id="opSel" style="display:none;margin-top:18px;">
           <label class="label">Operadores <span class="filtro-hint" id="opCount">— 0 de 1</span></label>
@@ -120,16 +133,19 @@
         </div>
       </div>
 
-      <!-- VIEW: cronômetro -->
+      <!-- VIEW: cronômetro (cesto em atividade) -->
       <div id="vCron" style="display:none;text-align:center;">
         <div class="cron-status" id="cronRot"></div>
         <div class="cron-big" id="cronBig">00:00</div>
         <div class="cron-status" id="cronSt"></div>
-        <div style="display:flex;gap:10px;margin-top:22px;">
+        <div id="cronResumo" class="lote-resumo" style="text-align:left;margin-top:14px;"></div>
+        <div style="display:flex;gap:10px;margin-top:18px;">
           <button class="btn btn-ghost" style="flex:1;" id="btnPausa" onclick="pedirPausa()"></button>
-          <button class="btn btn-primary" style="flex:1;" onclick="pedirFinalizar()"><i class="bi bi-stop-fill"></i>Finalizar</button>
+          <button class="btn btn-stop" style="flex:1;" id="btnFinalizar" onclick="pedirFinalizar()"><i class="bi bi-stop-circle-fill"></i>Finalizar</button>
         </div>
-        <p class="hint" style="margin-top:14px;">Use <strong>Lançar parada</strong> para interrupções (não conta no tempo).</p>
+        <button class="btn btn-ghost btn-sm btn-block" style="margin-top:12px;display:none;" id="btnTroca" onclick="trocarDestinoAtual()"></button>
+        <button class="btn btn-ghost btn-sm btn-block" style="margin-top:8px;" onclick="verDetalhes()"><i class="bi bi-eye"></i>Ver detalhes e histórico</button>
+        <p class="hint" style="margin-top:12px;">Use <strong>Lançar parada</strong> para interrupções (não conta no tempo).</p>
       </div>
 
       <!-- VIEW: finalizar -->
@@ -175,7 +191,7 @@
           <textarea id="fimObs" class="input" rows="3" placeholder="Opcional"></textarea>
         </div>
         <div style="display:flex;gap:10px;margin-top:18px;">
-          <button class="btn btn-ghost" style="flex:0 0 auto;" onclick="fecharModal()">Cancelar</button>
+          <button class="btn btn-ghost" style="flex:0 0 auto;" onclick="voltarDoFim()"><i class="bi bi-arrow-left"></i>Voltar</button>
           <button class="btn btn-stop" style="flex:1;" onclick="confirmarFinalizar()"><i class="bi bi-check-lg"></i>Confirmar</button>
         </div>
       </div>
@@ -287,6 +303,34 @@
   </div>
 </div>
 
+<!-- Modal: alterar a velocidade da monovia -->
+<div class="modal-overlay" id="modalVel">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-head">
+      <h5><i class="bi bi-speedometer2"></i>Velocidade da monovia</h5>
+      <button class="modal-x" onclick="fecharVelocidade()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info"><i class="bi bi-info-circle"></i><span>Velocidade atual: <strong id="velAtual">—</strong>. Os cestos que <strong>já estão sendo carregados</strong> continuam com a velocidade em que começaram; a nova vale para os próximos.</span></div>
+      <div class="field">
+        <label class="label" for="velNova">Nova velocidade (m/min)</label>
+        <input id="velNova" class="input" type="text" inputmode="decimal" autocomplete="off" placeholder="Ex: 1,6">
+      </div>
+      <div class="field" style="margin-bottom:6px;">
+        <label class="label" for="velNome">Quem está alterando</label>
+        <input id="velNome" class="input" list="velNomes" autocomplete="off" placeholder="Digite ou escolha o seu nome">
+        <datalist id="velNomes"></datalist>
+      </div>
+      <div id="velErro" class="hint txt-err" style="min-height:18px;"></div>
+      <div style="display:flex;gap:10px;margin-top:10px;">
+        <button class="btn btn-ghost" style="flex:0 0 auto;" onclick="fecharVelocidade()">Cancelar</button>
+        <button class="btn btn-aqua" style="flex:1;" id="velOk" onclick="salvarVelocidade()"><i class="bi bi-check-lg"></i>Salvar velocidade</button>
+      </div>
+      <div id="velHist" style="margin-top:18px;"></div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_css %}
@@ -297,10 +341,37 @@
 .mv-item i{font-size:19px;opacity:.5;}
 .mv-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.5px;opacity:.6;display:block;}
 .mv-item strong{font-family:'JetBrains Mono',monospace;font-size:16px;display:block;line-height:1.2;}
-.mv-bar.parado .mv-item{border-color:rgba(214,60,60,.35);} .mv-bar.parado #mvVel{color:#d63c3c;}
+.mv-vel{gap:14px;}
+.mv-quem{display:block;font-size:11px;opacity:.65;margin-top:1px;}
 .mv-novo{margin-left:auto;flex:0 0 auto;}
-.pint-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
-@media(max-width:1200px){.pint-cols{grid-template-columns:1fr;}}
+/* Cestos em quadrados, como no pré-banho: uma seção por situação */
+.pint-cols{display:flex;flex-direction:column;gap:24px;}
+.pint-sec{margin-bottom:10px;}
+.cestos-grid.pint{grid-template-columns:repeat(auto-fill,minmax(136px,1fr));}
+.cestos-grid.pint .cesto{aspect-ratio:1/1;padding:22px 6px 8px;}
+.cestos-grid.pint .cesto-num{font-size:2.1rem;}
+.cesto-sub{font-size:.68rem;font-weight:700;color:var(--slate);margin-top:3px;max-width:94%;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pint-vazio{grid-column:1/-1;padding:14px 16px;border:1.5px dashed var(--line);border-radius:14px;
+  color:var(--slate);font-size:.86rem;font-weight:600;}
+/* cor da faixa e do rótulo por situação */
+.cesto.pt{background:#fff;}
+.cesto.pt .cesto-num{color:var(--aco-900);}
+.cesto.pt-fila::before{background:#D97706;opacity:1;} .cesto.pt-fila .cesto-tag,.cesto.pt-fila .cesto-lock{color:#B45309;}
+.cesto.pt-mv::before{background:#0E9AA7;opacity:1;}   .cesto.pt-mv .cesto-tag,.cesto.pt-mv .cesto-lock{color:#0E7C86;}
+.cesto.pt-est::before{background:#1668C0;opacity:1;}  .cesto.pt-est .cesto-tag,.cesto.pt-est .cesto-lock{color:#1668C0;}
+.cesto.pt-prep::before{background:#8B5CF6;opacity:1;} .cesto.pt-prep .cesto-tag,.cesto.pt-prep .cesto-lock{color:#6D43D9;}
+.cesto.pt-arm::before{background:#64748b;opacity:1;}  .cesto.pt-arm .cesto-tag,.cesto.pt-arm .cesto-lock{color:#475569;}
+.cesto.pt.is-paused::before{background:var(--red);} .cesto.pt.is-paused .cesto-tag,.cesto.pt.is-paused .cesto-lock{color:var(--red);}
+.cesto.pt-sc .cesto-num{font-size:1.6rem;color:#64748b;}
+.cesto.pt:hover{border-color:var(--aqua);transform:translateY(-2px);box-shadow:var(--shadow);}
+.cesto.pt:active{transform:scale(.96);}
+.cesto .selo-retrab{position:absolute;bottom:7px;right:8px;background:var(--red);color:#fff;font-size:.6rem;
+  font-weight:800;padding:2px 7px;border-radius:20px;}
+.dest-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.dest-btn{min-height:62px;font-size:1.02rem;font-weight:800;justify-content:center;}
+.vel-hist-item{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:.8rem;}
+.vel-hist-item:last-child{border-bottom:0;}
 .aba-cnt{display:inline-block;min-width:20px;padding:1px 6px;margin-left:6px;border-radius:999px;
   background:rgba(15,61,92,.10);font-size:11px;font-weight:800;font-family:'JetBrains Mono',monospace;}
 .layout-btn.active .aba-cnt{background:rgba(255,255,255,.25);}
@@ -369,7 +440,6 @@ function setLayout(m){
     const mostra=(m==='todos'||m===k)&&(k!=='desc'||temD);
     document.getElementById(col).style.display=mostra?'':'none';
   });
-  pintCols.style.gridTemplateColumns=(m==='todos')?'':'1fr';
 }
 
 /* ── carregar painel ── */
@@ -381,11 +451,9 @@ async function carregar(){
     j=await r.json();
   }catch(_){return;}
   DADOS=j;
-  const mv=j.monovia||{};
-  semTelemetria = !mv || mv.modo==='sem_dados' || mv.modo==='desatualizado';
-  mvBar.classList.toggle('parado', !!(mv.parada&&!semTelemetria));
-  mvVel.textContent = semTelemetria?'sem leitura':(mv.velocidade.toFixed(2)+' m/min');
-  mvNom.textContent = (j.velocidade_nominal||1.4).toFixed(1)+' m/min';
+  mvNom.textContent = fmtVel(j.velocidade_nominal||1.4)+' m/min';
+  const alt=j.velocidade_alteracao;
+  mvQuem.textContent = alt ? ('alterada por '+alt.nome+' em '+alt.data.slice(0,5)+' às '+alt.hora.slice(0,5)) : '';
 
   const GRUPO={MONOVIA:'Mv',ESTACIONARIA:'Est',OP_NOVA:'Mv',
                PREPARACAO:'Prep',ARMAZENAMENTO:'Arm'};
@@ -400,8 +468,8 @@ async function carregar(){
                Prep:'Nenhuma preparação em andamento.',Arm:'Nenhum armazenamento em andamento.'};
   Object.keys(buckets).forEach(g=>{
     document.getElementById('lista'+g).innerHTML=buckets[g].length
-      ? buckets[g].map(cardAtividade).join('')
-      : `<div class="empty panel"><i class="bi bi-hourglass"></i>${VAZIO[g]}</div>`;
+      ? buckets[g].map(l=>tileAtividade(l,g)).join('')
+      : `<div class="pint-vazio">${VAZIO[g]}</div>`;
   });
   cntMv.textContent=buckets.Mv.length; cntEst.textContent=buckets.Est.length;
   cntPrep.textContent=buckets.Prep.length; cntArm.textContent=buckets.Arm.length;
@@ -418,44 +486,66 @@ async function carregar(){
   // esperam a mesma coisa, então competem pela mesma atenção do operador.
   const fila=[...(j.cestos||[]),...(j.sem_cesto||[])]
     .sort((a,b)=>(b.esperando_seg||0)-(a.esperando_seg||0));
-  listaFila.innerHTML=fila.length?fila.map((l,i)=>cardLote(l,l.com_cesto,i+1)).join('')
-    :'<div class="empty panel"><i class="bi bi-inbox"></i>Fila vazia — nenhum cesto aguardando pintura.</div>';
+  listaFila.innerHTML=fila.length?fila.map(tileLote).join('')
+    :'<div class="pint-vazio">Fila vazia — nenhum cesto aguardando pintura.</div>';
 
   cntFila.textContent=fila.length;
   cntDesc.textContent=prontos.length+naLinha.length;
 }
 
-function cardAtividade(l){
+/* ── quadrados (iguais aos do pré-banho) ── */
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function fmtVel(v){return Number(v).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:2});}
+function opTxt(l){return l.n_itens>1?(l.n_itens+' OPs'):('OP '+(l.ordem||'—'));}
+function olho(id,rot){return `<button class="cesto-olho" onclick="abrirLote(${id},true)" title="Ver detalhes" aria-label="Ver detalhes de ${rot}"><i class="bi bi-eye-fill"></i></button>`;}
+
+/* Cesto (ou lote sem cesto) aguardando pintura: tocar abre a janela para destinar. */
+function tileLote(l){
+  const sc=!l.com_cesto;
+  const onde=sc?(/^arara/i.test(l.local||'')?'Arara':(/^palete/i.test(l.local||'')?'Palete':'Sem cesto')):'Aguardando';
+  const rot=sc?('lote sem cesto '+l.id):('cesto '+l.numero_cesto);
+  return `<div class="cesto-cel" data-lote="${l.id}">
+    <button class="cesto ocupado pt pt-fila${sc?' pt-sc':''}" onclick="abrirLote(${l.id})" aria-label="Destinar ${rot}">
+      <i class="bi bi-hourglass-split cesto-lock"></i>
+      <span class="cesto-num">${sc?'S/C':l.numero_cesto}</span>
+      <span class="cesto-tag">${onde}</span>
+      <span class="cesto-sub">${esc(opTxt(l))} · ${l.quantidade} pç</span>
+      <span class="cesto-mini-cron lote-cron" data-suf="0" data-ini="${l.criado_iso}">${fmtTempo(l.esperando_seg)}</span>
+      ${l.tipo==='Retrabalho'?'<span class="selo-retrab">Retrabalho</span>':''}
+    </button>${olho(l.id,rot)}</div>`;
+}
+
+/* Cesto em atividade (carga, preparação, armazenamento): tocar abre o cronômetro. */
+function tileAtividade(l,g){
   const a=l.atividade||{};
-  const ehCarga=(a.tipo==='MONOVIA'||a.tipo==='ESTACIONARIA'||a.tipo==='OP_NOVA');
-  const naEst=(a.tipo==='ESTACIONARIA')||(a.tipo==='OP_NOVA'&&(a.subtipo||'')==='estacionaria');
-  const outro=naEst?'MONOVIA':'ESTACIONARIA';
-  const outroLbl=naEst?'monovia':'estacionária';
-  return `<div class="flow-card live ${a.pausado?'is-paused':''}">
-    <div class="flow-left">
-      <div class="cesto-badge ${l.numero_cesto?'':'sem'}">${l.numero_cesto||'S/C'}</div>
-      <div class="flow-info">
-        <div class="top">${a.tipo_lbl||''} ${a.detalhe?`<span class="pill pill-normal">${a.detalhe}</span>`:''}</div>
-        <div class="ln">${l.n_itens>1?('<strong>'+l.n_itens+' OPs</strong>'):('OP <strong>'+(l.ordem||'—')+'</strong>')} · ${l.quantidade} pç · ${l.area_total} m²</div>
-        <div class="ln muted" style="font-size:12px;">${a.n_operadores||1} oper. · ${a.operadores_txt||'—'}</div>
-        <div class="cron cron-banho ativ-cron" data-a='${JSON.stringify(a).replace(/'/g,"&#39;")}'>${fmtTempo(segAtiv(a))}${a.pausado?'<span class="cron-suf">pausado</span>':''}</div>
-      </div>
-    </div>
-    <div class="flow-cta-wrap">
-      <button class="btn btn-ghost flow-cta" onclick="abrirAtividade(${l.id},'pausa')"><i class="bi ${a.pausado?'bi-play-fill':'bi-pause-fill'}"></i>${a.pausado?'Retomar':'Lançar parada'}</button>
-      <button class="btn btn-stop flow-cta" onclick="abrirAtividade(${l.id},'fim')"><i class="bi bi-stop-circle-fill"></i>Finalizar</button>
-      ${ehCarga?`<button class="btn-detalhes" onclick="corrigirDestino(${a.id},'${outro}','${outroLbl}')"><i class="bi bi-arrow-left-right"></i>Mudar para ${outroLbl}</button>`:''}
-      <button class="btn-detalhes" onclick="abrirLote(${l.id},true)"><i class="bi bi-eye"></i>Ver detalhes</button>
-    </div>
-  </div>`;
+  const cls={Mv:'pt-mv',Est:'pt-est',Prep:'pt-prep',Arm:'pt-arm'}[g]||'pt-prep';
+  const tag=a.pausado?'Pausado':({Mv:'Monovia',Est:'Estacionária',
+    Prep:(a.tipo==='PREPARACAO'?(a.detalhe||'Preparação'):(a.tipo_lbl||'Em atividade')),Arm:(a.detalhe||'Armazenamento')}[g]||'');
+  const num=(l.com_cesto&&l.numero_cesto)?l.numero_cesto:'S/C';
+  const rot=(num==='S/C')?('lote sem cesto '+l.id):('cesto '+num);
+  return `<div class="cesto-cel" data-lote="${l.id}">
+    <button class="cesto ocupado pt ${cls}${a.pausado?' is-paused':''}${num==='S/C'?' pt-sc':''}" onclick="abrirAtividade(${l.id})" aria-label="Abrir ${rot}">
+      <i class="bi ${a.pausado?'bi-pause-circle-fill':'bi-play-circle-fill'} cesto-lock"></i>
+      <span class="cesto-num">${num}</span>
+      <span class="cesto-tag">${esc(tag)}</span>
+      <span class="cesto-sub">${esc(opTxt(l))} · ${l.quantidade} pç</span>
+      <span class="cesto-mini-cron ativ-cron" data-suf="0" data-a='${JSON.stringify(a).replace(/'/g,"&#39;")}'>${fmtTempo(segAtiv(a))}</span>
+    </button>${olho(l.id,rot)}</div>`;
 }
 
 async function corrigirDestino(ativId,tipo,lbl){
   if(!confirm(`Mudar o destino desta carga para ${lbl}?\n\n`
-    +`O cronômetro e os operadores continuam. Use só para corrigir um engano.`))return;
+    +`O cronômetro e os operadores continuam. Use só para corrigir um engano.`))return false;
   const j=await postJSON('/api/pintura/atividade/destino',{id:ativId,tipo,motivo:'corrigido pelo operador'});
   if(!j.sucesso)alert(j.erro||'Erro.');
   await carregar();
+  return !!j.sucesso;
+}
+async function trocarDestinoAtual(){
+  if(!ativAtual)return;
+  const naEst=(ativAtual.tipo==='ESTACIONARIA')||(ativAtual.tipo==='OP_NOVA'&&(ativAtual.subtipo||'')==='estacionaria');
+  const feito=await corrigirDestino(ativAtual.id,naEst?'MONOVIA':'ESTACIONARIA',naEst?'monovia':'estacionária');
+  if(feito)fecharModal();
 }
 
 function cardDescarga(l,pronto){
@@ -480,31 +570,10 @@ function cardDescarga(l,pronto){
   </div>`;
 }
 
-function cardLote(l,comCesto,pos){
-  return `<div class="flow-card fila-card lote-card">
-    <div class="flow-left">
-      <div class="cesto-badge ${comCesto?'':'sem'}">${comCesto?l.numero_cesto:'S/C'}</div>
-      <div class="flow-info">
-        <div class="top">${l.processo||'Sem processo'} <span class="pill ${l.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${l.tipo}</span>${pos?`<span class="pos-fila">${pos}º na fila</span>`:''}</div>
-        <div class="ln">${l.n_itens>1?('<strong>'+l.n_itens+' OPs</strong>'):('OP <strong>'+(l.ordem||'—')+'</strong>')} · ${l.quantidade} pç</div>
-        <div class="ln muted" style="font-size:12px;">${l.area_total} m² · ${l.peso_total} kg${!comCesto&&l.numero_cesto?` · veio do cesto <strong>${l.numero_cesto}</strong>`:''}</div>
-        ${!comCesto&&l.local?`<div class="ln muted" style="font-size:12px;"><i class="bi bi-geo-alt"></i> ${l.local}</div>`:''}
-        <div class="cron cron-espera lote-cron" data-ini="${l.criado_iso}">${fmtTempo(l.esperando_seg)}<span class="cron-suf">aguardando</span></div>
-      </div>
-    </div>
-    <div class="flow-cta-wrap">
-      <div class="destino-lbl">Enviar para:</div>
-      <button class="btn btn-aqua flow-cta" onclick="acaoDireta(${l.id},'MONOVIA')"><i class="bi bi-arrow-left-right"></i>Monovia</button>
-      <button class="btn btn-ghost flow-cta" onclick="acaoDireta(${l.id},'ESTACIONARIA')"><i class="bi bi-house-gear-fill"></i>Estacionária</button>
-      <button class="btn-detalhes" onclick="abrirLote(${l.id})"><i class="bi bi-three-dots"></i>Outras opções</button>
-      <button class="btn-detalhes" onclick="abrirLote(${l.id},true)"><i class="bi bi-eye"></i>Ver detalhes</button>
-    </div>
-  </div>`;
-}
-
 function tick(){
   document.querySelectorAll('.ativ-cron[data-a]').forEach(e=>{
-    try{const a=JSON.parse(e.dataset.a);e.innerHTML=fmtTempo(segAtiv(a))+(a.pausado?'<span class="cron-suf">pausado</span>':'');}catch(_){}
+    try{const a=JSON.parse(e.dataset.a);
+      e.innerHTML=fmtTempo(segAtiv(a))+((a.pausado&&e.dataset.suf!=='0')?'<span class="cron-suf">pausado</span>':'');}catch(_){}
   });
   document.querySelectorAll('.linha-cron[data-ini]').forEach(e=>{
     if(!e.dataset.ini)return;
@@ -513,7 +582,8 @@ function tick(){
   });
   document.querySelectorAll('.lote-cron[data-ini]').forEach(e=>{
     if(!e.dataset.ini)return;
-    e.innerHTML=fmtTempo(tempoUtilSegundos(new Date(e.dataset.ini).getTime(),agoraServidor()))+'<span class="cron-suf">aguardando</span>';
+    e.innerHTML=fmtTempo(tempoUtilSegundos(new Date(e.dataset.ini).getTime(),agoraServidor()))
+      +(e.dataset.suf==='0'?'':'<span class="cron-suf">aguardando</span>');
   });
   if(_viewAtual==='cron'&&ativAtual&&!ativAtual.pausado)cronBig.textContent=fmtTempo(segAtiv(ativAtual));
 }
@@ -532,14 +602,23 @@ function fecharModal(){
 }
 modal.addEventListener('click',e=>{if(e.target.id==='modal')fecharModal();});
 
+function tituloLote(l){return l.numero_cesto&&l.com_cesto ? ('Cesto '+l.numero_cesto) : ('Lote #'+l.id+' (sem cesto)');}
+function preencherMenu(l){
+  mTitulo.textContent=tituloLote(l);
+  mResumo.innerHTML=`<div><strong>${l.quantidade}</strong> peças · <strong>${l.area_total}</strong> m² · <strong>${l.peso_total}</strong> kg</div>
+    <div class="small muted" style="margin-top:4px;">${esc(opTxt(l))} · ${esc(l.processo)||'sem processo'}${l.tipo==='Retrabalho'?' · <strong>Retrabalho</strong>':''}${l.numero_cesto&&!l.com_cesto?` · veio do cesto ${l.numero_cesto}`:''}</div>
+    ${l.local?`<div class="small muted" style="margin-top:4px;"><i class="bi bi-geo-alt"></i> ${esc(l.local)}</div>`:''}
+    <div class="small muted" style="margin-top:4px;"><i class="bi bi-hourglass-split"></i> aguardando há ${fmtTempo(l.esperando_seg||0)}</div>`;
+}
+/* Tocar no quadrado da fila abre esta janela: para onde vão as peças. */
 async function abrirLote(id,detalhes){
   const l=await buscarLote(id);if(!l)return;
+  if(!detalhes&&l.estado!=='AGUARDANDO'){
+    alert('Este lote já foi iniciado em outro aparelho.');carregar();return;}
   loteAtual=l;ativAtual=null;limparOpNova();
+  subOutro.value='';subJust.value='';
   _detDireto=!!detalhes;
-  mTitulo.textContent = l.numero_cesto&&l.com_cesto ? ('Cesto '+l.numero_cesto) : ('Lote #'+l.id+' (sem cesto)');
-  mResumo.innerHTML=`<div><strong>${l.quantidade}</strong> peças · <strong>${l.area_total}</strong> m² · <strong>${l.peso_total}</strong> kg</div>
-    <div class="small muted" style="margin-top:4px;">${l.n_itens} OP(s) · ${l.processo||'sem processo'}${l.numero_cesto&&!l.com_cesto?` · veio do cesto ${l.numero_cesto}`:''}</div>
-    ${l.local?`<div class="small muted" style="margin-top:4px;"><i class="bi bi-geo-alt"></i> ${l.local}</div>`:''}`;
+  preencherMenu(l);
   modal.classList.add('open');
   mostrarView(detalhes?'det':'menu');
   if(detalhes)renderDetalhes(l);
@@ -570,14 +649,24 @@ async function acaoDireta(id,tipo){
 
 let _detDireto=false;
 function verDetalhes(){_detDireto=false;mostrarView('det');renderDetalhes(loteAtual);}
-function sairDetalhes(){if(_detDireto)fecharModal();else mostrarView('menu');}
+function sairDetalhes(){
+  if(ativAtual)abrirCron();                 // veio da janela do cronômetro
+  else if(_detDireto)fecharModal();         // veio do olho do quadrado
+  else mostrarView('menu');
+}
+function voltarDoFim(){if(ativAtual)abrirCron();else fecharModal();}
+function voltarDoOper(){
+  if(_modoOpNova){_modoOpNova=false;mostrarView('cad');return;}
+  if(loteAtual&&loteAtual.estado==='AGUARDANDO'&&acao!=='DESCARGA'){preencherMenu(loteAtual);mostrarView('menu');return;}
+  fecharModal();
+}
 function renderDetalhes(l){
   const itens=(l.itens||[]).map(it=>`<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td>
     <td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td>
     <td><span class="pill ${it.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${it.tipo||'Normal'}</span></td></tr>`).join('');
   const co=l.cesto_origem;
   const hist=(l.historico||[]).map(h=>`<div class="hist-item"><b>${h.tipo_lbl}</b>${h.detalhe?' · '+h.detalhe:''}
-    <div class="small">${h.inicio} → ${h.fim||'em andamento'} · <strong>${h.minutos} min</strong>${h.total_pausa_min?` · parada ${h.total_pausa_min} min`:''}</div>
+    <div class="small">${h.inicio} → ${h.fim||'em andamento'} · <strong>${h.minutos} min</strong>${h.total_pausa_min?` · parada ${h.total_pausa_min} min`:''}${h.vel_m_min?` · monovia a ${fmtVel(h.vel_m_min)} m/min`:''}</div>
     <div class="small">${h.operadores_txt||''}</div>${h.observacao?`<div class="small">Obs.: ${h.observacao}</div>`:''}</div>`).join('');
   detSair.innerHTML=_detDireto?'<i class="bi bi-x-lg"></i>Fechar':'<i class="bi bi-arrow-left"></i>Voltar';
   detCorpo.innerHTML=`
@@ -682,8 +771,16 @@ async function iniciarAtividade(){
   fecharModal();
 }
 function abrirCron(){
-  cronRot.textContent=(ativAtual.tipo_lbl||'')+(ativAtual.detalhe?' · '+ativAtual.detalhe:'');
-  cronBig.textContent=fmtTempo(segAtiv(ativAtual));
+  const a=ativAtual,l=loteAtual;
+  cronRot.textContent=(a.tipo_lbl||'')+(a.detalhe?' · '+a.detalhe:'');
+  cronBig.textContent=fmtTempo(segAtiv(a));
+  const ehCarga=(a.tipo==='MONOVIA'||a.tipo==='ESTACIONARIA'||a.tipo==='OP_NOVA');
+  const naEst=(a.tipo==='ESTACIONARIA')||(a.tipo==='OP_NOVA'&&(a.subtipo||'')==='estacionaria');
+  cronResumo.innerHTML=`<div><strong>${l.quantidade}</strong> peças · <strong>${l.area_total}</strong> m² · ${esc(opTxt(l))}</div>
+    <div class="small muted" style="margin-top:4px;"><i class="bi bi-people-fill"></i> ${a.n_operadores||1} operador(es) · ${esc(a.operadores_txt)||'—'}</div>
+    ${a.vel_m_min?`<div class="small muted" style="margin-top:4px;"><i class="bi bi-speedometer2"></i> Velocidade desta carga: <strong>${fmtVel(a.vel_m_min)} m/min</strong> (a do início da carga)</div>`:''}`;
+  btnTroca.style.display=ehCarga?'':'none';
+  btnTroca.innerHTML='<i class="bi bi-arrow-left-right"></i>Mudar para '+(naEst?'monovia':'estacionária');
   atualizarBotaoPausa();mostrarView('cron');
 }
 async function abrirAtividade(loteId,alvo){
@@ -692,7 +789,7 @@ async function abrirAtividade(loteId,alvo){
   ativAtual=(l.historico||[]).find(h=>h.estado==='EM_ANDAMENTO');
   if(!ativAtual){alert('Esta atividade já foi finalizada.');loteAtual=null;carregar();return;}
   acao=ativAtual.tipo;
-  mTitulo.textContent=l.numero_cesto&&l.com_cesto?('Cesto '+l.numero_cesto):('Lote #'+l.id+' (sem cesto)');
+  mTitulo.textContent=tituloLote(l);
   if(alvo==='pausa'){
     // Parada pelo card: só o seletor de motivo (ou retoma direto). O modal grande não abre.
     if(ativAtual.pausado){await enviarPausa('');return;}
@@ -934,6 +1031,42 @@ async function confirmarCadastro(){
   fecharModal();
 }
 
+/* ── velocidade da monovia: a produção altera e fica registrado quem alterou ── */
+function fecharVelocidade(){modalVel.classList.remove('open');}
+modalVel.addEventListener('click',e=>{if(e.target.id==='modalVel')fecharVelocidade();});
+async function abrirVelocidade(){
+  velErro.textContent='';velNova.value='';
+  let ultimo='';try{ultimo=localStorage.getItem('pintura_vel_nome')||'';}catch(_){}
+  velNome.value=ultimo;
+  velAtual.textContent=fmtVel(DADOS.velocidade_nominal||1.4)+' m/min';
+  velNomes.innerHTML=OPERADORES.map(o=>`<option value="${esc(o.nome)}"></option>`).join('');
+  velHist.innerHTML='';
+  modalVel.classList.add('open');
+  velNova.focus();
+  try{
+    const r=await fetch('/api/pintura/velocidade');
+    if(!r.ok)return;
+    const j=await r.json();
+    velAtual.textContent=fmtVel(j.velocidade)+' m/min';
+    const l=(j.alteracoes||[]).slice(0,5);
+    velHist.innerHTML=l.length?('<span class="small muted"><i class="bi bi-clock-history"></i> Últimas alterações</span>'
+      +l.map(a=>`<div class="vel-hist-item"><span>${a.data.slice(0,5)} ${a.hora.slice(0,5)} · <strong>${esc(a.nome)}</strong></span>
+        <span class="mono">${fmtVel(a.de)} → <strong>${fmtVel(a.para)}</strong></span></div>`).join('')):'';
+  }catch(_){}
+}
+async function salvarVelocidade(){
+  const v=parseFloat(String(velNova.value).trim().replace(',','.'));
+  const nome=velNome.value.trim();
+  if(!(v>=0.1&&v<=60)){velErro.textContent='Informe a velocidade em m/min, entre 0,1 e 60 (ex.: 1,6).';velNova.focus();return;}
+  if(nome.length<2){velErro.textContent='Informe o nome de quem está alterando.';velNome.focus();return;}
+  velErro.textContent='';
+  const j=await postJSON('/api/pintura/velocidade',{velocidade:v,nome});
+  if(!j.sucesso){velErro.textContent=j.erro||'Não foi possível alterar a velocidade.';return;}
+  try{localStorage.setItem('pintura_vel_nome',nome);}catch(_){}
+  fecharVelocidade();await carregar();
+}
+[velNova,velNome].forEach(el=>el.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();salvarVelocidade();}}));
+
 /* OP nova: o cadastro fica guardado até escolher os operadores (ver iniciarAtividade) */
 let _opNovaPendente=null,_modoOpNova=false;
 
@@ -948,7 +1081,7 @@ async function postJSON(url,body){
 /* Toque repetido (tablet): enquanto uma gravação está em curso, a segunda é ignorada. */
 let _ocupado=false;
 ['iniciarAtividade','confirmarFinalizar','confirmarRetrabalho','confirmarCadastro',
- 'enviarPausa','corrigirDestino','cadAddOrdem'].forEach(n=>{
+ 'enviarPausa','corrigirDestino','cadAddOrdem','salvarVelocidade'].forEach(n=>{
   const f=window[n];
   window[n]=async function(...a){
     if(_ocupado)return;
@@ -959,7 +1092,7 @@ let _ocupado=false;
 
 /* ── boot ── */
 sincronizarRelogio().then(()=>carregarAgenda()).then(carregarOperadores).then(()=>{
-  carregar();setInterval(()=>{if(!modal.classList.contains('open'))carregar();},5000);
+  carregar();setInterval(()=>{if(!modal.classList.contains('open')&&!modalVel.classList.contains('open'))carregar();},5000);
   setInterval(tick,1000);
 });
 setInterval(sincronizarRelogio,60000);

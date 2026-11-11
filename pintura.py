@@ -251,6 +251,10 @@ def _definir_modelos(Base):
         estado = Column(String(20), default='EM_ANDAMENTO', index=True)
 
         monovia_linha = Column(String(20), default='')
+        # Velocidade da monovia (m/min) que valia QUANDO a carga começou. Fica
+        # gravada na carga: se a produção trocar a velocidade no meio, esta carga
+        # continua sendo medida pela velocidade em que começou.
+        vel_m_min = Column(Float)
         # Legado: o odômetro foi substituído por velocidade × tempo. As colunas
         # ficam para não perder o histórico já gravado.
         odo_ini = Column(Float)
@@ -306,6 +310,7 @@ def _definir_modelos(Base):
                 'pausas': pausas, 'total_pausa_min': round(pausas['total_seg'] / 60, 1),
                 'observacao': self.observacao or '', 'estado': self.estado,
                 'monovia_linha': self.monovia_linha or '',
+                'vel_m_min': (round(_vel_da_carga(self), 2) if _eh_monovia(self) else None),
                 'metros': metros_carregados(self),
                 'n_ganchos': self.n_ganchos or 0,
                 'qtd_ok': self.qtd_ok or 0, 'qtd_repasse': self.qtd_repasse or 0,
@@ -368,10 +373,34 @@ def _definir_modelos(Base):
         imagem_ref = Column(String(255), default='')
         extra_json = Column(Text, default='')
 
+    class VelocidadeLog(Base):
+        """Cada alteração da velocidade configurada da monovia: quando, quem,
+        de quanto para quanto. Só cresce — nunca é editado."""
+        __tablename__ = 'monovia_velocidade_log'
+        id = Column(Integer, primary_key=True)
+        data_hora = Column(DateTime, default=datetime.utcnow, index=True)
+        linha = Column(String(20), default='')
+        de = Column(Float)
+        para = Column(Float)
+        nome = Column(String(120), default='')       # quem alterou (nome informado)
+        usuario = Column(String(120), default='')    # login usado
+        origem = Column(String(30), default='')      # Pintura | Administrador
+
+        def to_dict(self):
+            loc = (self.data_hora - timedelta(hours=CTX['FUSO_LOCAL_HORAS'])) if self.data_hora else None
+            return {'id': self.id,
+                    'data': loc.strftime('%d/%m/%Y') if loc else '',
+                    'hora': loc.strftime('%H:%M:%S') if loc else '',
+                    'data_hora_iso': (self.data_hora.isoformat() + 'Z') if self.data_hora else '',
+                    'de': self.de, 'para': self.para, 'nome': self.nome or '',
+                    'usuario': self.usuario or '', 'origem': self.origem or '',
+                    'linha': self.linha or ''}
+
     Index('ix_mv_amostra_linha_ts', MonoviaAmostra.linha, MonoviaAmostra.ts)
     MODELOS.update(lote=LotePintura, atividade=AtividadePintura,
                    estado=MonoviaEstado, amostra=MonoviaAmostra,
-                   parada=MonoviaParada, deteccao=MonoviaDeteccao)
+                   parada=MonoviaParada, deteccao=MonoviaDeteccao,
+                   vel_log=VelocidadeLog)
     return MODELOS
 
 
@@ -833,7 +862,7 @@ def _janela_na_estacao(ativ, offset_m, linha):
 
     É o mesmo raciocínio do odômetro, medido em tempo em vez de metros.
     """
-    v = float(linha.get('velocidade_nominal_m_min') or 1.4)
+    v = _vel_da_carga(ativ, linha)
     if v <= 0 or not ativ.inicio:
         return None
     atraso = timedelta(minutes=offset_m / v)
@@ -847,7 +876,7 @@ def posicao_da_atividade(ativ, agora=None, db=None):
     agora = agora or datetime.utcnow()
     if not _eh_monovia(ativ) or not ativ.inicio:
         return {'ok': False, 'motivo': 'carga fora da monovia', 'estacoes': []}
-    v = float(linha.get('velocidade_nominal_m_min') or 1.4)
+    v = _vel_da_carga(ativ, linha)
     out = []
     for e in linha.get('estacoes', []):
         d = float(e.get('offset_m') or 0)
@@ -926,7 +955,7 @@ def situacao_na_linha(lote, ativ_carga, odo_atual=None, db=None):
         return {'pronto': True, 'modo': 'manual', 'faltam_m': 0, 'eta_min': 0}
     linha = get_linha(ativ_carga.monovia_linha)
     off = _offset_descarga(linha)
-    v = float(linha.get('velocidade_nominal_m_min') or 1.4)
+    v = _vel_da_carga(ativ_carga, linha)
     if off is None or v <= 0:
         return {'pronto': True, 'modo': 'manual', 'faltam_m': 0, 'eta_min': 0}
     if lote is not None and lote.odo_repasse is not None:
@@ -945,6 +974,129 @@ def situacao_na_linha(lote, ativ_carga, odo_atual=None, db=None):
             'eta_min': round(faltam_min, 1)}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Velocidade da monovia: configurada pela produção, gravada em cada carga
+# ─────────────────────────────────────────────────────────────────────────────
+VEL_MIN, VEL_MAX = 0.1, 60.0
+
+
+def velocidade_atual(db=None, fresca=True):
+    """Velocidade configurada AGORA (m/min). `fresca` lê direto do banco: quem
+    vai gravar a velocidade numa carga não pode usar um valor de 10 s atrás."""
+    cfg = get_config(forcar=fresca)
+    lid = cfg.get('linha_padrao') or 'MV1'
+    linha = next((l for l in cfg['linhas'] if l.get('id') == lid), cfg['linhas'][0])
+    try:
+        return float(linha.get('velocidade_nominal_m_min') or 1.4)
+    except (TypeError, ValueError):
+        return 1.4
+
+
+def velocidade_em(quando, db=None):
+    """Velocidade que estava configurada num instante passado, pelo histórico.
+
+    Usada quando a carga não tem a velocidade gravada (troca de estacionária
+    para monovia no meio da carga, registros antigos)."""
+    db = _db(db)
+    V = MODELOS['vel_log']
+    if quando is not None:
+        ant = (db.query(V).filter(V.data_hora <= quando).order_by(V.data_hora.desc(), V.id.desc()).first())
+        if ant and ant.para:
+            return float(ant.para)
+        prox = (db.query(V).filter(V.data_hora > quando).order_by(V.data_hora, V.id).first())
+        if prox and prox.de:
+            return float(prox.de)          # antes da 1ª alteração valia o "de" dela
+    return velocidade_atual(db)
+
+
+def _vel_da_carga(ativ, linha=None):
+    """Velocidade que mede ESTA carga: a gravada no início dela."""
+    if getattr(ativ, 'vel_m_min', None):
+        return float(ativ.vel_m_min)
+    linha = linha or get_linha(ativ.monovia_linha)
+    return float(linha.get('velocidade_nominal_m_min') or 1.4)
+
+
+def alterar_velocidade(valor, nome, usuario='', origem='Pintura', db=None):
+    """Troca a velocidade configurada e registra quem trocou.
+
+    Devolve (ok, mensagem, registro). Cargas já iniciadas NÃO mudam: cada uma
+    guarda a velocidade do instante em que começou."""
+    db = _db(db)
+    try:
+        v = round(float(str(valor).replace(',', '.')), 2)
+    except (TypeError, ValueError):
+        return False, 'Informe a velocidade em m/min (ex.: 1,4).', None
+    if not (VEL_MIN <= v <= VEL_MAX):
+        return False, 'A velocidade deve ficar entre 0,1 e 60 m/min.', None
+    nome = (nome or '').strip()[:120]
+    if len(nome) < 2:
+        return False, 'Informe o nome de quem está alterando.', None
+    # A linha da configuração fica travada enquanto se lê e grava: dois tablets
+    # alterando ao mesmo tempo não geram dois registros iguais nem se atropelam.
+    Config = CTX['Config']
+    try:
+        row = db.query(Config).filter_by(chave='monovia').with_for_update().first()
+        cfg = json.loads(json.dumps(CONFIG_PADRAO))
+        if row and row.valor:
+            salvo = json.loads(row.valor)
+            if isinstance(salvo, dict):
+                cfg.update(salvo)
+        if not cfg.get('linhas'):
+            cfg['linhas'] = json.loads(json.dumps(CONFIG_PADRAO['linhas']))
+        lid = cfg.get('linha_padrao') or 'MV1'
+        linha = next((l for l in cfg['linhas'] if l.get('id') == lid), cfg['linhas'][0])
+        antes = float(linha.get('velocidade_nominal_m_min') or 1.4)
+        if abs(antes - v) < 0.005:
+            db.rollback()
+            return False, 'A velocidade já é ' + f'{v:g}'.replace('.', ',') + ' m/min.', None
+        linha['velocidade_nominal_m_min'] = v
+        if not row:
+            row = Config(chave='monovia')
+            db.add(row)
+        row.valor = json.dumps(cfg, ensure_ascii=False)
+        reg = MODELOS['vel_log'](data_hora=datetime.utcnow(), linha=linha.get('id') or '',
+                                 de=antes, para=v, nome=nome, usuario=(usuario or '')[:120],
+                                 origem=(origem or '')[:30])
+        db.add(reg)
+        db.commit()                 # configuração e registro no mesmo commit
+    except IntegrityError:
+        db.rollback()
+        return False, 'Outra alteração foi feita neste instante. Confira a velocidade e tente de novo.', None
+    _cfg_cache['dados'] = cfg
+    return True, '', reg
+
+
+def ultima_alteracao_velocidade(db=None):
+    db = _db(db)
+    V = MODELOS['vel_log']
+    u = db.query(V).order_by(V.data_hora.desc(), V.id.desc()).first()
+    return u.to_dict() if u else None
+
+
+def congelar_velocidades(db=None):
+    """Cargas na monovia anteriores a este registro não tinham a velocidade
+    gravada. Grava nelas a velocidade que valia no início de cada uma, para que
+    uma troca feita hoje não mude os metros do que já foi carregado."""
+    db = _db(db)
+    A = MODELOS['atividade']
+    try:
+        pend = [a for a in db.query(A).filter(A.vel_m_min.is_(None)).all() if _eh_monovia(a)]
+        if not pend:
+            return 0
+        tem_hist = db.query(MODELOS['vel_log']).count() > 0
+        agora = velocidade_atual(db)
+        for a in pend:
+            a.vel_m_min = velocidade_em(a.inicio, db) if tem_hist else agora
+        db.commit()
+        print(f'[pintura] velocidade gravada em {len(pend)} carga(s) antigas.')
+        return len(pend)
+    except Exception as e:
+        db.rollback()
+        print(f'[pintura] aviso ao gravar velocidade nas cargas antigas: {e}')
+        return 0
+
+
 def metros_carregados(ativ, linha=None):
     """Metros de trilho que o lote ocupa.
 
@@ -956,11 +1108,13 @@ def metros_carregados(ativ, linha=None):
     É por isso que a velocidade da monovia é configurável: ela é a régua. Com
     1,4 m/min, 10 minutos de carga = 14 m de trilho ocupado. Vale só para a
     monovia; a estacionária não tem trilho correndo.
+
+    A velocidade usada é a que valia quando ESTA carga começou (gravada nela):
+    trocar a velocidade no meio não muda a régua de uma carga em andamento.
     """
-    linha = linha or get_linha(ativ.monovia_linha)
     if not _eh_monovia(ativ):
         return 0.0
-    v = float(linha.get('velocidade_nominal_m_min') or 1.4)
+    v = _vel_da_carga(ativ, linha)
     return round(max(0.0, (ativ.minutos or 0) * v), 2)
 
 
@@ -990,7 +1144,7 @@ def metricas_carga(ativ, lote=None, linha=None):
         'area_m2': round(area, 3), 'pecas': pecas,
         'ocupacao_pct': round(100 * area / area_max, 1) if area_max else 0,
         'min_por_metro': round((ativ.minutos or 0) / metros, 2) if metros else 0,
-        'velocidade': float(linha.get('velocidade_nominal_m_min') or 1.4),
+        'velocidade': (round(_vel_da_carga(ativ, linha), 2) if _eh_monovia(ativ) else None),
     }
 
 
@@ -1153,8 +1307,30 @@ def api_painel():
                     'em_atividade': em_ativ, 'prontos_descarga': prontos,
                     'na_linha': na_linha, 'monovia': mv,
                     'descarga_ativa': descarga_ativa(),
-                    'velocidade_nominal': float(
-                        get_linha().get('velocidade_nominal_m_min') or 1.4)})
+                    'velocidade_nominal': velocidade_atual(db),
+                    'velocidade_alteracao': ultima_alteracao_velocidade(db)})
+
+
+@bp.route('/api/pintura/velocidade', methods=['GET', 'POST'])
+@_lr('pintura')
+def api_velocidade():
+    """Velocidade configurada da monovia — a produção consulta e altera.
+
+    Cada alteração fica registrada com data, hora e o nome de quem alterou.
+    As cargas em andamento continuam com a velocidade em que começaram."""
+    db = _db()
+    if request.method == 'POST':
+        d = request.json or {}
+        ok, erro, reg = alterar_velocidade(d.get('velocidade'), d.get('nome'),
+                                           session.get('usuario', ''), 'Pintura', db)
+        if not ok:
+            return jsonify({'sucesso': False, 'erro': erro}), 400
+        return jsonify({'sucesso': True, 'velocidade': reg.para, 'alteracao': reg.to_dict()})
+    V = MODELOS['vel_log']
+    ult = db.query(V).order_by(V.data_hora.desc(), V.id.desc()).limit(10).all()
+    return jsonify({'velocidade': velocidade_atual(db),
+                    'min': VEL_MIN, 'max': VEL_MAX,
+                    'alteracoes': [x.to_dict() for x in ult]})
 
 
 def estado_ao_vivo():
@@ -1221,7 +1397,8 @@ def estado_ao_vivo():
                      if descarga_ativa() else 0),
         'descarga_ativa': descarga_ativa(),
         'monovia': odometro_agora(db=db),
-        'velocidade_nominal': float(get_linha().get('velocidade_nominal_m_min') or 1.4),
+        # a velocidade configurada e o registro de quem alterou NÃO vão para o
+        # painel da gerência: ficam só nas planilhas do administrador
     }
 
 
@@ -1306,6 +1483,7 @@ def api_ativ_iniciar():
              estado='EM_ANDAMENTO')
     if tipo == TIPO_MONOVIA:
         ativ.monovia_linha = get_linha(d.get('linha'))['id']
+        ativ.vel_m_min = velocidade_atual(db)      # a velocidade deste instante vale para a carga toda
     db.add(ativ)
     db.flush()
 
@@ -1346,8 +1524,11 @@ def api_ativ_destino():
         ativ.tipo = novo
     if novo == TIPO_MONOVIA:
         ativ.monovia_linha = get_linha(d.get('linha'))['id']
+        # vale a velocidade de quando a carga COMEÇOU, não a de agora
+        ativ.vel_m_min = velocidade_em(ativ.inicio, db)
     else:
         ativ.monovia_linha = ''
+        ativ.vel_m_min = None
     obs = (d.get('motivo') or '').strip()
     marca = f'[destino corrigido para {TIPOS_LBL.get(novo, novo)}'
     marca += f': {obs}]' if obs else ']'
@@ -1552,6 +1733,7 @@ def api_op_nova():
              inicio=datetime.utcnow(), estado='EM_ANDAMENTO')
     if destino == 'monovia':
         ativ.monovia_linha = get_linha(d.get('linha'))['id']
+        ativ.vel_m_min = velocidade_atual(db)
     db.add(ativ)
     db.flush()
     lote.atividade_atual_id = ativ.id
@@ -1898,7 +2080,19 @@ def api_parada_justificar():
 @_lr('admin')
 def api_monovia_config():
     if request.method == 'POST':
-        return jsonify({'sucesso': True, 'config': set_config(request.json or {})})
+        antes = velocidade_atual()
+        cfg = set_config(request.json or {})
+        depois = velocidade_atual()
+        if abs(antes - depois) >= 0.005:        # mudou a velocidade por aqui: registra também
+            db = _db()
+            db.add(MODELOS['vel_log'](data_hora=datetime.utcnow(),
+                                      linha=cfg.get('linha_padrao') or 'MV1',
+                                      de=antes, para=depois,
+                                      nome=session.get('nome', '') or 'Administrador',
+                                      usuario=session.get('usuario', ''),
+                                      origem='Administrador'))
+            db.commit()
+        return jsonify({'sucesso': True, 'config': cfg})
     return jsonify(get_config())
 
 
@@ -2134,6 +2328,8 @@ def resumo_por_card(card_ids=None):
             'carga_operadores': (CTX['_op_txt'](carga.operadores()) if carga else ''),
             'n_oper_carga': (carga.n_operadores or 0) if carga else 0,
             'metros': (metros_carregados(carga) if carga else 0),
+            'velocidade': (round(_vel_da_carga(carga), 2)
+                           if (carga and _eh_monovia(carga)) else ''),
             'ganchos': (carga.n_ganchos or 0) if carga else 0,
             'pecas_carregadas': (carga.qtd_lote or 0) if carga else 0,
             'area_carregada': round((carga.area_lote or 0), 3) if carga else 0,
@@ -2186,7 +2382,8 @@ def download_pintura():
                'Texto breve', 'Qtd', 'Área do lote (m²)', 'Processo', 'Tipo',
                'Operadores', 'Nº oper.', 'Início - Data', 'Início - Hora',
                'Fim - Data', 'Fim - Hora', 'Tempo (min)', 'Parada (min)',
-               'Paradas (por motivo)', 'Metros monovia', 'Ganchos', 'Peças/gancho',
+               'Paradas (por motivo)', 'Velocidade monovia (m/min)', 'Metros monovia',
+               'Ganchos', 'Peças/gancho',
                'm²/metro', 'Ocupação (%)', 'Passe nº', 'Desceram OK', 'Repasse',
                'Motivo do repasse', 'Destino', 'Local/armazenagem', 'Observação', 'Turno']
     fill = PatternFill("solid", fgColor="0F3D5C")
@@ -2211,6 +2408,7 @@ def download_pintura():
                 it.get('tipo', lote.get('tipo')), d['operadores_txt'], d['n_operadores'],
                 d['inicio_data'], d['inicio_hora'], d['fim_data'], d['fim_hora'],
                 d['minutos'], d['total_pausa_min'], d['pausas']['texto'],
+                d.get('vel_m_min') or '',
                 m.get('metros'), m.get('ganchos'), m.get('pecas_por_gancho'),
                 m.get('area_por_metro'), m.get('ocupacao_pct'),
                 lote.get('voltas'), d['qtd_ok'] or '', d['qtd_repasse'] or '',
@@ -2238,13 +2436,108 @@ def download_pintura():
         ws.cell(row=r, column=1).font = Font(bold=True)
         ws.cell(row=r, column=2).font = Font(bold=True)
     larg = [6, 7, 7, 22, 20, 14, 14, 28, 7, 13, 20, 12, 26, 9, 14, 12, 14, 12,
-            12, 12, 26, 14, 9, 12, 11, 12, 9, 12, 10, 22, 14, 26, 26, 10]
+            12, 12, 26, 14, 14, 9, 12, 11, 12, 9, 12, 10, 22, 14, 26, 26, 10]
     for i, w in enumerate(larg, 1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
     ws.freeze_panes = 'A2'
+    planilha_velocidade(wb, de, ate)          # abas com o registro de velocidade
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     stamp = datetime.now().strftime('%Y%m%d_%H%M')
     return send_file(buf, as_attachment=True, download_name=f'pintura_{stamp}.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+def _cab_planilha(ws, headers, larg):
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    fill = PatternFill("solid", fgColor="0F3D5C")
+    font = Font(bold=True, color="FFFFFF", size=11)
+    thin = Side(style='thin', color='D0D7DE')
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill, cell.font = fill, font
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell.border = Border(bottom=thin)
+        ws.column_dimensions[cell.column_letter].width = larg[col - 1]
+    ws.row_dimensions[1].height = 30
+    ws.freeze_panes = 'A2'
+
+
+def planilha_velocidade(wb, de=None, ate=None, primeira=False):
+    """Acrescenta ao arquivo as duas abas do registro de velocidade da monovia:
+
+      "Alterações de velocidade" — data, hora, quem alterou, de quanto para quanto;
+      "Velocidade por cesto"     — a velocidade de cada carga feita na monovia.
+
+    `de`/`ate` (datas locais) filtram as duas abas; sem filtro, vem tudo."""
+    db = _db()
+    V, A, L = MODELOS['vel_log'], MODELOS['atividade'], MODELOS['lote']
+    fuso = timedelta(hours=CTX['FUSO_LOCAL_HORAS'])
+
+    def _no_periodo(dt):
+        if not dt:
+            return False
+        dia = (dt - fuso).date()
+        return (not de or dia >= de) and (not ate or dia <= ate)
+
+    ws = wb.active if primeira else wb.create_sheet()
+    ws.title = 'Alterações de velocidade'
+    _cab_planilha(ws, ['Data', 'Hora', 'Quem alterou', 'Usuário (login)', 'Onde alterou',
+                       'De (m/min)', 'Para (m/min)', 'Linha'],
+                  [13, 11, 30, 20, 16, 13, 13, 10])
+    regs = [r for r in db.query(V).order_by(V.data_hora.desc(), V.id.desc()).all()
+            if (not de and not ate) or _no_periodo(r.data_hora)]
+    for r in regs:
+        d = r.to_dict()
+        ws.append([d['data'], d['hora'], d['nome'], d['usuario'], d['origem'],
+                   d['de'], d['para'], d['linha']])
+    if not regs:
+        ws.append(['Nenhuma alteração de velocidade registrada no período.'])
+    ws.append([])
+    ws.append(['Velocidade configurada agora (m/min)', velocidade_atual(db)])
+
+    ws2 = wb.create_sheet('Velocidade por cesto')
+    _cab_planilha(ws2, ['Data', 'Cesto', 'Lote', 'OP (Ordem)', 'Qtd', 'Processo',
+                        'Início da carga', 'Fim da carga', 'Tempo de carga (min)',
+                        'Velocidade (m/min)', 'Metros de monovia', 'Operadores', 'Situação'],
+                  [13, 8, 8, 22, 8, 22, 12, 12, 14, 13, 13, 30, 14])
+    cargas = [a for a in db.query(A).filter(A.estado.in_(['FINALIZADA', 'EM_ANDAMENTO']))
+              .order_by(A.inicio.desc()).all()
+              if _eh_monovia(a) and ((not de and not ate) or _no_periodo(a.inicio))]
+    lotes = ({l.id: l for l in db.query(L).filter(L.id.in_({a.lote_id for a in cargas})).all()}
+             if cargas else {})
+    for a in cargas:
+        lote = lotes.get(a.lote_id)
+        itens = lote.itens() if lote else []
+        ops = ', '.join(str(i.get('ordem') or '') for i in itens if i.get('ordem')) or ''
+        ini, fim = (a.inicio - fuso) if a.inicio else None, (a.fim - fuso) if a.fim else None
+        ws2.append([ini.strftime('%d/%m/%Y') if ini else '',
+                    (a.numero_cesto or 'S/C'), a.lote_id, ops,
+                    (a.qtd_lote or (lote.quantidade if lote else 0) or 0),
+                    (lote.processo if lote else '') or '',
+                    ini.strftime('%H:%M:%S') if ini else '',
+                    fim.strftime('%H:%M:%S') if fim else '',
+                    round(a.minutos or 0, 1) if a.fim else '',
+                    round(_vel_da_carga(a), 2),
+                    metros_carregados(a) if a.fim else '',
+                    CTX['_op_txt'](a.operadores()),
+                    'Finalizada' if a.estado == 'FINALIZADA' else 'Em andamento'])
+    if not cargas:
+        ws2.append(['Nenhuma carga na monovia no período.'])
+    return wb
+
+
+@bp.route('/api/download/velocidade')
+@_lr('admin')
+def download_velocidade():
+    """Registro de velocidade da monovia (só administrador)."""
+    from openpyxl import Workbook
+    de, ate = _parse_datas()
+    wb = planilha_velocidade(Workbook(), de, ate, primeira=True)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    stamp = datetime.now().strftime('%Y%m%d_%H%M')
+    return send_file(buf, as_attachment=True, download_name=f'velocidade_monovia_{stamp}.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

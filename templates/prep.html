@@ -3,7 +3,7 @@
 {% block content %}
 
 <div class="section-head">
-  <div class="section-title"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos — toque no número para abrir · <i class="bi bi-eye"></i> para ver os detalhes</div>
+  <div class="section-title"><i class="bi bi-grid-3x3-gap-fill"></i>Cestos — toque no cesto para abrir · <i class="bi bi-eye-fill"></i> para ver os detalhes</div>
   <div class="small muted">
     <span class="pill pill-prep">Preparando cesto</span>
     <span class="pill" style="background:#fdeaea;color:#b91c3c;">Pausado</span>
@@ -221,7 +221,8 @@ async function carregar(){
   try{const r=await fetch('/api/cestos');if(!r.ok)return;g=await r.json();}catch(_){return;}
   if(!Array.isArray(g))return;
   document.getElementById('grade').innerHTML=g.map(c=>{
-    const det=`<button class="cesto-det" onclick="verDetalhesCesto(${c.numero})" aria-label="Ver detalhes do cesto ${c.numero}"><i class="bi bi-eye"></i>Detalhes</button>`;
+    // olho dentro do quadrado (no canto onde ficava o selo de operadores)
+    const det=`<button class="cesto-olho" onclick="verDetalhesCesto(${c.numero})" title="Ver detalhes" aria-label="Ver detalhes do cesto ${c.numero}"><i class="bi bi-eye-fill"></i></button>`;
     if(!c.ocupado) return `<div class="cesto-cel"><button class="cesto livre" onclick="abrirLivre(${c.numero})"><span class="cesto-num">${c.numero}</span><span class="cesto-tag">Livre</span></button>${det}</div>`;
     const cd=c.card; let cron='',cls='st-'+cd.estado,rot=ROTULO[cd.estado]||cd.estado;
     if(cd.estado==='PREPARANDO'){
@@ -231,9 +232,8 @@ async function carregar(){
       cron=`<span class="cesto-mini-cron cron-el" data-ini="${cd.banho_inicio_iso}">${fmtTempo(Math.max(0,Math.floor((agoraServidor()-new Date(cd.banho_inicio_iso).getTime())/1000)))}</span>`;
     }
     const badge=cd.n_itens>1?`<span class="multi-badge">${cd.n_itens} OPs</span>`:'';
-    const op2=cd.n_operadores>1?`<span class="cesto-nop" title="${cd.n_operadores} operadores"><i class="bi bi-people-fill"></i>${cd.n_operadores}</span>`:'';
     return `<div class="cesto-cel"><button class="cesto ocupado ${cls}" onclick='abrirOcupado(${JSON.stringify(cd).replace(/'/g,"&#39;")})'>
-      <i class="bi ${cd.pausado?'bi-pause-circle-fill':'bi-lock-fill'} cesto-lock"></i>${op2}
+      <i class="bi ${cd.pausado?'bi-pause-circle-fill':'bi-lock-fill'} cesto-lock"></i>
       <span class="cesto-num">${cd.numero_cesto}</span><span class="cesto-tag">${rot}</span>${cron}${badge}</button>${det}</div>`;
   }).join('');
 }

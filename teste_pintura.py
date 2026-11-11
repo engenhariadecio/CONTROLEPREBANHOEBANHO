@@ -7,6 +7,7 @@ pintura (com destino armazenamento), armazenamento em palete/arara e retrabalho
 (total com reposicionamento e parcial sem reposicionamento).
 """
 import warnings
+import io
 warnings.filterwarnings('ignore')
 import re
 from datetime import datetime, timedelta
@@ -30,6 +31,9 @@ def limpar():
     for m in ('amostra', 'parada', 'deteccao', 'estado'):
         db.query(pintura.MODELOS[m]).delete(synchronize_session=False)
     db.query(Card).filter(Card.observacao.like('T:%')).delete(synchronize_session=False)
+    # registros de velocidade criados pelos testes (nomes "T: ...")
+    V = pintura.MODELOS['vel_log']
+    db.query(V).filter(V.nome.like('T:%')).delete(synchronize_session=False)
     db.commit()
 
 
@@ -867,8 +871,10 @@ def main():
 
     print('\n23) PRE-BANHO: VER DETALHES EM CADA CESTO')
     hpre = prep_cli.get('/preparacao').get_data(as_text=True)
-    checar('cada cesto da grade tem o botao de detalhes',
-           'class="cesto-det"' in hpre and 'verDetalhesCesto(' in hpre)
+    checar('cada cesto da grade tem o olho de detalhes dentro do quadrado',
+           'class="cesto-olho"' in hpre and 'verDetalhesCesto(' in hpre)
+    checar('botao "Detalhes" de baixo e selo de operadores sairam da grade',
+           'cesto-det' not in hpre and 'cesto-nop' not in hpre)
     d1 = prep_cli.get(f'/api/cesto/{n5}/detalhes').get_json()
     checar('detalhes de cesto ocupado', d1['ocupado'] and d1['card']['numero_cesto'] == n5
            and d1['card']['etapa'] == 'Aguardando pintura')
@@ -931,6 +937,155 @@ def main():
     cache._t -= 11
     checar('cache de configuracao vence em 10 s (o outro processo enxerga a mudanca)',
            cache['x'] is None and cache.velho('x') == 5)
+
+    print('\n26) VELOCIDADE DA MONOVIA: PRODUCAO ALTERA, CADA CARGA GUARDA A SUA')
+    from datetime import timedelta as _td
+    V_ = pintura.MODELOS['vel_log']
+    vel0 = pintura.velocidade_atual()
+    n_log0 = Session().query(V_).count()
+    v = cli.get('/api/pintura/velocidade').get_json()
+    checar('producao consulta a velocidade configurada', v['velocidade'] == vel0 and 'alteracoes' in v)
+    r = cli.post('/api/pintura/velocidade', json={'velocidade': 2.2})
+    checar('alterar sem o nome de quem alterou e recusado', r.status_code == 400 and 'nome' in r.get_json()['erro'])
+    r = cli.post('/api/pintura/velocidade', json={'velocidade': 99, 'nome': 'T: Carlos'})
+    checar('velocidade fora da faixa e recusada', r.status_code == 400)
+    r = cli.post('/api/pintura/velocidade', json={'velocidade': 'abc', 'nome': 'T: Carlos'})
+    checar('velocidade que nao e numero e recusada', r.status_code == 400)
+    checar('recusas nao criam registro', Session().query(V_).count() == n_log0)
+
+    # carga A comeca na velocidade antiga
+    nA, nB, nC = [x for x in livres(8)][-3:]
+    cidVA, loteVA = cesto_ate_pintura(nA, 40, '920001')
+    aA = cli.post('/api/pintura/atividade/iniciar', json={'lote_id': loteVA, 'tipo': 'MONOVIA'}).get_json()['atividade']
+    checar('carga na monovia grava a velocidade do inicio', aA['vel_m_min'] == vel0, aA['vel_m_min'])
+    nova = round(vel0 + 0.8, 2)
+    r = cli.post('/api/pintura/velocidade', json={'velocidade': str(nova).replace('.', ','), 'nome': 'T: Carlos'}).get_json()
+    checar('producao altera a velocidade (aceita virgula)', r.get('sucesso') and r['velocidade'] == nova, r)
+    reg = Session().query(V_).order_by(V_.id.desc()).first()
+    checar('registro: quem, de quanto, para quanto, onde',
+           reg.nome == 'T: Carlos' and reg.de == vel0 and reg.para == nova
+           and reg.origem == 'Pintura' and reg.data_hora is not None, reg.to_dict())
+    checar('tela da pintura recebe a velocidade nova e quem alterou',
+           cli.get('/api/pintura/painel').get_json()['velocidade_nominal'] == nova
+           and cli.get('/api/pintura/painel').get_json()['velocidade_alteracao']['nome'] == 'T: Carlos')
+    r = cli.post('/api/pintura/velocidade', json={'velocidade': nova, 'nome': 'T: Carlos'})
+    checar('repetir a mesma velocidade nao cria registro', r.status_code == 400
+           and Session().query(V_).count() == n_log0 + 1)
+    # carga B comeca depois da troca
+    cidVB, loteVB = cesto_ate_pintura(nB, 40, '920002')
+    aB = cli.post('/api/pintura/atividade/iniciar', json={'lote_id': loteVB, 'tipo': 'MONOVIA'}).get_json()['atividade']
+    checar('carga iniciada depois da troca usa a velocidade nova', aB['vel_m_min'] == nova, aB['vel_m_min'])
+    checar('carga que ja estava em andamento continua com a antiga',
+           Session().query(A_).get(aA['id']).vel_m_min == vel0)
+    # 10 minutos de carga em cada uma
+    dbx = Session()
+    for i_ in (aA['id'], aB['id']):
+        dbx.query(A_).get(i_).inicio = datetime.utcnow() - _td(minutes=10)
+    dbx.commit()
+    cli.post('/api/pintura/atividade/finalizar', json={'id': aA['id']})
+    cli.post('/api/pintura/atividade/finalizar', json={'id': aB['id']})
+
+    def _hist(lote_id, ativ_id):
+        return next(h for h in cli.get(f'/api/pintura/lote/{lote_id}').get_json()['historico']
+                    if h['id'] == ativ_id)
+    fA, fB = _hist(loteVA, aA['id']), _hist(loteVB, aB['id'])
+    checar('metros da carga antiga = tempo x velocidade antiga',
+           abs(fA['metros'] - fA['minutos'] * vel0) < 0.05 and fA['minutos'] > 0, (fA['metros'], fA['minutos']))
+    checar('metros da carga nova = tempo x velocidade nova',
+           abs(fB['metros'] - fB['minutos'] * nova) < 0.05, (fB['metros'], fB['minutos']))
+    checar('resumo do cesto (planilha geral) leva a velocidade da carga',
+           pintura.resumo_por_card([cidVA])[cidVA]['velocidade'] == vel0
+           and pintura.resumo_por_card([cidVB])[cidVB]['velocidade'] == nova)
+    # estacionaria nao tem velocidade; trocar para monovia usa a do INICIO da carga
+    cidVC, loteVC = cesto_ate_pintura(nC, 40, '920003')
+    aC = cli.post('/api/pintura/atividade/iniciar', json={'lote_id': loteVC, 'tipo': 'ESTACIONARIA'}).get_json()['atividade']
+    checar('carga na estacionaria nao tem velocidade', aC['vel_m_min'] is None)
+    dbx = Session()
+    dbx.query(A_).get(aC['id']).inicio = reg.data_hora - _td(minutes=5)    # comecou ANTES da troca
+    dbx.commit()
+    r = cli.post('/api/pintura/atividade/destino', json={'id': aC['id'], 'tipo': 'MONOVIA'}).get_json()
+    checar('estacionaria -> monovia no meio: vale a velocidade de quando a carga comecou',
+           r['atividade']['vel_m_min'] == vel0, r['atividade']['vel_m_min'])
+    r = cli.post('/api/pintura/atividade/destino', json={'id': aC['id'], 'tipo': 'ESTACIONARIA'}).get_json()
+    checar('monovia -> estacionaria: fica sem velocidade', r['atividade']['vel_m_min'] is None)
+    cli.post('/api/pintura/atividade/finalizar', json={'id': aC['id']})
+    # cargas antigas sem a velocidade gravada: a migracao congela pelo historico
+    dbx = Session()
+    dbx.query(A_).get(aA['id']).vel_m_min = None
+    dbx.commit()
+    pintura.congelar_velocidades()
+    checar('carga antiga sem registro recebe a velocidade que valia no inicio dela',
+           Session().query(A_).get(aA['id']).vel_m_min == vel0, Session().query(A_).get(aA['id']).vel_m_min)
+
+    # administrador: configuracoes e planilhas
+    r = adm4.post('/admin/config', data=dict(base, vel_monovia=str(nova)), follow_redirects=True)
+    checar('salvar configuracoes sem mudar a velocidade nao cria registro',
+           Session().query(V_).count() == n_log0 + 1)
+    adm4.post('/admin/config', data=dict(base, vel_monovia=str(vel0)), follow_redirects=True)
+    reg2 = Session().query(V_).order_by(V_.id.desc()).first()
+    checar('alteracao pelo administrador tambem fica registrada',
+           reg2.origem == 'Administrador' and reg2.de == nova and reg2.para == vel0, reg2.to_dict())
+    dbx = Session()
+    reg2 = dbx.query(V_).get(reg2.id)
+    reg2.nome = 'T: Administrador'                  # para a limpeza do teste
+    dbx.commit()
+    from openpyxl import load_workbook
+    r = adm4.get('/api/download/velocidade')
+    checar('administrador baixa o registro de velocidade',
+           r.status_code == 200 and 'spreadsheet' in r.headers['Content-Type']
+           and 'velocidade_monovia_' in r.headers['Content-Disposition'])
+    wbv = load_workbook(io.BytesIO(r.data))
+    checar('planilha tem as duas abas', wbv.sheetnames == ['Alterações de velocidade', 'Velocidade por cesto'],
+           wbv.sheetnames)
+    alt = list(wbv['Alterações de velocidade'].iter_rows(values_only=True))
+    checar('aba de alteracoes: data, hora, quem, de, para',
+           alt[0][:3] == ('Data', 'Hora', 'Quem alterou') and alt[0][5:7] == ('De (m/min)', 'Para (m/min)')
+           and any(l[2] == 'T: Carlos' and l[5] == vel0 and l[6] == nova and l[4] == 'Pintura'
+                   and len(str(l[0])) == 10 and len(str(l[1])) == 8 for l in alt[1:]), alt[:3])
+    pc = list(wbv['Velocidade por cesto'].iter_rows(values_only=True))
+    iv = pc[0].index('Velocidade (m/min)')
+    porcesto = {l[1]: l[iv] for l in pc[1:] if l and l[1] in (nA, nB)}
+    checar('aba por cesto: cada cesto com a velocidade em que foi carregado',
+           porcesto.get(nA) == vel0 and porcesto.get(nB) == nova, porcesto)
+    wbg = load_workbook(io.BytesIO(adm4.get('/api/download/geral').data))
+    cab = [c.value for c in wbg['Geral'][1]]
+    checar('planilha geral: coluna de velocidade e as abas do registro',
+           'Velocidade monovia (m/min)' in cab and 'Alterações de velocidade' in wbg.sheetnames
+           and 'Velocidade por cesto' in wbg.sheetnames, wbg.sheetnames)
+    ic, iv2 = cab.index('Cesto'), cab.index('Velocidade monovia (m/min)')
+    lg = {l[ic]: l[iv2] for l in wbg['Geral'].iter_rows(min_row=2, values_only=True) if l[ic] in (nA, nB)}
+    checar('planilha geral: velocidade certa em cada cesto', lg.get(nA) == vel0 and lg.get(nB) == nova, lg)
+    checar('planilha geral: cabecalho e linhas com o mesmo numero de colunas',
+           all(len([x for x in l]) == len(cab) for l in wbg['Geral'].iter_rows(min_row=2, max_row=3, values_only=True)))
+    wbp = load_workbook(io.BytesIO(adm4.get('/api/download/pintura').data))
+    cabp = [c.value for c in wbp['Pintura'][1]]
+    checar('planilha da pintura: coluna de velocidade', 'Velocidade monovia (m/min)' in cabp
+           and cabp.index('Velocidade monovia (m/min)') + 1 == cabp.index('Metros monovia'))
+    for nome_, c_ in (('gerencia', ger), ('operador de pintura', cli)):
+        r = c_.get('/api/download/velocidade')
+        checar(f'{nome_} nao baixa o registro de velocidade',
+               r.status_code in (302, 401, 403) or 'spreadsheet' not in r.headers.get('Content-Type', ''))
+    # nada disso no painel da gerencia
+    hp = ger.get('/painel').get_data(as_text=True).lower()
+    checar('painel da gerencia nao tem nada de velocidade', 'velocidade' not in hp and 'm/min' not in hp)
+    vivo = ger.get('/api/painel/ativos').get_json()['pintura']
+    checar('nem os dados enviados ao painel da gerencia',
+           'velocidade_nominal' not in vivo and 'velocidade_alteracao' not in vivo)
+    # telas
+    hpi = cli.get('/pintura').get_data(as_text=True)
+    checar('pintura: campo "sem leitura" saiu; velocidade configurada com botao de alterar',
+           'sem leitura' not in hpi and 'id="mvVel"' not in hpi and 'abrirVelocidade()' in hpi)
+    checar('pintura: cestos em quadrados (fila e atividades), janela ao tocar',
+           'function tileLote' in hpi and 'function tileAtividade' in hpi
+           and 'function cardLote' not in hpi and hpi.count('class="cestos-grid pint"') == 5
+           and 'onclick="abrirLote(${l.id})"' in hpi and 'onclick="abrirAtividade(${l.id})"' in hpi)
+    hmo = adm4.get('/monovia').get_data(as_text=True)
+    checar('administrador: registro de velocidade na pagina da monovia e no dashboard',
+           '/api/download/velocidade' in hmo
+           and "baixar('velocidade')" in adm4.get('/dashboard').get_data(as_text=True))
+    bk = adm4.get('/api/admin/backup').get_json()
+    checar('backup inclui o registro de velocidade', len(bk.get('monovia_velocidade_log') or []) >= 2)
+    checar('velocidade volta ao valor inicial ao fim do teste', pintura.velocidade_atual() == vel0)
 
     print('\n' + '=' * 62)
     print(f'  {len(OK)} verificações OK · {len(FALHA)} falhas')
