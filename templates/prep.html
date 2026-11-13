@@ -251,7 +251,7 @@ function _detCartao(cd,titulo){
   const itens=(cd.itens&&cd.itens.length)?cd.itens:[];
   const linhas=itens.map(it=>{const rt=(it.tipo||'Normal')==='Retrabalho';
     return `<tr><td><strong>${_esc(it.ordem)||'—'}</strong></td><td>${_esc(it.material)||'—'}</td>
-      <td><span class="small">${_esc(it.texto_breve)||'—'}</span></td><td class="mono">${it.quantidade||0}</td>
+      <td><span class="small">${_esc(it.texto_breve)||'—'}</span>${(it.tinta||it.tinta_cod)?`<div class="tinta-tag"><i class="bi bi-palette-fill"></i> ${_esc([it.tinta_cod,it.tinta].filter(Boolean).join(' · '))}</div>`:''}</td><td class="mono">${it.quantidade||0}</td>
       <td><span class="pill ${rt?'pill-retrab':'pill-normal'}">${it.tipo||'Normal'}</span>${rt&&it.motivo?`<br><span class="small muted">${_esc(it.motivo)}</span>`:''}</td></tr>`;}).join('');
   const L=[];
   const op=n=>n?`<div class="small muted">${_esc(n)}</div>`:'';
@@ -508,6 +508,7 @@ function renderItens(){
         <div class="item-grid-full"><label class="mini-label">Descrição</label><input class="input input-sm" value="${(it.texto_breve||'').replace(/"/g,'&quot;')}" oninput="setCampo(${idx},'texto_breve',this.value)"></div>
         <div><label class="mini-label">Quantidade</label><input type="text" class="input input-sm" value="${it.quantidade||0}" oninput="setCampo(${idx},'quantidade',this.value)" inputmode="numeric" pattern="[0-9]*"></div>
       </div>
+      <div class="item-tinta" id="itTinta${idx}">${_tintaForm(it)}</div>
       ${retrab?`<div class="item-motivo"><label class="mini-label">Motivo do retrabalho</label>
         <select class="select input-sm" onchange="setCampo(${idx},'motivo',this.value)">${motOpts}</select></div>`:''}
     </div>`;}).join('');
@@ -524,15 +525,23 @@ function setCampo(i,campo,v){
 function delItem(i){itens.splice(i,1);renderItens();}
 
 // Quando o item não tem OP: ao digitar o código, puxa a descrição da lista mestra
+function _tintaForm(it){
+  if(it.tinta||it.tinta_cod) return `<div class="tinta-tag"><i class="bi bi-palette-fill"></i> ${_esc([it.tinta_cod,it.tinta].filter(Boolean).join(' · '))}</div>`;
+  return (it.material||'').trim()?'<div class="small muted"><i class="bi bi-palette"></i> tinta não cadastrada para este código</div>':'';
+}
 async function buscarPorCodigo(i){
   const it=itens[i];
   if(!it) return;
   const cod=(it.material||'').trim();
-  // busca pelo código sempre que houver código e a descrição ainda estiver vazia
-  // (funciona mesmo quando a OP foi bipada mas não está na lista mestra)
-  if(!cod || (it.texto_breve||'').trim()) return;
+  if(!cod){ it.tinta='';it.tinta_cod='';const e0=document.getElementById('itTinta'+i);if(e0)e0.innerHTML='';return; }
   try{
     const j=await (await fetch('/api/buscar_codigo/'+encodeURIComponent(cod))).json();
+    // a tinta vem SEMPRE do código da peça (mesmo com a descrição já preenchida)
+    itens[i].tinta=j.tinta||''; itens[i].tinta_cod=j.tinta_cod||'';
+    const el=document.getElementById('itTinta'+i); if(el) el.innerHTML=_tintaForm(itens[i]);
+    // descrição/quantidade: só quando a descrição ainda está vazia
+    // (funciona mesmo quando a OP foi bipada mas não está na lista mestra)
+    if((it.texto_breve||'').trim()) return;
     if(j.encontrado){
       itens[i].texto_breve=j.texto_breve||'';
       if(!itens[i].quantidade) itens[i].quantidade=j.quantidade||0;
@@ -561,7 +570,7 @@ async function addOrdem(){
   try{j=await (await fetch('/api/buscar_ordem/'+encodeURIComponent(op))).json();}
   catch(_){msg.innerHTML='<span class="txt-err">Sem conexão — não foi possível buscar a OP. Tente de novo.</span>';return;}
   if(j.encontrado){
-    itens.push({ordem:j.ordem,material:j.material,texto_breve:j.texto_breve,quantidade:j.quantidade,tipo:'Normal',motivo:''});
+    itens.push({ordem:j.ordem,material:j.material,texto_breve:j.texto_breve,quantidade:j.quantidade,tipo:'Normal',motivo:'',tinta_cod:j.tinta_cod||'',tinta:j.tinta||''});
     msg.innerHTML='<span class="txt-ok"><i class="bi bi-check-circle-fill"></i> OP encontrada — preenchida automaticamente.</span>';
   }else{
     itens.push({ordem:j.ordem,material:'',texto_breve:'',quantidade:0,tipo:'Normal',motivo:''});

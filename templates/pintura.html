@@ -607,6 +607,7 @@ function preencherMenu(l){
   mTitulo.textContent=tituloLote(l);
   mResumo.innerHTML=`<div><strong>${l.quantidade}</strong> peças · <strong>${l.area_total}</strong> m² · <strong>${l.peso_total}</strong> kg</div>
     <div class="small muted" style="margin-top:4px;">${esc(opTxt(l))} · ${esc(l.processo)||'sem processo'}${l.tipo==='Retrabalho'?' · <strong>Retrabalho</strong>':''}${l.numero_cesto&&!l.com_cesto?` · veio do cesto ${l.numero_cesto}`:''}</div>
+    ${(l.tintas&&l.tintas.length)?`<div class="tinta-tag tinta-destaque"><i class="bi bi-palette-fill"></i> ${l.tintas.map(t=>esc([t.cod,t.nome].filter(Boolean).join(' · '))).join(' / ')}</div>`:`<div class="small muted" style="margin-top:4px;"><i class="bi bi-palette"></i> tinta não cadastrada para este código</div>`}
     ${l.local?`<div class="small muted" style="margin-top:4px;"><i class="bi bi-geo-alt"></i> ${esc(l.local)}</div>`:''}
     <div class="small muted" style="margin-top:4px;"><i class="bi bi-hourglass-split"></i> aguardando há ${fmtTempo(l.esperando_seg||0)}</div>`;
 }
@@ -662,7 +663,7 @@ function voltarDoOper(){
 }
 function renderDetalhes(l){
   const itens=(l.itens||[]).map(it=>`<tr><td><strong>${it.ordem||'—'}</strong></td><td>${it.material||'—'}</td>
-    <td><span class="small">${it.texto_breve||'—'}</span></td><td class="mono">${it.quantidade||0}</td>
+    <td><span class="small">${it.texto_breve||'—'}</span>${(it.tinta||it.tinta_cod)?`<div class="tinta-tag"><i class="bi bi-palette-fill"></i> ${[it.tinta_cod,it.tinta].filter(Boolean).join(' · ')}</div>`:''}</td><td class="mono">${it.quantidade||0}</td>
     <td><span class="pill ${it.tipo==='Retrabalho'?'pill-retrab':'pill-normal'}">${it.tipo||'Normal'}</span></td></tr>`).join('');
   const co=l.cesto_origem;
   const hist=(l.historico||[]).map(h=>`<div class="hist-item"><b>${h.tipo_lbl}</b>${h.detalhe?' · '+h.detalhe:''}
@@ -991,6 +992,7 @@ function cadItens_render(){
         <div><label class="mini-label">Quantidade</label><input class="input input-sm" type="number" min="0"
           value="${it.quantidade||0}" oninput="cadItens[${i}].quantidade=parseInt(this.value||'0',10)"></div>
       </div>
+      ${(it.tinta||it.tinta_cod)?`<div class="tinta-tag"><i class="bi bi-palette-fill"></i> ${[it.tinta_cod,it.tinta].filter(Boolean).join(' · ')}</div>`:''}
     </div>`).join(''):'<div class="muted small" style="padding:8px 0;">Nenhuma OP ainda. Bipe ou digite abaixo.</div>';
 }
 async function cadAddOrdem(){
@@ -1000,7 +1002,7 @@ async function cadAddOrdem(){
     const j=await (await fetch('/api/buscar_ordem/'+encodeURIComponent(v))).json();
     if(j.encontrado){
       cadItens.push({ordem:j.ordem,material:j.material,texto_breve:j.texto_breve,
-        quantidade:j.quantidade,tipo:cadModo==='retrabalho'?'Retrabalho':'Normal',motivo:''});
+        tinta_cod:j.tinta_cod||'',tinta:j.tinta||'',quantidade:j.quantidade,tipo:cadModo==='retrabalho'?'Retrabalho':'Normal',motivo:''});
       cadMsg.textContent='';
     }else{
       cadItens.push({ordem:j.ordem||v,material:'',texto_breve:'',quantidade:0,

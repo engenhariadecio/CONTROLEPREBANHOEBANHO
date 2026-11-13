@@ -50,7 +50,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, jsonify, session, send_file
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import (Column, Integer, String, DateTime, Float, Text,
-                        inspect, text, Index)
+                        inspect, text, Index, select, or_, func)
 
 bp = Blueprint('pintura', __name__)
 
@@ -185,6 +185,8 @@ def _definir_modelos(Base):
 
         def to_dict(self):
             itens = self.itens()
+            _ct = CTX.get('_itens_com_tinta')
+            tintas = _ct(itens) if _ct else []
             area = peso = 0.0
             for it in itens:
                 a, p = CTX['_area_peso_do_codigo'](it.get('material', ''))
@@ -199,6 +201,8 @@ def _definir_modelos(Base):
                 'origem': self.origem, 'estado': self.estado,
                 'com_cesto': bool(self.com_cesto),
                 'itens': itens, 'n_itens': len(itens),
+                'tintas': tintas,
+                'tintas_txt': ' / '.join(t['nome'] or t['cod'] for t in tintas),
                 'ordem': itens[0].get('ordem') if itens else '',
                 'material': itens[0].get('material') if itens else '',
                 'texto_breve': itens[0].get('texto_breve') if itens else '',
@@ -470,6 +474,49 @@ def _cancelar_lote(db, lote, motivo, agora=None):
     lote.observacao = ((lote.observacao or '') + f' [{motivo}]').strip()
 
 
+def _cancelar_atividades_orfas(db, agora=None, motivo='lote já não está em atividade'):
+    """Atividade "em andamento" cujo lote NÃO está em atividade é um fantasma.
+
+    Era o cesto que ficava dias "carregando" no painel da gerência e não existia
+    na tela da pintura: a pintura mostra o LOTE (que já tinha seguido adiante) e
+    a gerência mostrava a ATIVIDADE (que ficou aberta para trás) — ninguém tinha
+    como encerrá-la. A atividade fantasma é cancelada e fica fora de todas as
+    contas (tempo médio, pintado hoje, relatórios).
+
+    É UM comando só no banco: ou enxerga o par lote+atividade como estava antes
+    de um pedido em curso, ou como ficou depois — nunca pela metade. Por isso
+    pode rodar a qualquer momento, com a produção trabalhando."""
+    L, A = MODELOS['lote'], MODELOS['atividade']
+    agora = agora or datetime.utcnow()
+    em_ativ = select(L.id).where(L.estado == 'EM_ATIVIDADE')
+    return db.query(A).filter(
+        A.estado == 'EM_ANDAMENTO',
+        or_(A.lote_id.is_(None), ~A.lote_id.in_(em_ativ)),
+    ).update({'estado': 'CANCELADA', 'fim': agora, 'pausado': 0, 'pausa_inicio': None,
+              'observacao': func.coalesce(A.observacao, '') + f' [cancelada: {motivo}]'},
+             synchronize_session=False)
+
+
+_ULT_AUTOCURA = [0.0]
+
+
+def _autocura(db, intervalo=60):
+    """Chamado pelas telas (que se atualizam sozinhas): no máximo uma vez por
+    minuto, encerra atividade fantasma. Assim o defeito some sozinho, sem
+    depender de reiniciar o sistema."""
+    if _relogio() - _ULT_AUTOCURA[0] < intervalo:
+        return
+    _ULT_AUTOCURA[0] = _relogio()
+    try:
+        n = _cancelar_atividades_orfas(db)
+        db.commit()
+        if n:
+            print(f'[pintura] {n} atividade(s) fantasma cancelada(s).')
+    except Exception as e:
+        db.rollback()
+        print(f'[pintura] aviso na autocura: {e}')
+
+
 def reconciliar_lotes(db=None, commit=True):
     """Faz lotes e cestos contarem a MESMA história. Idempotente e barato.
 
@@ -491,8 +538,10 @@ def reconciliar_lotes(db=None, commit=True):
     db = _db(db)
     L, A, Card = MODELOS['lote'], MODELOS['atividade'], CTX['Card']
     agora = datetime.utcnow()
-    rel = {'cancelados': 0, 'duplicados': 0, 'recuperados': 0, 'ajustados': 0}
+    rel = {'cancelados': 0, 'duplicados': 0, 'recuperados': 0, 'ajustados': 0, 'orfas': 0}
     try:
+        # (0) atividade aberta em lote que já seguiu adiante (fantasma no painel)
+        rel['orfas'] = _cancelar_atividades_orfas(db, agora) or 0
         vivos = db.query(L).filter(L.estado != 'FINALIZADO').order_by(L.id).all()
         ids_card = {l.card_id for l in vivos if l.card_id}
         cards = ({c.id: c for c in db.query(Card).filter(Card.id.in_(ids_card)).all()}
@@ -1283,6 +1332,7 @@ def tela_monovia():
 def api_painel():
     db = _db()
     L, A = MODELOS['lote'], MODELOS['atividade']
+    _autocura(db)
     lotes = db.query(L).filter(L.estado.in_(['AGUARDANDO', 'EM_ATIVIDADE', 'NA_LINHA'])
                                ).order_by(L.criado_em).all()
     ativs = {a.lote_id: a.to_dict() for a in
@@ -1341,6 +1391,7 @@ def estado_ao_vivo():
     """
     db = _db()
     L, A = MODELOS['lote'], MODELOS['atividade']
+    _autocura(db)
     fuso = timedelta(hours=CTX['FUSO_LOCAL_HORAS'])
     hoje = (datetime.utcnow() - fuso).date()
     ini_hoje = datetime.combine(hoje, datetime.min.time()) + fuso
@@ -1366,12 +1417,14 @@ def estado_ao_vivo():
         d = l.to_dict()
         return {k: d[k] for k in ('id', 'card_id', 'numero_cesto', 'com_cesto', 'ordem', 'itens',
                                   'n_itens', 'quantidade', 'area_total', 'peso_total',
-                                  'processo', 'tipo', 'criado_iso', 'esperando_seg', 'local')}
+                                  'processo', 'tipo', 'criado_iso', 'esperando_seg', 'local',
+                                  'tintas', 'tintas_txt')}
 
     carregando = []
     for a in ativs:
         lote = lotes_ativ.get(a.lote_id)
-        if not lote:
+        # mesma regra da tela da pintura: só conta atividade de lote EM ATIVIDADE
+        if not lote or lote.estado != 'EM_ATIVIDADE':
             continue
         d = _res(lote)
         ad = a.to_dict()
@@ -1474,6 +1527,10 @@ def api_ativ_iniciar():
         n_op = 1
     ops = _normalizar_operadores(db, d.get('operadores'), n_op)
 
+    # o lote estava parado: qualquer atividade ainda aberta nele é sobra antiga
+    db.query(A).filter(A.lote_id == lote.id, A.estado == 'EM_ANDAMENTO').update(
+        {'estado': 'CANCELADA', 'fim': datetime.utcnow(), 'pausado': 0},
+        synchronize_session=False)
     ativ = A(lote_id=lote.id, card_id=lote.card_id, numero_cesto=lote.numero_cesto or 0,
              tipo=tipo, subtipo=(d.get('subtipo') or '')[:60],
              subtipo_outro=(d.get('subtipo_outro') or '')[:120],
@@ -1674,6 +1731,10 @@ def api_ativ_finalizar():
             if card and card.estado == ST_EM_PINTURA:
                 card.estado = ST_FILA_PINTURA
 
+    # o lote saiu de atividade: não pode sobrar outra atividade aberta nele
+    db.query(A).filter(A.lote_id == lote.id, A.estado == 'EM_ANDAMENTO', A.id != ativ.id
+                       ).update({'estado': 'CANCELADA', 'fim': agora, 'pausado': 0},
+                                synchronize_session=False)
     db.commit()
     return jsonify({'sucesso': True, 'minutos': ativ.minutos, 'metricas': metricas,
                     'proxima': proxima, 'lote_id': lote.id})
@@ -2385,7 +2446,8 @@ def download_pintura():
                'Paradas (por motivo)', 'Velocidade monovia (m/min)', 'Metros monovia',
                'Ganchos', 'Peças/gancho',
                'm²/metro', 'Ocupação (%)', 'Passe nº', 'Desceram OK', 'Repasse',
-               'Motivo do repasse', 'Destino', 'Local/armazenagem', 'Observação', 'Turno']
+               'Motivo do repasse', 'Destino', 'Local/armazenagem', 'Observação', 'Turno',
+               'Cód. tinta', 'Tinta']
     fill = PatternFill("solid", fgColor="0F3D5C")
     font = Font(bold=True, color="FFFFFF", size=11)
     thin = Side(style='thin', color='D0D7DE')
@@ -2414,6 +2476,7 @@ def download_pintura():
                 lote.get('voltas'), d['qtd_ok'] or '', d['qtd_repasse'] or '',
                 d['motivo_repasse'], d['destino'], lote.get('local'),
                 d['observacao'], d['turno_lbl'],
+                it.get('tinta_cod', ''), it.get('tinta', ''),
             ])
     ws.append([])
     lin = ws.max_row + 1
@@ -2436,7 +2499,7 @@ def download_pintura():
         ws.cell(row=r, column=1).font = Font(bold=True)
         ws.cell(row=r, column=2).font = Font(bold=True)
     larg = [6, 7, 7, 22, 20, 14, 14, 28, 7, 13, 20, 12, 26, 9, 14, 12, 14, 12,
-            12, 12, 26, 14, 14, 9, 12, 11, 12, 9, 12, 10, 22, 14, 26, 26, 10]
+            12, 12, 26, 14, 14, 9, 12, 11, 12, 9, 12, 10, 22, 14, 26, 26, 10, 12, 36]
     for i, w in enumerate(larg, 1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
     ws.freeze_panes = 'A2'

@@ -218,6 +218,183 @@ def _area_peso_do_codigo(material):
     return 0.0, 0.0
 
 
+# ── Tinta por código da peça (relatório de MP / estrutura do SAP) ───────────
+# Aceita DOIS formatos, detectados pelo cabeçalho:
+#   1) tabela simples: Código | Descrição | Cód. tinta | Tinta
+#   2) o próprio relatório de MP exportado do SAP (estrutura multinível, com as
+#      colunas "Nível", "Material" e "Texto breve material"): a tinta de uma peça
+#      é o componente TINTA logo abaixo dela na estrutura.
+_tinta_por_codigo = {}
+_tinta_status = {'carregada': False, 'total': 0, 'erro': None}
+TINTA_ARQUIVOS = ['tintas.xlsx', 'tintas.csv', 'relatorio_mp.xlsx', 'relatorio_mp.csv']
+_PREFIXOS_TINTA = ('TINTA', 'VERNIZ', 'PRIMER')
+
+
+def _achar_arquivo_tintas():
+    base = os.path.dirname(os.path.abspath(__file__))
+    for nome in TINTA_ARQUIVOS:
+        caminho = os.path.join(base, nome)
+        if os.path.isfile(caminho):
+            return caminho
+    return None
+
+
+def _eh_tinta(descricao):
+    return str(descricao or '').strip().upper().startswith(_PREFIXOS_TINTA)
+
+
+def _tintas_da_estrutura(linhas, i_niv, i_mat, i_txt):
+    """Relatório de MP multinível -> {código: [(cód. tinta, tinta), ...]}."""
+    pilha, filhos, direta = {}, {}, {}
+    for row in linhas:
+        try:
+            niv = int(float(row[i_niv]))
+        except (ValueError, TypeError, IndexError):
+            continue
+        mat = _norm_str(row[i_mat]) if i_mat < len(row) else ''
+        if not mat:
+            continue
+        txt = str(row[i_txt] or '').strip() if i_txt < len(row) else ''
+        pilha[niv] = mat
+        if niv <= 0:
+            continue
+        pai = pilha.get(niv - 1)
+        if not pai:
+            continue
+        if _eh_tinta(txt):
+            lst = direta.setdefault(pai, [])
+            if (mat, txt) not in lst:
+                lst.append((mat, txt))
+        else:
+            fs = filhos.setdefault(pai, [])
+            if mat not in fs:
+                fs.append(mat)
+    mapa = {k: list(v) for k, v in direta.items()}
+    # peça sem tinta própria (ex.: pré-montagem): herda a da peça pintada que a compõe
+    for cod in list(filhos.keys()):
+        if cod in mapa:
+            continue
+        nivel, vistos, achadas = list(filhos.get(cod, [])), {cod}, []
+        for _prof in range(3):
+            prox = []
+            for f in nivel:
+                if f in vistos:
+                    continue
+                vistos.add(f)
+                for t in direta.get(f, []):
+                    if t not in achadas:
+                        achadas.append(t)
+                prox.extend(filhos.get(f, []))
+            if achadas or not prox:
+                break
+            nivel = prox
+        if achadas:
+            mapa[cod] = achadas
+    return mapa
+
+
+def carregar_tintas():
+    """Carrega o de-para código da peça -> tinta."""
+    global _tinta_por_codigo, _tinta_status
+    caminho = _achar_arquivo_tintas()
+    if not caminho:
+        _tinta_status = {'carregada': False, 'total': 0, 'erro': 'Arquivo tintas.xlsx não encontrado.'}
+        print('[tintas] AVISO: nenhum arquivo encontrado.')
+        return
+    try:
+        nome = caminho.lower()
+        if nome.endswith('.csv') or nome.endswith('.txt'):
+            with open(caminho, encoding='utf-8-sig', errors='replace') as f:
+                raw = f.read()
+            sep = '\t' if raw.count('\t') > raw.count(';') and raw.count('\t') > raw.count(',') \
+                else (';' if raw.count(';') > raw.count(',') else ',')
+            linhas = list(csv.reader(io.StringIO(raw), delimiter=sep))
+        else:
+            from openpyxl import load_workbook as _lw
+            wb = _lw(caminho, read_only=True, data_only=True)
+            linhas = [list(r) for r in wb.active.iter_rows(values_only=True)]
+            wb.close()
+
+        def norm(x):
+            return str(x).strip().lower() if x is not None else ''
+        cab, inicio = [], 0
+        for i, row in enumerate(linhas[:10]):
+            nomes = [norm(c) for c in (row or [])]
+            if any(n in ('material', 'código', 'codigo', 'cód. peça', 'codigo sap', 'código sap')
+                   for n in nomes):
+                cab, inicio = nomes, i + 1
+                break
+
+        def col(*alvos):
+            for a in alvos:
+                for j, n in enumerate(cab):
+                    if n == a:
+                        return j
+            return None
+        i_niv = col('nível', 'nivel')
+        i_mat = col('material')
+        i_txt = col('texto breve material')
+        if i_niv is not None and i_mat is not None and i_txt is not None:
+            mapa = _tintas_da_estrutura(linhas[inicio:], i_niv, i_mat, i_txt)
+            formato = 'relatório de MP'
+        else:
+            i_cod = col('código', 'codigo', 'cód. peça', 'codigo sap', 'código sap', 'material')
+            i_tc = col('cód. tinta', 'cod. tinta', 'código tinta', 'codigo tinta')
+            i_tn = col('tinta')
+            if i_cod is None or i_tn is None:
+                i_cod, i_tc, i_tn, inicio = 0, 2, 3, 1      # ordem padrão do arquivo
+            mapa = {}
+            for row in linhas[inicio:]:
+                if not row or i_cod >= len(row):
+                    continue
+                cod = _norm_str(row[i_cod])
+                tn = str(row[i_tn] or '').strip() if i_tn < len(row) else ''
+                tc = _norm_str(row[i_tc]) if i_tc is not None and i_tc < len(row) else ''
+                if not cod or not (tn or tc):
+                    continue
+                lst = mapa.setdefault(cod, [])
+                if (tc, tn) not in lst:
+                    lst.append((tc, tn))
+            formato = 'tabela'
+        # também responde ao código digitado sem os zeros à esquerda
+        for cod in list(mapa.keys()):
+            alt = cod.lstrip('0')
+            if alt and alt not in mapa:
+                mapa[alt] = mapa[cod]
+        _tinta_por_codigo = mapa
+        _tinta_status = {'carregada': True, 'total': len(mapa), 'erro': None}
+        print(f'[tintas] Carregada: {len(mapa)} códigos de "{os.path.basename(caminho)}" ({formato}).')
+    except Exception as e:
+        _tinta_status = {'carregada': False, 'total': 0, 'erro': str(e)}
+        print(f'[tintas] ERRO ao carregar: {e}')
+
+
+def _tinta_do_codigo(material):
+    """(cód. tinta, tinta) da peça — ('', '') se o código não tem tinta cadastrada.
+    Peça com mais de uma tinta na estrutura devolve todas, separadas por ' / '."""
+    cod = _norm_str(material)
+    if not cod:
+        return '', ''
+    lst = _tinta_por_codigo.get(cod) or _tinta_por_codigo.get(cod.lstrip('0'))
+    if not lst:
+        return '', ''
+    return (' / '.join(t[0] for t in lst if t[0]), ' / '.join(t[1] for t in lst if t[1]))
+
+
+def _itens_com_tinta(itens):
+    """Carimba a tinta em cada item (sempre a partir do código — nunca do que
+    ficou gravado) e devolve o resumo das tintas do cesto/lote."""
+    resumo = []
+    for it in itens or []:
+        tc, tn = _tinta_do_codigo(it.get('material', ''))
+        it['tinta_cod'], it['tinta'] = tc, tn
+        cod = _norm_str(it.get('material', ''))
+        for par in (_tinta_por_codigo.get(cod) or _tinta_por_codigo.get(cod.lstrip('0')) or []):
+            if par not in resumo:
+                resumo.append(par)
+    return [{'cod': a, 'nome': b} for a, b in resumo]
+
+
 def carregar_lista_mestre():
     global _lista_por_ordem, _lista_por_material, _lista_status
     caminho = _achar_arquivo_mestre()
@@ -834,6 +1011,7 @@ class Card(Base):
             q = int(it.get('quantidade') or 0)
             area_total += a_unit * q
             peso_total += p_unit * q
+        tintas = _itens_com_tinta(itens)
         pausas = _pausas_resumo(self.pausas_json)
         total_pausa_min = round(pausas['total_seg'] / 60, 1)
         # tempo de espera = só tempo dentro da jornada entre fim da prep e início do banho
@@ -851,6 +1029,8 @@ class Card(Base):
             'ordem': self.ordem, 'material': self.material,
             'texto_breve': self.texto_breve, 'quantidade': self.quantidade,
             'itens': itens, 'qtd_total': qtd_total, 'n_itens': len(itens),
+            'tintas': tintas,
+            'tintas_txt': ' / '.join(t['nome'] or t['cod'] for t in tintas),
             'peso_total': round(peso_total, 2), 'area_total': round(area_total, 3),
             'observacao': self.observacao or '',
             'motivo_retrabalho': self.motivo_retrabalho or '',
@@ -1070,6 +1250,7 @@ def init_db():
     _criar_indice_unico_ativos()
     carregar_lista_mestre()
     carregar_area_peso()
+    carregar_tintas()
     db = Session()
     try:
         if db.query(Usuario).count() == 0:
@@ -1388,6 +1569,7 @@ def admin_mestre():
     if request.method == 'POST' and request.form.get('acao') == 'recarregar':
         carregar_lista_mestre()
         carregar_area_peso()
+        carregar_tintas()
         st = _lista_status
         if st['carregada']:
             msg = f'Lista recarregada com sucesso: {st["total"]} ordens na memória.'
@@ -1403,11 +1585,14 @@ def admin_mestre():
     ap = _areapeso_status
     cap = _achar_arquivo_areapeso()
     areapeso_info = os.path.basename(cap) if cap else 'Nenhum arquivo encontrado'
+    ctin = _achar_arquivo_tintas()
+    tintas_info = os.path.basename(ctin) if ctin else 'Nenhum arquivo encontrado'
     return render_template('mestre.html', nome=session.get('nome'),
                            msg=msg, total_itens=st['total'],
                            amostra=amostra, status=st,
                            arquivo_info=arquivo_info,
-                           areapeso_status=ap, areapeso_info=areapeso_info)
+                           areapeso_status=ap, areapeso_info=areapeso_info,
+                           tintas_status=_tinta_status, tintas_info=tintas_info)
 
 
 @app.route('/api/admin/testar_op/<path:ordem>')
@@ -1417,7 +1602,8 @@ def api_admin_testar_op(ordem):
     with _lista_lock:
         item = _lista_por_ordem.get(o)
     if item:
-        return jsonify({'encontrado': True, **item})
+        tc, tn = _tinta_do_codigo(item.get('material', ''))
+        return jsonify({'encontrado': True, **item, 'tinta_cod': tc, 'tinta': tn})
     return jsonify({'encontrado': False, 'ordem': o})
 
 
@@ -2046,7 +2232,8 @@ def api_buscar_ordem(ordem):
     with _lista_lock:
         item = _lista_por_ordem.get(o)
     if item:
-        return jsonify({'encontrado': True, **item})
+        tc, tn = _tinta_do_codigo(item.get('material', ''))
+        return jsonify({'encontrado': True, **item, 'tinta_cod': tc, 'tinta': tn})
     return jsonify({'encontrado': False, 'ordem': o})
 
 
@@ -2058,10 +2245,14 @@ def api_buscar_codigo(codigo):
         item = (_lista_por_material.get(bruto)
                 or _lista_por_material.get(bruto.lstrip('0'))
                 or _lista_por_material.get(_norm_ordem(codigo)))
+    tc, tn = _tinta_do_codigo(bruto)
     if item:
+        if not (tc or tn):
+            tc, tn = _tinta_do_codigo(item['material'])
         return jsonify({'encontrado': True, 'material': item['material'],
-                        'texto_breve': item['texto_breve'], 'quantidade': item['quantidade']})
-    return jsonify({'encontrado': False, 'material': bruto})
+                        'texto_breve': item['texto_breve'], 'quantidade': item['quantidade'],
+                        'tinta_cod': tc, 'tinta': tn})
+    return jsonify({'encontrado': False, 'material': bruto, 'tinta_cod': tc, 'tinta': tn})
 
 
 @app.route('/api/prep/iniciar', methods=['POST'])
@@ -3316,6 +3507,8 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
                     24, 14, 16, 14, 16, 14, 15, 8, 11, 10, 22,
                     18, 18, 18, 18, 18, 28, 28, 28, 12, 12, 18]
 
+        headers = headers + ['Cód. tinta', 'Tinta']
+        larg = larg + [12, 36]
         _estilo_cabecalho(ws, headers)
 
         for c in cards:
@@ -3340,7 +3533,8 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
                         dd['prep_inicio_data'], dd['prep_inicio_hora'],
                         dd['prep_fim_data'], dd['prep_fim_hora'],
                         dd['prep_minutos'], dd['total_pausa_min'],
-                        dd['pausas']['texto'], dd['observacao'], dd['turno_prep_lbl'], it_motivo
+                        dd['pausas']['texto'], dd['observacao'], dd['turno_prep_lbl'], it_motivo,
+                        it.get('tinta_cod', ''), it.get('tinta', '')
                     ])
                 elif tipo == 'banho':
                     ws.append([
@@ -3351,7 +3545,8 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
                         dd['prep_fim_data'], dd['prep_fim_hora'],
                         dd['banho_inicio_data'], dd['banho_inicio_hora'],
                         dd['banho_fim_data'], dd['banho_fim_hora'],
-                        dd['espera_min'], dd['banho_minutos'], dd['obs_banho'], dd['turno_lbl']
+                        dd['espera_min'], dd['banho_minutos'], dd['obs_banho'], dd['turno_lbl'],
+                        it.get('tinta_cod', ''), it.get('tinta', '')
                     ])
                 else:  # geral
                     pt = pint_por_card.get(c.id, {})
@@ -3395,7 +3590,8 @@ def _gerar_excel(tipo, turnos=None, de=None, ate=None):
                         (_d(tm['fim_ciclo']) + ' ' + _h(tm['fim_ciclo'])).strip(),
                         tm['total_processo'], tm['total_trabalho'], tm['total_espera'],
                         dd['observacao'], dd['obs_banho'], dd.get('obs_pintura', ''),
-                        dd['turno_prep_lbl'], dd['turno_banho_lbl'], it_motivo
+                        dd['turno_prep_lbl'], dd['turno_banho_lbl'], it_motivo,
+                        it.get('tinta_cod', ''), it.get('tinta', '')
                     ])
 
         # ── Resumo (para conferência): contagem EXATA de cestos e peças ──
@@ -3540,6 +3736,7 @@ try:
         ST_AG_MONTAGEM=ST_AG_MONTAGEM, ST_PREENCHER=ST_PREENCHER,
         ST_FILA_BANHO=ST_FILA_BANHO, PROCESSOS=PROCESSOS, Usuario=Usuario,
         _area_peso_do_codigo=_area_peso_do_codigo, _op_txt=_op_txt,
+        _itens_com_tinta=_itens_com_tinta,
         _pausas_resumo=_pausas_resumo, total_cestos=total_cestos,
         _ler_config=_ler_config,
     )

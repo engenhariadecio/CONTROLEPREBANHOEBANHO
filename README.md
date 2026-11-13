@@ -1,3 +1,20 @@
+## Ajustes v24 (tinta por código + cesto fantasma na pintura)
+- TINTA AUTOMÁTICA: o sistema passa a mostrar o código e o nome da tinta de cada
+  peça, a partir do código da peça (relatório de MP do SAP). Aparece no cadastro
+  do pré-banho, nos detalhes (pré-banho, banho, pintura, gerência), na janela do
+  lote na pintura, nos cards da gerência e em duas colunas novas ("Cód. tinta" e
+  "Tinta") no fim dos Excel de pré-banho, banho, geral e pintura.
+  O de-para fica em `tintas.xlsx` (Código | Descrição | Cód. tinta | Tinta). Para
+  atualizar, troque esse arquivo — ou suba o relatório de MP do SAP como
+  `relatorio_mp.xlsx` no lugar dele (o sistema lê a estrutura sozinho) — e
+  clique em Admin → Lista mestra → Recarregar.
+- CESTO FANTASMA ("carregando" há dias só na gerência): uma atividade ficava
+  aberta num lote que já tinha seguido adiante. A pintura mostra o lote e a
+  gerência mostrava a atividade, então ninguém conseguia encerrar. Agora a
+  gerência usa a mesma regra da pintura, a atividade fantasma é cancelada sozinha
+  (no início do sistema e a cada minuto) e fica fora das médias/relatórios, e
+  iniciar/finalizar não deixam mais atividade aberta para trás.
+
 ## Ajustes v20
 - Painel gerencial: REMOVIDO o filtro por turnos e as tags de turno (colunas/pills).
   O filtro agora é só por período (linha do tempo Dia/Mês/Ano ou intervalo). Os turnos

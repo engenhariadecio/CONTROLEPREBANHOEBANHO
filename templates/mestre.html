@@ -122,6 +122,24 @@
         Para atualizar: substitua <code>area_peso.xlsx</code> na raiz do projeto, commit e redeploy. Colunas: <code>Codigo Sap</code>, <code>Area de Superficie</code>, <code>Peso</code>.
       </div>
     </div>
+
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 16px;background:var(--bg-card,#1e2330);border-radius:8px;border:1px solid var(--line);margin-top:12px;">
+      <div>
+        <span class="small muted">Tintas por código (arquivo):</span><br>
+        <strong>{{ tintas_info }}</strong>
+      </div>
+      <div>
+        <span class="small muted">Status:</span><br>
+        {% if tintas_status.carregada %}
+          <span class="pill pill-banho"><i class="bi bi-check-circle-fill"></i> Carregada — {{ tintas_status.total }} códigos com tinta</span>
+        {% else %}
+          <span class="pill pill-prep"><i class="bi bi-exclamation-triangle-fill"></i> {{ tintas_status.erro }}</span>
+        {% endif %}
+      </div>
+      <div class="small muted" style="margin-left:auto;max-width:340px;">
+        Para atualizar: substitua <code>tintas.xlsx</code> (colunas <code>Código</code>, <code>Descrição</code>, <code>Cód. tinta</code>, <code>Tinta</code>) — ou suba o relatório de MP do SAP com o nome <code>relatorio_mp.xlsx</code> no lugar dele — commit e redeploy.
+      </div>
+    </div>
   </div>
 
   <div class="panel" style="overflow:hidden;">

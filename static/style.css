@@ -973,3 +973,10 @@ img,canvas{max-width:100%;}
 .cesto.st-AGUARDANDO_MONTAGEM .cesto-tag{color:var(--red);}
 .cesto.st-AGUARDANDO_MONTAGEM .cesto-num{color:var(--aco-900);}
 .tbl tr.tot td{background:#f1f6fa;border-top:2px solid var(--line);}
+
+
+/* ── Tinta da peça (vem do código, pelo relatório de MP) ── */
+.tinta-tag{display:block;margin-top:3px;font-size:.74rem;font-weight:700;color:#7C5CFC;line-height:1.3;}
+.tinta-tag i{margin-right:3px;}
+.tinta-destaque{margin-top:6px;font-size:.86rem;background:#f0ecff;border-radius:8px;padding:6px 10px;}
+.item-tinta{margin-top:6px;}
